@@ -218,3 +218,27 @@ class TestRunner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUploadScope(unittest.TestCase):
+    """What an upload would actually send. The far end has no undo."""
+
+    def a_log_with_dates(self):
+        log = a_log()
+        for d in ("20240101", "20250601", "20260101"):
+            log.add({"call": "W1AW", "qso_date": d, "time_on": "1200",
+                     "band": "20m", "mode": "SSB"})
+        return log
+
+    def test_since_selects_a_range(self):
+        log = self.a_log_with_dates()
+        self.assertEqual(len(log.since("20250101")), 2)
+        self.assertEqual(len(log.since("20260101")), 1)
+
+    def test_no_date_is_everything(self):
+        self.assertEqual(len(self.a_log_with_dates().since("")), 3)
+
+    def test_a_junk_date_does_not_silently_select_everything(self):
+        """A stray 'YYYYMMDD' placeholder must not become 'send it all'."""
+        log = self.a_log_with_dates()
+        self.assertEqual(log.since("YYYYMMDD"), log.since(""))

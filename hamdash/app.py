@@ -490,6 +490,10 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def sync_run(service, direction):
         body = request.get_json(silent=True) or {}
         since = str(body.get("since") or "").strip()
+        # Uploads default to counting rather than sending. The far end has no
+        # undo, and "push my log" to a logbook with ten years in it is not
+        # something to find out you meant differently afterwards.
+        dry_run = bool(body.get("dry_run", True))
         mine = cfg.data["station"].get("callsign", "")
 
         def pull_lotw():
@@ -506,14 +510,29 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return res
 
         def push_lotw():
-            adif = log.export_adif(my_callsign=mine)
-            out = _lotw().push(adif)
-            out["message"] = "TQSL accepted the upload"
+            rows = log.since(since)
+            if dry_run:
+                return {"would_send": len(rows), "dry_run": True,
+                        "message": f"{len(rows)} QSOs would go to TQSL"
+                                   f"{' from ' + since if since else ''}. "
+                                   f"Untick dry run to send them."}
+            if not rows:
+                return {"sent": 0, "message": "nothing to send"}
+            adif = "\n".join(log.export_adif_record(r, my_callsign=mine)
+                             for r in rows)
+            out = _lotw().push("<EOH>\n" + adif + "\n")
+            out["message"] = f"TQSL accepted {len(rows)} QSOs"
             return out
 
         def push_qrz():
+            rows = log.since(since)
+            if dry_run:
+                return {"would_send": len(rows), "dry_run": True,
+                        "message": f"{len(rows)} QSOs would be sent to QRZ"
+                                   f"{' from ' + since if since else ''}. "
+                                   f"Untick dry run to send them."}
             book, sent, failed = _qrz(), 0, []
-            for rec in log.recent(limit=10 ** 7):
+            for rec in rows:
                 one = log.export_adif_record(rec, my_callsign=mine)
                 try:
                     book.push_record(one)
@@ -530,8 +549,15 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     "message": f"{sent} sent"
                                + (f", {len(failed)} refused" if failed else "")}
 
+        def test_lotw():
+            return _lotw().test()
+
+        def test_qrz():
+            return _qrz().test()
+
         jobs = {("lotw", "pull"): pull_lotw, ("qrz", "pull"): pull_qrz,
-                ("lotw", "push"): push_lotw, ("qrz", "push"): push_qrz}
+                ("lotw", "push"): push_lotw, ("qrz", "push"): push_qrz,
+                ("lotw", "test"): test_lotw, ("qrz", "test"): test_qrz}
         fn = jobs.get((service, direction))
         if fn is None:
             return jsonify(error=f"no {direction} for {service}"), 404

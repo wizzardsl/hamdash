@@ -99,6 +99,16 @@ class Lotw:
                 f"password is wrong. It said: {snippet}")
         return r.text
 
+    def test(self) -> dict:
+        """Read-only: are these credentials good?
+
+        Asks for one day of a year that cannot have QSOs in it, so the answer
+        is about the login and nothing is downloaded.
+        """
+        self.pull(since="20991231")
+        return {"ok": True, "message": "LoTW accepted the login",
+                "can_push": bool(self.tqsl()), "tqsl": self.tqsl() or ""}
+
     # ------------------------------------------------------------------ push
     def tqsl(self) -> str | None:
         """Where TQSL is, if it is anywhere."""
@@ -194,6 +204,11 @@ class QrzLogbook:
         return {"ok": True, "book_name": d.get("BOOKNAME", ""),
                 "count": d.get("COUNT", ""), "owner": d.get("OWNER", ""),
                 "confirmed": d.get("CONFIRMED", "")}
+
+    def test(self) -> dict:
+        s = self.status()
+        return {"ok": True, "message": (f"{s['book_name'] or 'logbook'}: "
+                                        f"{s['count']} QSOs on QRZ"), **s}
 
     def pull(self) -> str:
         d = self._call("FETCH", OPTION="ALL")

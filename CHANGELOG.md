@@ -7,6 +7,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Test connection** for both sync services (read-only), and uploads that
+  default to a dry run — they count what would be sent and send nothing until
+  you say so, optionally narrowed to QSOs from a date.
 - Logbook sync with **LoTW** (pull with your username and password; push via
   TQSL, which is the only thing that can sign a LoTW upload) and the **QRZ
   logbook** (pull and push with a logbook API key). Syncs run off the request

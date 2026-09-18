@@ -179,6 +179,23 @@ class Logbook:
                 "OR name LIKE ? ORDER BY id DESC LIMIT ?",
                 (like, like, like, int(limit)))]
 
+    def since(self, date: str = "", limit: int = 10 ** 7) -> list[dict]:
+        """QSOs on or after an ADIF date (YYYYMMDD), oldest first.
+
+        Uploads use this. Sending "everything in the log" to somebody's real
+        logbook is rarely what was meant, and there is no undo at the far end.
+        """
+        d = "".join(ch for ch in str(date or "") if ch.isdigit())
+        with self._conn() as db:
+            if d:
+                rows = db.execute(
+                    "SELECT * FROM qso WHERE qso_date >= ? ORDER BY id LIMIT ?",
+                    (d, int(limit)))
+            else:
+                rows = db.execute("SELECT * FROM qso ORDER BY id LIMIT ?",
+                                  (int(limit),))
+            return [dict(r) for r in rows]
+
     def worked_before(self, call: str) -> list[dict]:
         with self._conn() as db:
             return [dict(r) for r in db.execute(

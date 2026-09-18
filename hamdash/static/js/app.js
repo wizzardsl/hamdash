@@ -366,15 +366,25 @@
     } catch (e) { /* settings can open before the host is warm */ }
   }
 
+  const VERBS = { pull: 'Pulling', push: 'Pushing', test: 'Testing' };
+
   function wireSync(service, direction) {
-    $(`#s-${service}-${direction}`).onclick = async () => {
-      syncNote(service, `${direction === 'pull' ? 'Pulling' : 'Pushing'}…`);
+    const el = $(`#s-${service}-${direction}`);
+    if (!el) return;
+    el.onclick = async () => {
+      syncNote(service, `${VERBS[direction]}…`);
       try {
-        await HD.post(`/api/log/sync/${service}/${direction}`, {});
+        await HD.post(`/api/log/sync/${service}/${direction}`, {
+          since: $('#s-sync-since').value.trim(),
+          // Defaults to true server side too, so a caller that forgets this
+          // counts rather than uploads.
+          dry_run: direction === 'push' ? $('#s-sync-dry').checked : false,
+        });
       } catch (e) { syncNote(service, e.message, 'warn'); }
     };
   }
-  ['lotw', 'qrz'].forEach((s) => ['pull', 'push'].forEach((d) => wireSync(s, d)));
+  ['lotw', 'qrz'].forEach((s) =>
+    ['test', 'pull', 'push'].forEach((d) => wireSync(s, d)));
 
   HD.on('log.sync', (p) => {
     const which = (p.job || '').startsWith('qrz') ? 'qrz' : 'lotw';

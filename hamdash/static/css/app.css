@@ -305,3 +305,8 @@ html, body {
 .row-btns .btn { font-size: 12px; padding: 3px 8px; }
 .sheet-note.warn { color: var(--alert); }
 .sheet-note.good { color: var(--signal); }
+
+.row-btns label.inline { display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--muted); }
+.row-btns label.inline input[type=text], .row-btns label.inline input:not([type]) {
+  width: 8em; padding: 2px 4px; }

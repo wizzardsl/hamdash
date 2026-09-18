@@ -307,6 +307,12 @@ what it was doing.
 that logbook's own settings page at logbook.qrz.com, and QRZ gates the API
 behind a subscription.
 
+**Uploads default to a dry run.** Push counts what it would send and sends
+nothing until you untick it, and "Only QSOs from" narrows it to a date. There
+is no undo at the far end, and "push my log" to a logbook with ten years in it
+is not something to discover you meant differently afterwards. **Test
+connection** is read-only and is the safe first thing to press.
+
 A sync runs off the request thread and reports on the `log.sync` bus topic:
 a year of QSOs is a slow download, and a request handler blocking on it would
 hold one of the server's threads for the duration.

@@ -221,6 +221,9 @@ shape it settled on is worth reusing:
   minute (invariant 4).
 - `sqlite3.connect` as a context manager commits but does **not** close. Use
   `Logbook._conn`, which does both; the old code leaked a connection per read.
+- **Push is dry-run by default, server side as well as in the UI** — a caller
+  that omits `dry_run` counts rather than uploads. `log.since(date)` scopes
+  it; a junk date selects everything, so the UI must not pass its placeholder.
 - Untested against the live services — there is no LoTW or QRZ account here.
   The HTTP shapes come from their docs and the tests mock them.
 

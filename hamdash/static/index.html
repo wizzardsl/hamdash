@@ -100,6 +100,7 @@
   <label>LoTW username <input id="s-lotw-user" spellcheck="false" autocomplete="off"></label>
   <label>LoTW password <input id="s-lotw-pass" type="password" autocomplete="off"></label>
   <div class="row-btns">
+    <button class="btn btn-quiet" id="s-lotw-test" type="button">Test connection</button>
     <button class="btn btn-quiet" id="s-lotw-pull" type="button">Pull from LoTW</button>
     <button class="btn btn-quiet" id="s-lotw-push" type="button">Push to LoTW</button>
   </div>
@@ -108,10 +109,17 @@
   <label>QRZ logbook API key <input id="s-qrz-key" class="mono" spellcheck="false"
          autocomplete="off" placeholder="from logbook.qrz.com, not your password"></label>
   <div class="row-btns">
+    <button class="btn btn-quiet" id="s-qrz-test" type="button">Test connection</button>
     <button class="btn btn-quiet" id="s-qrz-pull" type="button">Pull from QRZ</button>
     <button class="btn btn-quiet" id="s-qrz-push" type="button">Push to QRZ</button>
   </div>
   <p class="sheet-note" id="s-qrz-note"></p>
+  <div class="row-btns">
+    <label class="inline"><input type="checkbox" id="s-sync-dry" checked>
+      Dry run — count what would be sent, send nothing</label>
+    <label class="inline">Only QSOs from
+      <input id="s-sync-since" class="mono" placeholder="YYYYMMDD" size="8"></label>
+  </div>
   <p class="sheet-note">Save credentials before syncing. Pulling never
     duplicates what you already have — a matching contact is updated with
     whatever the other log knows, so confirmations land on the QSO they belong
