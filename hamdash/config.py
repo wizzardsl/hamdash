@@ -44,7 +44,7 @@ DEFAULTS = {
     "logbook_sync": {"lotw_user": "", "lotw_password": "",
                      "qrz_api_key": "", "tqsl_path": "",
                      "station_location": ""},
-    "units": "km",
+    "units": "km",   # km | mi | nmi
 }
 
 

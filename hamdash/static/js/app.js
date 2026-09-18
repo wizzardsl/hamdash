@@ -411,6 +411,7 @@
     $('#s-call').value = config.station.callsign || '';
     $('#s-grid').value = config.station.grid || '';
     $('#s-op').value = config.station.operator || '';
+    $('#s-units').value = config.units || 'km';
     $('#s-mock').checked = !!config.radio.mock;
     $('#s-rig-host').value = config.radio.rigctld_host || '';
     $('#s-rig-port').value = config.radio.rigctld_port || 4532;
@@ -504,6 +505,7 @@
           grid: $('#s-grid').value.trim().toUpperCase(),
           operator: $('#s-op').value.trim(),
         },
+        units: $('#s-units').value,
         radio: {
           mock: $('#s-mock').checked,
           rigctld_host: $('#s-rig-host').value.trim(),

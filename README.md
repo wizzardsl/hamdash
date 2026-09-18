@@ -359,6 +359,14 @@ A sync runs off the request thread and reports on the `log.sync` bus topic:
 a year of QSOs is a slow download, and a request handler blocking on it would
 hold one of the server's threads for the duration.
 
+## Units
+
+One setting, in Settings: kilometres, miles or nautical miles. Every card that
+shows a distance uses it — the path card, the map, the logbook readout — and
+they all show **one** distance. Printing km beside miles looks generous and
+is really the card declining to decide, leaving the reader to pick. Changing
+it takes effect immediately, with no reload.
+
 ## Filling in your grid
 
 Settings has two buttons under the grid field.

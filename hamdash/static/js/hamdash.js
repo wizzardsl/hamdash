@@ -35,6 +35,8 @@
       // canvas, or a library that writes colours into SVG attributes - needs
       // telling, because applying a theme is async and lands after boot.
       document.dispatchEvent(new CustomEvent('hamdash:theme', { detail: t }));
+      HD.units = cfg.units || 'km';
+      document.dispatchEvent(new CustomEvent('hamdash:units', { detail: HD.units }));
     } catch (e) {
       // Not silent: a card sitting in last week's colours with no clue why is
       // exactly the sort of thing an empty catch block hides for months.
@@ -230,6 +232,22 @@
       modes: () => HD.get('/api/radio/modes'),
     },
     lookup: (call) => HD.get(`/api/lookup/${encodeURIComponent(call)}`),
+
+    // One distance, in the operator's units, everywhere. Showing km and miles
+    // side by side asks the reader to pick, which is the card failing to
+    // decide rather than being helpful.
+    units: 'km',
+    distanceUnit() {
+      return { km: 'km', mi: 'mi', nmi: 'nmi' }[HD.units] || 'km';
+    },
+    fmtDistance(km, digits) {
+      if (km === undefined || km === null || Number.isNaN(km)) return '—';
+      const v = HD.units === 'mi' ? km * 0.621371
+              : HD.units === 'nmi' ? km * 0.539957 : km;
+      const d = digits === undefined ? (v < 100 ? 1 : 0) : digits;
+      return `${v.toLocaleString(undefined, { maximumFractionDigits: d })} `
+           + HD.distanceUnit();
+    },
     distance: (to, from) => HD.get('/api/grid/distance', from ? { to, from } : { to }),
     log: {
       recent: (limit) => HD.get('/api/log', { limit: limit || 25 }),

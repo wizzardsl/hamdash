@@ -47,7 +47,7 @@
 
 <div class="readout">
   <div>Distance<b id="km">—</b></div>
-  <div>Miles<b id="mi">—</b></div>
+  <div>Bearing<b id="brg">—</b></div>
   <div>Long path<b id="lp">—</b></div>
 </div>
 <p class="note" id="note"></p>
@@ -55,6 +55,10 @@
 <script src="/static/js/hamdash.js"></script>
 <script>
 HD.cardId = 'beacon_map';
+let lastPath = null, lastLabel = '', lastNote = null;
+// Units can change while the card is open.
+document.addEventListener('hamdash:units',
+  () => { if (lastPath) render(lastPath, lastLabel, lastNote); });
 const $ = (s) => document.querySelector(s);
 
 // minor ticks every 15°
@@ -78,9 +82,12 @@ function point(deg) {
 }
 
 function render(p, label, note) {
+  lastPath = p; lastLabel = label; lastNote = note;
   point(p.bearing);
-  $('#km').textContent = `${p.km.toLocaleString()} km`;
-  $('#mi').textContent = `${p.miles.toLocaleString()} mi`;
+  // One distance, in the operator's units. km beside miles just moves the
+  // conversion onto the reader.
+  $('#km').textContent = HD.fmtDistance(p.km);
+  $('#brg').textContent = `${p.bearing.toFixed(0)}° ${HD.bearingName(p.bearing)}`;
   $('#lp').textContent = `${((p.bearing + 180) % 360).toFixed(0)}°`;
   $('#note').className = 'note';
   $('#note').textContent = note || `${p.from.locator} → ${label}`;

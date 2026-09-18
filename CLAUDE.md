@@ -179,6 +179,10 @@ README and is guesswork as a result.
 
 ## The board UI
 
+- Distance is formatted in exactly one place, `HD.fmtDistance`, from
+  `config.units`. Cards must not print `km` themselves. `hamdash:units` fires
+  when it changes, for anything holding a rendered string.
+
 - **Cards are iframes: their own document.** Setting theme variables on the
   board's `documentElement` never reached them. `hamdash.js` themes whatever
   page loads it and re-themes on `config.changed`, which is in `bus.ALWAYS`

@@ -7,6 +7,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- A **distance units** setting — kilometres, miles or nautical miles — used by
+  every card that shows a distance. They now show one distance rather than km
+  beside miles, and changing it applies immediately.
+- The logbook shows the **logged frequency**, and every row has an eye button
+  opening all of that contact's recorded fields.
+- Clicking a logged contact while the whole log is on the map frames that
+  path; **Map all** now draws a line home from each contact.
 - **Map all** in the logbook plots every logged contact with a grid, as its
   own map layer.
 - **Push and auto-sync** in the logbook, shown only for a service that is set
@@ -59,6 +66,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- The dots from **Map all** shared the aurora layer's canvas renderer, so they
+  were tied to whether an unrelated layer was switched on and drawn on a
+  surface meant for a heat map. They have their own renderer now, and match
+  the station pins.
 - **Adding a seventh card broke the board.** Every card page opened its own
   event stream, and browsers allow about six connections per origin over
   HTTP/1.1, so the whole budget went on streams and the next request queued

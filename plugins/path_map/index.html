@@ -257,7 +257,7 @@ function popupFor(which) {
     add('Name', i.name);
     add('Country', i.country);
     if (i.path) {
-      add('Distance', `${i.path.km.toLocaleString()} km`);
+      add('Distance', HD.fmtDistance(i.path.km));
       add('Bearing', `${Math.round(i.path.bearing)}° ${HD.bearingName(i.path.bearing)}`);
       add('Long path', `${Math.round((i.path.bearing + 180) % 360)}°`);
     }
@@ -308,6 +308,13 @@ function fit() {
 
 function resetView() { touched = false; fit(); }
 
+function fitSelected() {
+  if (!map || !them) return;
+  const pts = [[them.lat, them.lon]];
+  if (me) pts.push([me.lat, me.lon]);
+  map.fitBounds(L.latLngBounds(pts), { padding: [35, 35], maxZoom: 7 });
+}
+
 // --- setup -------------------------------------------------------------------
 function build() {
   map = L.map('map', {
@@ -322,6 +329,10 @@ function build() {
   L_.auroraCanvas = L.canvas({ padding: 0.5 });
   L_.greyline = L.layerGroup();
   L_.logged = L.layerGroup();
+  // Its own renderer. Sharing the aurora's canvas tied the log's dots to
+  // whether a completely unrelated layer happened to be switched on, and put
+  // them on a surface drawn for a heat map rather than for markers.
+  L_.loggedCanvas = L.canvas({ padding: 0.3 });
   L_.aurora = L.layerGroup();
 
   L.control.layers(null, {
@@ -388,17 +399,26 @@ function plotLogged(stations) {
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   let shown = 0;
   const bounds = [];
+  if (me) bounds.push([me.lat, me.lon]);
   stations.forEach((st) => {
     const at = toLatLon(st.grid);
     if (!at) return;
     shown += 1;
     bounds.push([at.lat, at.lon]);
+    // A line home, the way the signal went. Thin and translucent so a big log
+    // reads as a fan from the station rather than a ball of string.
+    if (me) {
+      greatCircle(me, at).forEach((seg) => {
+        L.polyline(seg, { color: THEME.signal, weight: 1, opacity: 0.35,
+                          interactive: false }).addTo(L_.logged);
+      });
+    }
     const when = (st.date || '').length === 8
       ? `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}` : '';
     L.circleMarker([at.lat, at.lon], {
-      renderer: L_.auroraCanvas,      // canvas: a big log is thousands of dots
-      radius: 3.5, weight: 1, color: THEME.bg,
-      fillColor: THEME.signal, fillOpacity: 0.9,
+      renderer: L_.loggedCanvas,      // canvas: a big log is thousands of dots
+      radius: 5, weight: 1.5, color: THEME.bg,
+      fillColor: THEME.signal, fillOpacity: 1,
     }).bindPopup(`<h3>${esc(st.call)}</h3><dl>`
       + `<dt>Grid</dt><dd>${esc(st.grid)}</dd>`
       + (st.band ? `<dt>Band</dt><dd>${esc(st.band)}</dd>` : '')
@@ -445,18 +465,23 @@ function show(info) {
   $('#who').textContent = info.callsign || info.locator;
   const bits = [info.locator, info.country].filter(Boolean);
   if (info.path) {
-    bits.push(`${info.path.km.toLocaleString()} km`,
+    bits.push(HD.fmtDistance(info.path.km),
               `${Math.round(info.path.bearing)}° ${HD.bearingName(info.path.bearing)}`);
   }
   if (info.approximate) bits.push('approximate');
   $('#detail').textContent = bits.join(' · ');
   drawStation();
-  if (!touched) fit();
+  // While the whole log is on the map, picking a contact is browsing it, so
+  // frame the one just chosen even though the view has been touched. Without
+  // the log showing, leave a view the operator has moved where they put it.
+  if (!touched || map.hasLayer(L_.logged)) fitSelected();
 }
 
 HD.on('lookup.result', (p) => { if (p.callsign || p.locator) show(p); });
 // hamdash.js applies the theme asynchronously, so the values read at boot can
 // be the stylesheet's defaults. Rebuild when it says it has landed.
+document.addEventListener('hamdash:units', () => { if (lastInfo) show(lastInfo); });
+
 document.addEventListener('hamdash:theme', () => {
   readTheme();
   if (map) applyConf();

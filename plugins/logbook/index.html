@@ -20,7 +20,10 @@
   tbody tr { cursor: pointer; }
   tbody tr:hover td { background: var(--panel-2); }
   tbody tr.on td { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
-  .del { border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .row-acts { white-space: nowrap; }
+  .del, .eye { border: 0; background: none; color: var(--muted); cursor: pointer;
+               padding: 0 3px; font-size: 13px; }
+  .eye:hover { color: var(--accent); }
   .del:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
   .sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -34,6 +37,10 @@
   .sync-state { color: var(--muted); }
   .sync-state.warn { color: var(--alert); }
   .sync-state.good { color: var(--signal); }
+  .qso-dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+            margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; }
+  .qso-dl dt { color: var(--muted); }
+  .qso-dl dd { margin: 0; font-family: var(--mono); word-break: break-word; }
 </style>
 </head>
 <body>
@@ -57,9 +64,17 @@
 <p class="err" id="err"></p>
 
 <table>
-  <thead><tr><th>Call</th><th>Date</th><th>Band</th><th>Mode</th><th>Grid</th><th></th></tr></thead>
+  <thead><tr><th>Call</th><th>Date</th><th>Freq</th><th>Band</th><th>Mode</th><th>Grid</th><th></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
+
+<dialog id="qso-sheet" class="sheet">
+  <h2 id="qso-title">Contact</h2>
+  <dl id="qso-rows" class="qso-dl"></dl>
+  <footer class="sheet-foot">
+    <button class="btn" id="qso-close">Done</button>
+  </footer>
+</dialog>
 
 <div class="sync" id="sync" hidden>
   <span class="sync-label">Sync</span>
@@ -98,7 +113,7 @@ async function prefill(call) {
     const bits = [];
     if (info.name) bits.push(info.name);
     if (info.country) bits.push(info.country);
-    if (info.path) bits.push(`${info.path.km} km at ${info.path.bearing}° (${HD.bearingName(info.path.bearing)})`);
+    if (info.path) bits.push(`${HD.fmtDistance(info.path.km)} at ${Math.round(info.path.bearing)}° (${HD.bearingName(info.path.bearing)})`);
     const seen = (info.worked_before || []).length;
     if (seen) bits.push(`worked ${seen}× before`);
     $('#found').innerHTML = bits.length
@@ -116,7 +131,7 @@ async function select(qso, tr) {
                               qso.gridsquare ? { grid: qso.gridsquare } : undefined);
     const bits = [qso.call];
     if (info.locator) bits.push(info.locator);
-    if (info.path) bits.push(`${info.path.km.toLocaleString()} km at `
+    if (info.path) bits.push(`${HD.fmtDistance(info.path.km)} at `
                              + `${Math.round(info.path.bearing)}°`);
     $('#found').innerHTML = `<b>${qso.call}</b> · ${bits.slice(1).join(' · ')}`;
     $('#err').textContent = '';
@@ -143,6 +158,39 @@ $('#save').onclick = async () => {
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
 
 $('#adif').onclick = () => { window.location = '/api/log/adif'; };
+
+// ---- every field of one contact -------------------------------------------
+// The table shows what you scan; this shows what was actually recorded,
+// including whatever a sync brought back.
+const LABELS = {
+  call: 'Callsign', qso_date: 'Date', time_on: 'Time on', time_off: 'Time off',
+  freq: 'Frequency (MHz)', band: 'Band', mode: 'Mode',
+  rst_sent: 'RST sent', rst_rcvd: 'RST received', gridsquare: 'Grid',
+  name: 'Name', qth: 'QTH', country: 'Country', comment: 'Comment',
+  tx_pwr: 'Power (W)', my_callsign: 'My callsign', my_gridsquare: 'My grid',
+  qsl_sent: 'QSL sent', qsl_rcvd: 'QSL received',
+  qslsdate: 'QSL sent on', qslrdate: 'QSL received on',
+  lotw_qsl_sent: 'LoTW sent', lotw_qsl_rcvd: 'LoTW confirmed',
+  eqsl_qsl_rcvd: 'eQSL confirmed', dxcc: 'DXCC', state: 'State',
+  cnty: 'County', cqz: 'CQ zone', ituz: 'ITU zone', id: 'Record',
+};
+
+function showDetails(qso) {
+  $('#qso-title').textContent = qso.call || 'Contact';
+  const dl = $('#qso-rows');
+  dl.innerHTML = '';
+  Object.keys(LABELS).forEach((k) => {
+    const v = qso[k];
+    if (v === undefined || v === null || String(v).trim() === '') return;
+    const dt = document.createElement('dt');
+    dt.textContent = LABELS[k];
+    const dd = document.createElement('dd');
+    dd.textContent = String(v);
+    dl.append(dt, dd);
+  });
+  $('#qso-sheet').showModal();
+}
+$('#qso-close').onclick = () => $('#qso-sheet').close();
 
 // ---- put the whole log on the map -----------------------------------------
 // Published rather than drawn: the map card owns the drawing, and this card
@@ -233,14 +281,19 @@ async function refresh() {
   $('#rows').innerHTML = '';
   rows.forEach((r) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="c"></td><td class="mono"></td><td></td><td></td>
-                    <td class="mono"></td><td><button class="del">✕</button></td>`;
+    tr.innerHTML = `<td class="c"></td><td class="mono"></td><td class="mono"></td>
+                    <td></td><td></td><td class="mono"></td>
+                    <td class="row-acts"><button class="eye" title="All the details">◉</button>
+                    <button class="del" title="Remove this contact">✕</button></td>`;
     const cells = tr.querySelectorAll('td');
     cells[0].textContent = r.call;
     cells[1].textContent = `${r.qso_date.slice(4, 6)}-${r.qso_date.slice(6, 8)} ${r.time_on.slice(0, 4)}`;
-    cells[2].textContent = r.band || '';
-    cells[3].textContent = r.mode || '';
-    cells[4].textContent = r.gridsquare || '';
+    // Frequency is what you were actually on; band is a bucket it falls into.
+    cells[2].textContent = r.freq ? Number(r.freq).toFixed(3) : '';
+    cells[3].textContent = r.band || '';
+    cells[4].textContent = r.mode || '';
+    cells[5].textContent = r.gridsquare || '';
+    tr.querySelector('.eye').onclick = (e) => { e.stopPropagation(); showDetails(r); };
     // Clicking a contact makes it the one every other card is looking at.
     // The lookup publishes lookup.result, which the map and the path card
     // already follow, so nothing here needs to know they exist.
