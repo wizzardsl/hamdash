@@ -58,7 +58,6 @@
 <div class="actions">
   <button class="btn" id="save">Log it</button>
   <button class="btn btn-quiet" id="adif">Export ADIF</button>
-  <button class="btn btn-quiet" id="plot-all" title="Put every logged contact with a grid on the map">Map all</button>
   <span class="found" id="found"></span>
 </div>
 <p class="err" id="err"></p>
@@ -80,11 +79,11 @@
   <span class="sync-label">Sync</span>
   <span class="sync-svc" id="sync-lotw" hidden>
     <button class="btn btn-quiet" data-push="lotw">Push LoTW</button>
-    <label><input type="checkbox" data-auto="lotw"> auto</label>
+    <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="lotw"> auto</label>
   </span>
   <span class="sync-svc" id="sync-qrz" hidden>
     <button class="btn btn-quiet" data-push="qrz">Push QRZ</button>
-    <label><input type="checkbox" data-auto="qrz"> auto</label>
+    <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="qrz"> auto</label>
   </span>
   <span class="sync-state" id="sync-state"></span>
 </div>
@@ -194,21 +193,9 @@ function showDetails(qso) {
 }
 $('#qso-close').onclick = () => $('#qso-sheet').close();
 
-// ---- put the whole log on the map -----------------------------------------
-// Published rather than drawn: the map card owns the drawing, and this card
-// has no business knowing whether a map is even on the board.
-$('#plot-all').onclick = async () => {
-  try {
-    const rows = await HD.log.recent(5000);
-    const stations = rows
-      .filter((r) => (r.gridsquare || '').trim())
-      .map((r) => ({ call: r.call, grid: r.gridsquare, band: r.band,
-                     mode: r.mode, date: r.qso_date, iso: r.iso }));
-    await HD.publish('logbook.plot', { stations });
-    $('#err').textContent = stations.length ? ''
-      : 'No logged contact has a grid square, so there is nothing to plot.';
-  } catch (e) { $('#err').textContent = e.message; }
-};
+// Plotting the log lives in the map card now: it is the card that draws it,
+// so it is the card that fetches it. A button here that pushed data at a card
+// which might not even be on the board was a second way to do one thing.
 
 // ---- sync -----------------------------------------------------------------
 // The buttons exist only for a service that is actually set up. An auto
@@ -255,6 +242,19 @@ async function pushNew(name, quiet) {
 
 function setAuto(name, on) {
   clearInterval(autoTimers[name]);
+  if (on) {
+    // One destination at a time. Two automatic syncs would push the same new
+    // contacts to both services and pull from both into the same log, racing
+    // each other over what counts as already there - and a confirmation
+    // arriving from one would be re-uploaded to the other on the next round.
+    document.querySelectorAll('[data-auto]').forEach((other) => {
+      const who = other.dataset.auto;
+      if (who === name || !other.checked) return;
+      other.checked = false;
+      clearInterval(autoTimers[who]);
+      syncState(`auto sync moved to ${name.toUpperCase()}`);
+    });
+  }
   if (!on) { syncState(''); refreshSync(); return; }
   const round = async () => {
     await pushNew(name, true);

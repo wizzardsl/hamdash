@@ -15,6 +15,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - A **country flag beside every callsign**, from its prefix, carried through
   the log, the contact details, the map popups and the path card. Flags are
   bundled rather than fetched from a CDN.
+- The map's **Logged contacts** layer fetches the log itself, so ticking the
+  box is the whole gesture. The logbook's separate "Map all" button is gone.
 - A **distance units** setting — kilometres, miles or nautical miles — used by
   every card that shows a distance. They now show one distance rather than km
   beside miles, and changing it applies immediately.
@@ -74,6 +76,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- Auto sync could be switched on for LoTW and QRZ at once, which would have
+  uploaded every new contact to both and then re-uploaded each service's
+  confirmations to the other. It is now one at a time.
+- The greyline's subsolar point was drawn as a plain dot and read as another
+  station. It is a sun.
 - Map lines that crossed the antimeridian ended in mid-ocean with no dot: the
   great circle was split into two polylines, so one stopped at ±180 with no
   station there and the real end was on the other side of the map. Longitudes

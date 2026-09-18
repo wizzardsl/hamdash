@@ -17,8 +17,7 @@
     "lookup"
   ],
   "publishes": [
-    "logbook.saved",
-    "logbook.plot"
+    "logbook.saved"
   ],
   "subscribes": [
     "log.qso_added",

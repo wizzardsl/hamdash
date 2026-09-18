@@ -12,12 +12,14 @@
   "min_h": 3,
   "permissions": [
     "lookup",
-    "space"
+    "space",
+    "log"
   ],
   "subscribes": [
     "lookup.result",
     "config.changed",
-    "logbook.plot"
+    "log.qso_added",
+    "log.qso_deleted"
   ],
   "settings": {
     "basemap": {

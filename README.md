@@ -322,6 +322,9 @@ one.
 - **Greyline** — the day/night terminator and the subsolar point, worked out in
   the browser from the clock. No network, no service, no provider. Verified
   against the solstices and the equinox.
+- **Logged contacts** — every contact in your log that has a grid, each with a
+  line home. Ticking the layer fetches the log; unticking drops it. Click a
+  dot for the contact, or a row in the logbook to frame that path.
 - **Absorption (D-RAP)** — NOAA's D-region absorption, as the highest
   frequency being absorbed. An empty layer is the good news: most of the time
   the ionosphere is undisturbed, and the card says so rather than looking like
@@ -366,6 +369,11 @@ what it was doing.
 **The QRZ logbook API key is not your QRZ password.** It is per logbook, from
 that logbook's own settings page at logbook.qrz.com, and QRZ gates the API
 behind a subscription.
+
+**Auto sync runs to one service, not both.** Ticking auto on one unticks the
+other. Two automatic syncs would push the same new contacts to both and pull
+from both into the same log, and a confirmation arriving from one would be
+uploaded to the other on the next round.
 
 **Uploads default to a dry run.** Push counts what it would send and sends
 nothing until you untick it, and "Only QSOs from" narrows it to a date. There

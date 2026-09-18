@@ -238,6 +238,10 @@ shape it settled on is worth reusing:
 
 ## Logbook sync
 
+- **Auto sync is exclusive.** Only one service may be automatic at a time;
+  ticking one unticks the other. Both running would upload the same contacts
+  twice and then re-upload each other's confirmations on the next round.
+
 - **LoTW push has no API.** ARRL takes signed `.tq8` only, and the certificate
   is inside TQSL. `Lotw.push` shells out to TQSL or refuses with what to do.
   Don't "simplify" this into an HTTP POST; there isn't one.
