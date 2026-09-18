@@ -7,6 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Settings is in tabs** — Station, Display, Integrations, Radio — instead of
+  one form that grew with every feature. Theme moved in beside distance units
+  under Display; the quick picker in the top bar still works and the two stay
+  in step.
+- The **log table pages**, newest contact first, with a size picker (10 to 250,
+  or all) that defaults to 30 and is remembered per tile. Paging and ordering
+  both happen in the host, so a page is a real page rather than the top of an
+  unsorted slice. `GET /api/log/page` returns the rows plus the total.
+- **Test lookup** in Settings → Integrations: one deliberate attempt at the
+  configured provider, which also clears a remembered refusal.
+- Under **Automatic**, a field saying which service the username and password
+  belong to. It used to guess HamQTH, which posted a QRZ password to a company
+  that never asked for it and spent a failed login doing it.
 - A **station panel** above the log table, filled as you type a callsign:
   name, country and state with a flag, distance, bearing, how many times you
   have worked them, and the notes from those contacts.
@@ -86,6 +99,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **A rejected callsign lookup login is no longer retried on every lookup.**
+  Typing a callsign fires a lookup every few characters, and each one re-tried
+  the same bad password: QRZ and HamQTH both lock an account after a handful of
+  those, so one typo in the password locked you out for hours. A refusal is now
+  remembered — until the provider's own `blocked until` time if it gives one,
+  otherwise 15 minutes — and saving new credentials or pressing Test tries
+  again. Logins are also serialised, so several cards missing the cache at once
+  open one session between them instead of one each.
+- HamQTH and QRZ no longer share one session id, which logged you out of
+  whichever you used second.
 - **Saved passwords and API keys were destroyed by unrelated settings saves.**
   `/api/config` replaced the callsign lookup password with the literal `"***"`
   so the form had something to display; the form loaded it into the field and

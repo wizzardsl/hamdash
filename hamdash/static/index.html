@@ -61,87 +61,126 @@
 </dialog>
 
 <dialog id="settings-sheet" class="sheet">
-  <h2>Station</h2>
-  <label>Callsign <input id="s-call" class="mono" spellcheck="false"></label>
-  <label>Grid locator <input id="s-grid" class="mono" spellcheck="false"
-         placeholder="DO10ab"></label>
-  <div class="row-btns">
-    <button class="btn btn-quiet" id="s-geo" type="button">Use my location</button>
-    <button class="btn btn-quiet" id="s-from-call" type="button">From my callsign</button>
-  </div>
-  <p class="sheet-note" id="s-grid-note"></p>
-  <label>Operator name <input id="s-op"></label>
-  <label>Distance units
-    <select id="s-units">
-      <option value="km">Kilometres</option>
-      <option value="mi">Miles</option>
-      <option value="nmi">Nautical miles</option>
-    </select>
-  </label>
+  <nav class="tabs" role="tablist" aria-label="Settings sections">
+    <button type="button" class="tab on" role="tab" data-tab="station"
+            aria-selected="true">Station</button>
+    <button type="button" class="tab" role="tab" data-tab="display"
+            aria-selected="false">Display</button>
+    <button type="button" class="tab" role="tab" data-tab="integrations"
+            aria-selected="false">Integrations</button>
+    <button type="button" class="tab" role="tab" data-tab="radio"
+            aria-selected="false">Radio</button>
+  </nav>
 
-  <h2>Callsign lookup</h2>
-  <label>Provider
-    <select id="s-lk-provider">
-      <option value="auto">Automatic — free sources first, then your account</option>
-      <option value="callook">callook — free, no account, US only</option>
-      <option value="hamdb">HamDB — free, no account, US and Canada</option>
-      <option value="hamqth">HamQTH — free account, worldwide</option>
-      <option value="qrz">QRZ.com — account plus a paid XML subscription</option>
-      <option value="offline">Offline — built-in prefix table only</option>
-    </select>
-  </label>
-  <label>Username <input id="s-lk-user" spellcheck="false" autocomplete="off"></label>
-  <label>Password <input id="s-lk-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
-  <p class="sheet-note">
-    <strong>Automatic</strong> needs no account: callook and HamDB between them
-    cover US and Canadian callsigns for free. Anywhere else needs an account —
-    a <a href="https://www.hamqth.com/register.php" target="_blank" rel="noopener">free
-    HamQTH one</a> is enough. QRZ's
-    <a href="https://www.qrz.com/page/xml_data.html" target="_blank" rel="noopener">XML
-    interface</a> is a paid add-on; without it QRZ refuses the session and
-    hamdash shows you exactly what it said.
-    <a href="https://lotw.arrl.org/" target="_blank" rel="noopener">LoTW</a> is
-    a QSL confirmation service, not a callsign directory — it has no public
-    lookup, so it can't fill your grid in.
-  </p>
-  <h2>Logbook sync</h2>
-  <label>LoTW username <input id="s-lotw-user" spellcheck="false" autocomplete="off"></label>
-  <label>LoTW password <input id="s-lotw-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
-  <div class="row-btns">
-    <button class="btn btn-quiet" id="s-lotw-test" type="button">Test connection</button>
-    <button class="btn btn-quiet" id="s-lotw-pull" type="button">Pull from LoTW</button>
-    <button class="btn btn-quiet" id="s-lotw-push" type="button">Push to LoTW</button>
-  </div>
-  <p class="sheet-note" id="s-lotw-note"></p>
+  <div class="tab-body">
+  <section class="tab-panel" data-panel="station" role="tabpanel">
+    <label>Callsign <input id="s-call" class="mono" spellcheck="false"></label>
+    <label>Grid locator <input id="s-grid" class="mono" spellcheck="false"
+           placeholder="DO10ab"></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="s-geo" type="button">Use my location</button>
+      <button class="btn btn-quiet" id="s-from-call" type="button">From my callsign</button>
+    </div>
+    <p class="sheet-note" id="s-grid-note"></p>
+    <label>Operator name <input id="s-op"></label>
+  </section>
 
-  <label>QRZ logbook API key <input id="s-qrz-key" class="mono" spellcheck="false"
-         autocomplete="off" placeholder="from logbook.qrz.com, not your password"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
-  <div class="row-btns">
-    <button class="btn btn-quiet" id="s-qrz-test" type="button">Test connection</button>
-    <button class="btn btn-quiet" id="s-qrz-pull" type="button">Pull from QRZ</button>
-    <button class="btn btn-quiet" id="s-qrz-push" type="button">Push to QRZ</button>
-  </div>
-  <p class="sheet-note" id="s-qrz-note"></p>
-  <div class="row-btns">
-    <label class="inline"><input type="checkbox" id="s-sync-dry" checked>
-      Dry run — count what would be sent, send nothing</label>
-    <label class="inline">Only QSOs from
-      <input id="s-sync-since" class="mono" placeholder="YYYYMMDD" size="8"></label>
-  </div>
-  <p class="sheet-note">Save credentials before syncing. Pulling never
-    duplicates what you already have — a matching contact is updated with
-    whatever the other log knows, so confirmations land on the QSO they belong
-    to. <strong>LoTW uploads must be signed by
-    <a href="https://www.arrl.org/tqsl-download" target="_blank" rel="noopener">TQSL</a></strong>,
-    which holds your certificate; a password cannot stand in for it, so
-    "Push to LoTW" hands your log to TQSL if it is installed and tells you
-    what to do if it isn't.</p>
+  <section class="tab-panel" data-panel="display" role="tabpanel" hidden>
+    <label>Theme <select id="s-theme"></select></label>
+    <label>Distance units
+      <select id="s-units">
+        <option value="km">Kilometres</option>
+        <option value="mi">Miles</option>
+        <option value="nmi">Nautical miles</option>
+      </select>
+    </label>
+    <p class="sheet-note">Every card shows distances your way, so the log, the
+      map and the bearing panel never disagree about how far away somebody is.
+      The theme applies to the board and to every card on it.</p>
+  </section>
 
-  <h2>Radio</h2>
-  <label class="row"><input type="checkbox" id="s-mock"> Use a simulated rig (no hardware)</label>
-  <label>rigctld host <input id="s-rig-host" class="mono" spellcheck="false"></label>
-  <label>rigctld port <input id="s-rig-port" class="mono" inputmode="numeric"></label>
-  <p class="sheet-note">Radio changes take effect when HamDash restarts.</p>
+  <section class="tab-panel" data-panel="integrations" role="tabpanel" hidden>
+    <h3>Callsign lookup</h3>
+    <label>Provider
+      <select id="s-lk-provider">
+        <option value="auto">Automatic — free sources first, then your account</option>
+        <option value="callook">callook — free, no account, US only</option>
+        <option value="hamdb">HamDB — free, no account, US and Canada</option>
+        <option value="hamqth">HamQTH — free account, worldwide</option>
+        <option value="qrz">QRZ.com — account plus a paid XML subscription</option>
+        <option value="offline">Offline — built-in prefix table only</option>
+      </select>
+    </label>
+    <label id="s-lk-account-row" hidden>Account these credentials belong to
+      <select id="s-lk-account">
+        <option value="">None — free sources only</option>
+        <option value="hamqth">HamQTH</option>
+        <option value="qrz">QRZ.com</option>
+      </select>
+    </label>
+    <label>Username <input id="s-lk-user" spellcheck="false" autocomplete="off"></label>
+    <label>Password <input id="s-lk-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="s-lk-test" type="button">Test lookup</button>
+    </div>
+    <p class="sheet-note" id="s-lk-note"></p>
+    <p class="sheet-note">
+      <strong>Automatic</strong> needs no account: callook and HamDB between them
+      cover US and Canadian callsigns for free. Anywhere else needs an account —
+      a <a href="https://www.hamqth.com/register.php" target="_blank" rel="noopener">free
+      HamQTH one</a> is enough. QRZ's
+      <a href="https://www.qrz.com/page/xml_data.html" target="_blank" rel="noopener">XML
+      interface</a> is a paid add-on; without it QRZ refuses the session and
+      hamdash shows you exactly what it said. A rejected login is not retried
+      until you save new credentials or press Test, because these services lock
+      an account out after a few failures.
+      <a href="https://lotw.arrl.org/" target="_blank" rel="noopener">LoTW</a> is
+      a QSL confirmation service, not a callsign directory — it has no public
+      lookup, so it can't fill your grid in.
+    </p>
+
+    <h3>Logbook sync</h3>
+    <label>LoTW username <input id="s-lotw-user" spellcheck="false" autocomplete="off"></label>
+    <label>LoTW password <input id="s-lotw-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="s-lotw-test" type="button">Test connection</button>
+      <button class="btn btn-quiet" id="s-lotw-pull" type="button">Pull from LoTW</button>
+      <button class="btn btn-quiet" id="s-lotw-push" type="button">Push to LoTW</button>
+    </div>
+    <p class="sheet-note" id="s-lotw-note"></p>
+
+    <label>QRZ logbook API key <input id="s-qrz-key" class="mono" spellcheck="false"
+           autocomplete="off" placeholder="from logbook.qrz.com, not your password"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="s-qrz-test" type="button">Test connection</button>
+      <button class="btn btn-quiet" id="s-qrz-pull" type="button">Pull from QRZ</button>
+      <button class="btn btn-quiet" id="s-qrz-push" type="button">Push to QRZ</button>
+    </div>
+    <p class="sheet-note" id="s-qrz-note"></p>
+    <div class="row-btns">
+      <label class="inline"><input type="checkbox" id="s-sync-dry" checked>
+        Dry run — count what would be sent, send nothing</label>
+      <label class="inline">Only QSOs from
+        <input id="s-sync-since" class="mono" placeholder="YYYYMMDD" size="8"></label>
+    </div>
+    <p class="sheet-note">Save credentials before syncing. Pulling never
+      duplicates what you already have — a matching contact is updated with
+      whatever the other log knows, so confirmations land on the QSO they belong
+      to. <strong>LoTW uploads must be signed by
+      <a href="https://www.arrl.org/tqsl-download" target="_blank" rel="noopener">TQSL</a></strong>,
+      which holds your certificate; a password cannot stand in for it, so
+      "Push to LoTW" hands your log to TQSL if it is installed and tells you
+      what to do if it isn't.</p>
+  </section>
+
+  <section class="tab-panel" data-panel="radio" role="tabpanel" hidden>
+    <label class="row"><input type="checkbox" id="s-mock"> Use a simulated rig (no hardware)</label>
+    <label>rigctld host <input id="s-rig-host" class="mono" spellcheck="false"></label>
+    <label>rigctld port <input id="s-rig-port" class="mono" inputmode="numeric"></label>
+    <p class="sheet-note">Radio changes take effect when HamDash restarts.</p>
+  </section>
+  </div>
+
   <footer class="sheet-foot">
     <button class="btn btn-quiet" id="settings-cancel">Cancel</button>
     <button class="btn" id="settings-save">Save</button>

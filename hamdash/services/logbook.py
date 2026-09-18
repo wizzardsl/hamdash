@@ -179,6 +179,29 @@ class Logbook:
                 "OR name LIKE ? ORDER BY id DESC LIMIT ?",
                 (like, like, like, int(limit)))]
 
+    def page(self, q: str = "", limit: int = 30, offset: int = 0) -> dict:
+        """One page of the log, newest contact first, plus how many there are.
+
+        Ordered by when the QSO happened rather than by row id: an imported
+        log arrives in whatever order its file had, and paging by id would
+        then hand out rows the caller has to re-sort - which silently drops
+        contacts off the end of every page but the last.
+        """
+        where, args = "", []
+        if (q or "").strip():
+            like = f"%{q.strip().upper()}%"
+            where = "WHERE call LIKE ? OR gridsquare LIKE ? OR name LIKE ? "
+            args = [like, like, like]
+        order = "ORDER BY qso_date DESC, time_on DESC, id DESC "
+        with self._conn() as db:
+            total = db.execute(f"SELECT COUNT(*) FROM qso {where}",
+                               args).fetchone()[0]
+            rows = [dict(r) for r in db.execute(
+                f"SELECT * FROM qso {where}{order}LIMIT ? OFFSET ?",
+                [*args, int(limit), max(0, int(offset))])]
+        return {"rows": rows, "total": total,
+                "limit": int(limit), "offset": max(0, int(offset))}
+
     def since(self, date: str = "", limit: int = 10 ** 7) -> list[dict]:
         """QSOs on or after an ADIF date (YYYYMMDD), oldest first.
 

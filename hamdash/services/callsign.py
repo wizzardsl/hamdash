@@ -20,8 +20,11 @@ sitting in the middle of its own country, which is worse than an error.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 import sqlite3
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -33,6 +36,30 @@ QRZ_NS = "{http://xmldata.qrz.com}"
 
 class Refused(Exception):
     """The provider answered, and the answer was no. Says why."""
+
+
+# QRZ locks an account out after a few rejected logins and says until when.
+# Reading that back means we wait exactly that long instead of guessing, and
+# never spend an attempt inside a window it has already told us is closed.
+BLOCKED_UNTIL = re.compile(
+    r"blocked until\s+(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})",
+    re.I)
+# How long a rejected login is believed when the provider does not say. Long
+# enough that a wrong password costs one attempt rather than one per keystroke,
+# short enough that fixing it is not punished for the rest of the afternoon.
+AUTH_COOLDOWN = 900.0
+
+
+def _blocked_until(message: str) -> float:
+    """The unix time a provider said it stays blocked until, or 0."""
+    m = BLOCKED_UNTIL.search(message or "")
+    if not m:
+        return 0.0
+    try:
+        when = dt.datetime(*(int(x) for x in m.groups()), tzinfo=dt.timezone.utc)
+    except ValueError:
+        return 0.0
+    return when.timestamp()
 
 # Short on purpose: replace with a cty.dat parser when you want real DXCC.
 PREFIX = {
@@ -66,19 +93,57 @@ PREFIX = {
 
 class Lookup:
     def __init__(self, provider: str = "callook", user: str = "",
-                 password: str = "", cache_path=None, cache_days: int = 30) -> None:
+                 password: str = "", cache_path=None, cache_days: int = 30,
+                 account: str = "") -> None:
         self.provider = provider
         self.user = user
         self.password = password
-        # Which account provider `auto` should reach for. QRZ only pays off
-        # with a subscription, so it is opt-in by naming it explicitly.
-        self.qrz_first = provider == "qrz"
+        # Whose account the username and password are. Naming a provider
+        # outright is itself the answer; `auto` has to be told, because the
+        # credentials for one service are useless and unwelcome at another.
+        self.account = account if provider == "auto" else provider
         self.cache_path = cache_path
         self.ttl = cache_days * 86400
-        self._session_id: str | None = None
-        self._session_at = 0.0
+        # Per provider, because hamqth and qrz issue different session ids and
+        # handing one service the other's key logs you out of both.
+        self._session: dict[str, tuple[str, float]] = {}
+        # A login that was rejected, and until when to believe it. Without
+        # this every lookup re-attempts the same bad password: type six
+        # characters of a callsign and you have spent several failed logins,
+        # which is how a wrong password turns into a locked account.
+        self._refused: dict[str, tuple[float, str]] = {}
+        # One login at a time. Several waitress threads can miss the cache at
+        # once, and each would otherwise open a session of its own.
+        self._auth = threading.Lock()
         if cache_path:
             self._db().close()
+
+    # ---------------------------------------------------------------- session
+    def _key(self, name: str) -> str | None:
+        """The live session key for `name`, or None if it needs a new one."""
+        got = self._session.get(name)
+        return got[0] if got and time.time() - got[1] < 3000 else None
+
+    def _check_block(self, name: str) -> None:
+        """Refuse without touching the network if the last login was rejected."""
+        got = self._refused.get(name)
+        if not got:
+            return
+        until, msg = got
+        if time.time() >= until:
+            self._refused.pop(name, None)
+            return
+        raise Refused(msg)
+
+    def _reject(self, name: str, msg: str) -> None:
+        """Remember that a login was refused, and for how long. Always raises."""
+        self._refused[name] = (_blocked_until(msg) or time.time() + AUTH_COOLDOWN,
+                               msg)
+        raise Refused(msg)
+
+    def retry_auth(self) -> None:
+        """Forget rejected logins, so an explicit test tries again right now."""
+        self._refused.clear()
 
     # ------------------------------------------------------------------ cache
     def _db(self) -> sqlite3.Connection:
@@ -168,23 +233,30 @@ class Lookup:
         """
         if not (self.user and self.password):
             raise Refused("QRZ needs a username and password "
-                          "(Settings -> callsign lookup)")
-        if not self._session_id or time.time() - self._session_at > 3000:
-            r = requests.get("https://xmldata.qrz.com/xml/current/",
-                             params={"username": self.user,
-                                     "password": self.password,
-                                     "agent": "hamdash"}, timeout=8)
-            root = ET.fromstring(r.text)
-            err = root.find(f".//{QRZ_NS}Error")
-            key = root.find(f".//{QRZ_NS}Key")
-            if key is None or not key.text:
-                raise Refused(
-                    (err.text or "").strip() if err is not None and err.text
-                    else "QRZ did not return a session key")
-            self._session_id, self._session_at = key.text, time.time()
+                          "(Settings -> Integrations -> callsign lookup)")
+        self._check_block("qrz")
+        sid = self._key("qrz")
+        if not sid:
+            with self._auth:
+                sid = self._key("qrz")          # another thread may have won
+                if not sid:
+                    self._check_block("qrz")
+                    r = requests.get("https://xmldata.qrz.com/xml/current/",
+                                     params={"username": self.user,
+                                             "password": self.password,
+                                             "agent": "hamdash"}, timeout=8)
+                    root = ET.fromstring(r.text)
+                    err = root.find(f".//{QRZ_NS}Error")
+                    key = root.find(f".//{QRZ_NS}Key")
+                    if key is None or not key.text:
+                        self._reject("qrz", (err.text or "").strip()
+                                     if err is not None and err.text
+                                     else "QRZ did not return a session key")
+                    sid = key.text
+                    self._session["qrz"] = (sid, time.time())
 
         r = requests.get("https://xmldata.qrz.com/xml/current/",
-                         params={"s": self._session_id, "callsign": call},
+                         params={"s": sid, "callsign": call},
                          timeout=8)
         root = ET.fromstring(r.text)
         err = root.find(f".//{QRZ_NS}Error")
@@ -192,7 +264,7 @@ class Lookup:
         if node is None:
             text = (err.text or "").strip() if err is not None and err.text else ""
             if "session" in text.lower() or "timeout" in text.lower():
-                self._session_id = None        # expired: next call re-auths
+                self._session.pop("qrz", None)  # expired: next call re-auths
                 return None
             if text and "not found" not in text.lower():
                 raise Refused(f"QRZ: {text}")
@@ -213,21 +285,34 @@ class Lookup:
     def _hamqth(self, call: str) -> dict | None:
         if not (self.user and self.password):
             return None
-        if not self._session_id or time.time() - self._session_at > 3000:
-            r = requests.get("https://www.hamqth.com/xml.php",
-                             params={"u": self.user, "p": self.password}, timeout=8)
-            root = ET.fromstring(r.text)
-            sid = root.find(f".//{HAMQTH_NS}session_id")
-            if sid is None or not sid.text:
-                return None
-            self._session_id, self._session_at = sid.text, time.time()
+        self._check_block("hamqth")
+        sid = self._key("hamqth")
+        if not sid:
+            with self._auth:
+                sid = self._key("hamqth")
+                if not sid:
+                    self._check_block("hamqth")
+                    r = requests.get(
+                        "https://www.hamqth.com/xml.php",
+                        params={"u": self.user, "p": self.password}, timeout=8)
+                    root = ET.fromstring(r.text)
+                    node = root.find(f".//{HAMQTH_NS}session_id")
+                    if node is None or not node.text:
+                        # HamQTH blocks an account that keeps failing to log
+                        # in, so a silent retry here is the expensive kind.
+                        err = root.find(f".//{HAMQTH_NS}error")
+                        self._reject("hamqth", (err.text or "").strip()
+                                     if err is not None and err.text
+                                     else "HamQTH refused the login")
+                    sid = node.text
+                    self._session["hamqth"] = (sid, time.time())
         r = requests.get("https://www.hamqth.com/xml.php",
-                         params={"id": self._session_id, "callsign": call,
+                         params={"id": sid, "callsign": call,
                                  "prg": "hamdash"}, timeout=8)
         root = ET.fromstring(r.text)
         search = root.find(f".//{HAMQTH_NS}search")
         if search is None:
-            self._session_id = None            # expired session: next call re-auths
+            self._session.pop("hamqth", None)   # expired: next call re-auths
             return None
         g = {child.tag.replace(HAMQTH_NS, ""): (child.text or "") for child in search}
         return {
@@ -264,8 +349,12 @@ class Lookup:
         if self.provider != "auto":
             return [self.provider]
         chain = ["callook", "hamdb"]
-        if self.user and self.password:
-            chain.append("qrz" if self.qrz_first else "hamqth")
+        # Only reach for the account provider the credentials were entered
+        # for. Guessing would post a QRZ password to HamQTH, which is both a
+        # credential handed to the wrong company and a failed login on an
+        # account that locks after a few of those.
+        if self.account in ("qrz", "hamqth") and self.user and self.password:
+            chain.append(self.account)
         return chain
 
     def _run(self, call: str):

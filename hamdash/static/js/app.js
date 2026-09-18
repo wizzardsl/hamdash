@@ -57,6 +57,7 @@
       document.documentElement.style.setProperty(k, v);
     });
     $('#theme-pick').value = t.id;
+    $('#s-theme').value = t.id;
   }
 
   // ---- board ----------------------------------------------------------
@@ -455,11 +456,29 @@
   });
 
   // ---- settings -------------------------------------------------------
+  // Tabs. The panel is picked by name rather than by index so reordering the
+  // strip in the markup cannot silently point a tab at the wrong section.
+  function showTab(name) {
+    document.querySelectorAll('#settings-sheet .tab').forEach((b) => {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    document.querySelectorAll('#settings-sheet .tab-panel').forEach((p) => {
+      p.hidden = p.dataset.panel !== name;
+    });
+    $('.tab-body').scrollTop = 0;
+  }
+  document.querySelectorAll('#settings-sheet .tab').forEach((b) => {
+    b.onclick = () => showTab(b.dataset.tab);
+  });
+
   function fillSettings() {
     $('#s-call').value = config.station.callsign || '';
     $('#s-grid').value = config.station.grid || '';
     $('#s-op').value = config.station.operator || '';
     $('#s-units').value = config.units || 'km';
+    $('#s-theme').value = config.theme || (themes[0] || {}).id || '';
     $('#s-mock').checked = !!config.radio.mock;
     $('#s-rig-host').value = config.radio.rigctld_host || '';
     $('#s-rig-port').value = config.radio.rigctld_port || 4532;
@@ -470,11 +489,47 @@
     refreshSync();
     const lk = config.callsign_lookup || {};
     $('#s-lk-provider').value = lk.provider || 'callook';
+    $('#s-lk-account').value = lk.account || '';
+    lookupNote('');
+    refreshLookup();
     $('#s-lk-user').value = lk.user || '';
     // Secrets are never sent to us, so the box starts empty and only says
     // whether one is stored. Leaving it alone keeps whatever is there.
     secretBox('#s-lk-pass', 'callsign_lookup.password');
     gridNote('');
+    showTab('station');
+  }
+
+  // ---- callsign lookup -------------------------------------------------
+  function lookupNote(msg, kind) {
+    const n = $('#s-lk-note');
+    n.textContent = msg;
+    n.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
+  // Which service the username and password are for only needs asking under
+  // `auto`; naming a provider outright has already answered it.
+  function refreshLookup() {
+    $('#s-lk-account-row').hidden = $('#s-lk-provider').value !== 'auto';
+  }
+  $('#s-lk-provider').onchange = refreshLookup;
+
+  $('#s-lk-test').onclick = async (e) => {
+    e.target.disabled = true;
+    lookupNote('Looking up\u2026');
+    try {
+      // Saved first, or the test would check whatever was configured last
+      // time rather than what is on screen.
+      await saveSettings({ quiet: true });
+      const r = await HD.post('/api/lookup/test', {});
+      lookupNote(`${r.source || r.provider} answered for ${r.callsign}`
+        + `${r.name ? `: ${r.name}` : ''}${r.locator ? ` (${r.locator})` : ''}`,
+        'ok');
+    } catch (err) {
+      lookupNote(err.message, 'warn');
+    } finally {
+      e.target.disabled = false;
+    }
   }
 
   // ---- filling in the grid --------------------------------------------
@@ -547,33 +602,46 @@
   };
   $('#settings').onclick = () => { fillSettings(); $('#settings-sheet').showModal(); };
   $('#settings-cancel').onclick = () => $('#settings-sheet').close();
-  $('#settings-save').onclick = async () => {
-    try {
-      await HD.put('/api/config', {
-        station: {
-          callsign: $('#s-call').value.trim().toUpperCase(),
-          grid: $('#s-grid').value.trim().toUpperCase(),
-          operator: $('#s-op').value.trim(),
-        },
-        units: $('#s-units').value,
-        radio: {
-          mock: $('#s-mock').checked,
-          rigctld_host: $('#s-rig-host').value.trim(),
-          rigctld_port: Number($('#s-rig-port').value) || 4532,
-        },
-        callsign_lookup: withSecret({
-          provider: $('#s-lk-provider').value,
-          user: $('#s-lk-user').value.trim(),
-        }, 'password', '#s-lk-pass'),
-        logbook_sync: withSecret(withSecret({
-          lotw_user: $('#s-lotw-user').value.trim(),
-        }, 'lotw_password', '#s-lotw-pass'),
-          'qrz_api_key', '#s-qrz-key'),
-      });
-      config = await HD.get('/api/config');
-      paintStation();
+  async function saveSettings({ quiet = false } = {}) {
+    await HD.put('/api/config', {
+      station: {
+        callsign: $('#s-call').value.trim().toUpperCase(),
+        grid: $('#s-grid').value.trim().toUpperCase(),
+        operator: $('#s-op').value.trim(),
+      },
+      units: $('#s-units').value,
+      theme: $('#s-theme').value,
+      radio: {
+        mock: $('#s-mock').checked,
+        rigctld_host: $('#s-rig-host').value.trim(),
+        rigctld_port: Number($('#s-rig-port').value) || 4532,
+      },
+      callsign_lookup: withSecret({
+        provider: $('#s-lk-provider').value,
+        account: $('#s-lk-account').value,
+        user: $('#s-lk-user').value.trim(),
+      }, 'password', '#s-lk-pass'),
+      logbook_sync: withSecret(withSecret({
+        lotw_user: $('#s-lotw-user').value.trim(),
+      }, 'lotw_password', '#s-lotw-pass'),
+        'qrz_api_key', '#s-qrz-key'),
+    });
+    config = await HD.get('/api/config');
+    // The boxes now hold a stored secret again, not the text just typed.
+    secretBox('#s-lk-pass', 'callsign_lookup.password');
+    secretBox('#s-lotw-pass', 'logbook_sync.lotw_password');
+    secretBox('#s-qrz-key', 'logbook_sync.qrz_api_key');
+    applyTheme(config.theme);
+    paintStation();
+    if (!quiet) {
       $('#settings-sheet').close();
       toast('Station saved');
+    }
+  }
+
+  $('#settings-save').onclick = async () => {
+    try {
+      await saveSettings();
     } catch (e) {
       toast(e.message);
     }
@@ -598,12 +666,16 @@
     return;
   }
 
-  $('#theme-pick').innerHTML = themes
+  const themeOpts = themes
     .map((t) => `<option value="${t.id}">${t.name || t.id}</option>`).join('');
+  $('#theme-pick').innerHTML = themeOpts;
+  $('#s-theme').innerHTML = themeOpts;
   $('#theme-pick').onchange = (e) => {
     applyTheme(e.target.value);
     HD.put('/api/config', { theme: e.target.value }).catch(() => {});
   };
+  // In the sheet it previews straight away; Save is what makes it stick.
+  $('#s-theme').onchange = (e) => applyTheme(e.target.value);
   applyTheme(config.theme);
   paintStation();
 

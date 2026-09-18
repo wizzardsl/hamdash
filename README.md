@@ -355,9 +355,15 @@ chooses which of those to show and the choice is kept on the tile, so two
 logbook tiles can show different things. The search box searches the whole log,
 not the page on screen.
 
+The table pages: 30 contacts at a time by default, and the picker beside
+**Columns** goes from 10 to 250 or all. Ordering and paging both happen in the
+host — `GET /api/log/page?q=&limit=&offset=` returns the rows and the total —
+because sorting a page in the browser sorts only that page, which silently
+drops contacts off the end of every page but the last.
+
 ## Logbook sync
 
-Settings → Logbook sync. Credentials there, then Pull or Push.
+Settings → Integrations → Logbook sync. Credentials there, then Pull or Push.
 
 | | pull | push |
 |---|---|---|

@@ -444,7 +444,12 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.get("/api/lookup/<call>")
     @guard("lookup")
     def lookup(call):
-        res = dict(look.lookup(call))
+        # An explicit refresh is the operator asking, by hand, right now: it
+        # is the one moment worth spending a login that was refused before.
+        refresh = request.args.get("refresh") in ("1", "true", "yes")
+        if refresh:
+            look.retry_auth()
+        res = dict(look.lookup(call, refresh=refresh))
         # ?grid= overrides the locator for this answer only. A logged QSO
         # carries the grid that was actually worked, which is not always where
         # the operator lives now - a portable activation, or someone who has
@@ -464,6 +469,24 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         res["worked_before"] = log.worked_before(call)
         BUS.publish("lookup.result", res, source="host")
         return jsonify(res)
+
+    @app.post("/api/lookup/test")
+    @guard("lookup")
+    def lookup_test():
+        """Try the configured provider once, on purpose, and say what it said."""
+        look.retry_auth()
+        c = cfg.data["callsign_lookup"]
+        call = (cfg.data["station"].get("callsign") or "W1AW").upper()
+        try:
+            res = look.lookup(call, refresh=True)
+        except Exception as exc:                # noqa: BLE001 - reported, not raised
+            return jsonify({"ok": False, "error": str(exc)}), 502
+        if res.get("note"):
+            return jsonify({"ok": False, "error": res["note"]}), 502
+        return jsonify({"ok": True, "provider": c.get("provider", ""),
+                        "source": res.get("source", ""), "callsign": call,
+                        "name": res.get("name", ""),
+                        "locator": res.get("locator", "")})
 
     @app.get("/api/space/aurora")
     @guard("space")
@@ -563,6 +586,22 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         q = request.args.get("q")
         return jsonify(_flagged(log.search(q) if q else log.recent(
             int(request.args.get("limit", 25)))))
+
+    @app.get("/api/log/page")
+    @guard("log")
+    def log_page():
+        def num(name, fallback):
+            try:
+                return int(request.args.get(name, fallback))
+            except (TypeError, ValueError):
+                return fallback
+        # 0 means "no limit": the table offers an All choice, and a log that
+        # fits on one page should not be paged.
+        limit = num("limit", 30)
+        got = log.page(request.args.get("q", ""),
+                       limit if limit > 0 else 10 ** 7, num("offset", 0))
+        got["rows"] = _flagged(got["rows"])
+        return jsonify(got)
 
     @app.post("/api/log")
     @guard("log")
@@ -754,7 +793,8 @@ def _make_lookup(cfg) -> Lookup:
     c = cfg.data["callsign_lookup"]
     return Lookup(c.get("provider", "callook"), c.get("user", ""),
                   c.get("password", ""), cache_path=cfg.db_path,
-                  cache_days=c.get("cache_days", 30))
+                  cache_days=c.get("cache_days", 30),
+                  account=c.get("account", ""))
 
 
 def _card_error(card):

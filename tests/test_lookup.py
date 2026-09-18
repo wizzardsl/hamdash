@@ -8,12 +8,15 @@ wrong and make every distance it ever reports wrong with it.
 
 Run with:  python -m unittest discover -s tests
 """
+import datetime as dt
+import time
 import unittest
 from unittest import mock
 
 import requests
 
-from hamdash.services.callsign import Lookup, Refused, links_for
+from hamdash.services.callsign import (Lookup, Refused, _blocked_until,
+                                       links_for)
 
 
 def offline_lookup(**kw) -> Lookup:
@@ -27,19 +30,96 @@ class TestChain(unittest.TestCase):
         self.assertEqual(offline_lookup(provider="auto")._chain(),
                          ["callook", "hamdb"])
 
-    def test_auto_adds_an_account_provider_when_there_are_credentials(self):
-        c = offline_lookup(provider="auto", user="me", password="pw")._chain()
-        self.assertEqual(c, ["callook", "hamdb", "hamqth"])
+    def test_auto_adds_the_account_provider_it_was_told_about(self):
+        for account in ("hamqth", "qrz"):
+            with self.subTest(account=account):
+                c = offline_lookup(provider="auto", user="me", password="pw",
+                                   account=account)._chain()
+                self.assertEqual(c, ["callook", "hamdb", account])
 
-    def test_auto_does_not_reach_for_qrz_unasked(self):
-        """QRZ only works with a paid subscription, so it is opt-in."""
-        self.assertNotIn(
-            "qrz", offline_lookup(provider="auto", user="me", password="pw")._chain())
+    def test_auto_does_not_guess_whose_account_it_is(self):
+        """Guessing posts one service's password to another, and spends a
+        failed login on an account that locks after a few of those."""
+        c = offline_lookup(provider="auto", user="me", password="pw")._chain()
+        self.assertEqual(c, ["callook", "hamdb"])
 
     def test_naming_a_provider_uses_only_that_one(self):
         for name in ("callook", "hamdb", "hamqth", "qrz", "offline"):
             with self.subTest(provider=name):
                 self.assertEqual(offline_lookup(provider=name)._chain(), [name])
+
+
+QRZ_BAD_LOGIN = ("<?xml version=\"1.0\"?>"
+                 "<QRZDatabase xmlns=\"http://xmldata.qrz.com\"><Session>"
+                 "<Error>Username/password incorrect</Error>"
+                 "</Session></QRZDatabase>")
+
+
+class TestRefusedLogins(unittest.TestCase):
+    """A rejected login must cost one attempt, not one per keystroke."""
+
+    def test_a_rejected_password_is_tried_once_not_once_per_lookup(self):
+        """The bug this guards: typing a callsign fires a lookup per few
+        characters, each re-attempting the same bad password, and QRZ locks
+        the account after a handful of those."""
+        lk = offline_lookup(provider="qrz", user="me", password="wrong")
+        with mock.patch("hamdash.services.callsign.requests.get") as get:
+            get.return_value = mock.Mock(text=QRZ_BAD_LOGIN)
+            for call in ("VE7A", "VE7AB", "VE7ABC", "VE7ABCD"):
+                res = lk.lookup(call)
+                self.assertIn("incorrect", res.get("note", ""))
+        self.assertEqual(get.call_count, 1, "asked QRZ more than once")
+
+    def test_test_button_gets_one_fresh_attempt(self):
+        lk = offline_lookup(provider="qrz", user="me", password="wrong")
+        with mock.patch("hamdash.services.callsign.requests.get") as get:
+            get.return_value = mock.Mock(text=QRZ_BAD_LOGIN)
+            lk.lookup("VE7ABC")
+            lk.retry_auth()                     # what the Test button does
+            lk.lookup("VE7ABC", refresh=True)
+        self.assertEqual(get.call_count, 2)
+
+    def test_a_refusal_is_reraised_without_asking_again(self):
+        lk = offline_lookup(provider="qrz", user="me", password="wrong")
+        with self.assertRaises(Refused):
+            lk._reject("qrz", "Username/password incorrect")
+        # Second time around it must answer from memory: no network at all.
+        with self.assertRaises(Refused) as got:
+            lk._check_block("qrz")
+        self.assertIn("incorrect", str(got.exception))
+
+    def test_a_blocked_until_time_is_honoured_exactly(self):
+        when = "2026-09-18 19:42:09 UTC"
+        until = _blocked_until(f"Username/password incorrect - blocked until {when}")
+        self.assertEqual(
+            dt.datetime.fromtimestamp(until, dt.timezone.utc).isoformat(),
+            "2026-09-18T19:42:09+00:00")
+
+    def test_a_message_without_a_time_falls_back_to_the_cooldown(self):
+        self.assertEqual(_blocked_until("Username/password incorrect"), 0.0)
+
+    def test_the_block_lifts_when_its_time_passes(self):
+        lk = offline_lookup(provider="qrz", user="me", password="wrong")
+        lk._refused["qrz"] = (time.time() - 1, "old news")
+        lk._check_block("qrz")                  # must not raise
+        self.assertNotIn("qrz", lk._refused)
+
+    def test_retry_auth_forgets_refusals(self):
+        lk = offline_lookup(provider="qrz", user="me", password="wrong")
+        lk._refused["qrz"] = (time.time() + 9999, "nope")
+        lk.retry_auth()
+        lk._check_block("qrz")                  # must not raise
+
+    def test_sessions_are_not_shared_between_providers(self):
+        lk = offline_lookup(provider="auto", user="me", password="pw")
+        lk._session["qrz"] = ("QRZ-KEY", time.time())
+        self.assertIsNone(lk._key("hamqth"))
+        self.assertEqual(lk._key("qrz"), "QRZ-KEY")
+
+    def test_a_stale_session_is_not_offered(self):
+        lk = offline_lookup(provider="qrz", user="me", password="pw")
+        lk._session["qrz"] = ("OLD", time.time() - 4000)
+        self.assertIsNone(lk._key("qrz"))
 
 
 class TestFallback(unittest.TestCase):
