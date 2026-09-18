@@ -263,7 +263,21 @@ shape it settled on is worth reusing:
   and suppress the click that ends a drag.
 - Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per
   wheel notch is the difference between a map and a slideshow.
-- `path_map` carries its own coastlines instead of fetching tiles: no network,
+- `path_map` is Leaflet, vendored in the card (`vendor/`, BSD-2, ~190 kB with
+  its images) rather than from a CDN, so it works offline and frozen. The
+  offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the
+  same picker as tile basemaps.
+- **Leaflet writes colours into SVG presentation attributes**, where
+  `var(--x)` does not resolve. Read the theme's values with `getComputedStyle`
+  instead, or the map ignores the theme.
+- Greyline is computed in the browser: solar position is trigonometry, and a
+  round trip to ask a server where the sun is would be absurd. Checked against
+  both solstices and the equinox.
+- Aurora goes through `/api/space/aurora` (permission `space`) and not straight
+  from the card: NOAA's grid is ~1.5 MB of mostly zero, they publish every five
+  minutes, and a card fetching a third-party URL depends on that server's CORS
+  headers, which are not ours.
+- `path_map` used to carry its own coastlines instead of fetching tiles: no network,
   no third-party dependency, no tile-usage policy. SVG y is `-lat`, so
   anything computing a viewBox has to work in projected space — framing on
   latitude centres the view on the mirror of the path in the other hemisphere.

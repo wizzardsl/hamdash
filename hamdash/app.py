@@ -20,6 +20,7 @@ from .services.callsign import Lookup
 from .services.logbook import Logbook
 from .services.qsl import Lotw, QrzLogbook, Runner, SyncError
 from .services.radio import MODES, Rig
+from .services.space import Aurora
 
 HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
               "connection", "keep-alive", "upgrade", "proxy-authenticate",
@@ -40,6 +41,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     log = Logbook(cfg.db_path)
     look = _make_lookup(cfg)
     syncer = Runner(lambda t, p: BUS.publish(t, p, source='host'))
+    aurora = Aurora()
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -394,6 +396,20 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         res["worked_before"] = log.worked_before(call)
         BUS.publish("lookup.result", res, source="host")
         return jsonify(res)
+
+    @app.get("/api/space/aurora")
+    @guard("space")
+    def space_aurora():
+        """NOAA's aurora forecast, cached here so every tile does not poll it.
+
+        Public data, no account. Thinned to the cells that carry information -
+        the raw grid is mostly zero.
+        """
+        try:
+            threshold = max(1, min(100, int(request.args.get("threshold", 5))))
+        except ValueError:
+            threshold = 5
+        return jsonify(aurora.get(threshold))
 
     @app.post("/api/grid/locator")
     @guard("lookup")

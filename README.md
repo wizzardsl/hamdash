@@ -291,17 +291,34 @@ and the path card draw from it:
   overrides the locator for that one answer — because a portable activation or
   an operator who has since moved would otherwise plot in the wrong place.
 
-The `path_map` card draws both stations and the short-path great circle.
-Scroll to zoom, drag to pan, **+ − ⌂** in the corner, and click either pin for
-that station's grid, country, distance, bearing, long path, whether you have
-worked them before, and links to their public pages. A new station reframes
-the map — unless you have moved the view yourself, in which case it is left
-where you put it until you press ⌂. It
-carries its own coastlines (Natural Earth 1:110m, public domain, simplified to
-about 14 kB) rather than fetching map tiles, so it works with no network and
-adds no third-party dependency. The path is sampled along the real great
-circle and split at the antimeridian — a straight line between two points on
-this projection is not the way the signal goes.
+The `path_map` card is a Leaflet map. Scroll to zoom, drag to pan, click
+either pin for that station's details and public links, and the ⌂ button
+returns to the default framing. A new station reframes the map unless you have
+moved it yourself.
+
+**Base maps.** Three choices in the tile's settings:
+
+| | needs | notes |
+|---|---|---|
+| **built-in (offline)** *(default)* | nothing | Natural Earth 1:110m, bundled. Works with no internet and no account. |
+| OpenStreetMap | a connection | Fine for occasional use. OSM's own tiles are not meant for heavy application traffic. |
+| custom tiles | a connection, usually a key | Paste any `{z}/{x}/{y}` template and your own credit line. This is the one to use for satellite or terrain. |
+
+Leaflet is bundled in the card, not loaded from a CDN, so the map works
+offline and inside a packaged build. Google Maps is deliberately not an option:
+it needs an API key with billing enabled and its terms restrict mixing with
+other base maps, which would mean every user had to open a cloud account
+before the map worked.
+
+**Layers**, from the control in the corner:
+
+- **Greyline** — the day/night terminator and the subsolar point, worked out in
+  the browser from the clock. No network, no service, no provider. Verified
+  against the solstices and the equinox.
+- **Aurora** — NOAA SWPC's OVATION forecast. Public data, no account. It comes
+  through the host, which caches it for five minutes and drops the cells at
+  zero: the raw grid is about 1.5 MB of mostly nothing, and every open tile
+  polling NOAA directly would be both rude and slow.
 
 ## Logbook sync
 
@@ -390,11 +407,11 @@ HamQTH, callook) for a card to offer.
 A card gets the shared services it declares, and no others:
 
 ```json
-"permissions": ["radio", "log", "lookup"]
+"permissions": ["radio", "log", "lookup", "space"]
 ```
 
-Declare nothing and the card can't touch `/api/radio/*`, `/api/log*` or
-`/api/lookup/*`. The refusal names what's missing rather than returning a bare
+Declare nothing and the card can't touch `/api/radio/*`, `/api/log*`,
+`/api/lookup/*` or `/api/space/*`. The refusal names what's missing rather than returning a bare
 403, so a card author can act on it.
 
 **How far this actually goes:** a card's *server* calls carry that card's

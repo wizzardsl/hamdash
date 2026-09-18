@@ -3,52 +3,47 @@
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="vendor/leaflet.css">
 <style>
   html, body { height: 100%; }
   body { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
   .bar { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
   .who { font-family: var(--mono); color: var(--accent); font-size: 14px; }
   .muted { color: var(--muted); }
-  .wrap { flex: 1; min-height: 60px; position: relative; }
-  svg { width: 100%; height: 100%; display: block; cursor: grab;
-        touch-action: none; }             /* or the browser pans instead of us */
-  svg.dragging { cursor: grabbing; }
-  .land { fill: var(--panel-2); stroke: var(--grip); stroke-width: .4; vector-effect: non-scaling-stroke; }
-  .grat { stroke: var(--rule); stroke-width: .3; fill: none; vector-effect: non-scaling-stroke; }
-  .path { stroke: var(--accent); stroke-width: 1.6; fill: none;
-          vector-effect: non-scaling-stroke; stroke-linecap: round; }
-  .hit { fill: transparent; cursor: pointer; }
+  #map { flex: 1; min-height: 60px; border-radius: var(--radius);
+         background: var(--bg); }
 
-  .zoom { position: absolute; top: 6px; right: 6px; display: flex;
-          flex-direction: column; gap: 3px; }
-  .zoom button {
-    width: 24px; height: 24px; padding: 0; line-height: 1;
-    font: inherit; font-size: 14px;
-    color: var(--ink); background: var(--panel); cursor: pointer;
-    border: 1px solid var(--rule); border-radius: var(--radius);
+  /* Leaflet ships a light theme; this is a dark board. */
+  .leaflet-container { background: var(--bg); font: inherit; font-size: 12px; }
+  .leaflet-bar a, .leaflet-control-layers, .leaflet-popup-content-wrapper,
+  .leaflet-popup-tip {
+    background: var(--panel); color: var(--ink); border-color: var(--rule);
   }
-  .zoom button:hover { border-color: var(--accent); color: var(--accent); }
-
-  .card-info {
-    position: absolute; left: 6px; bottom: 6px; max-width: min(260px, 70%);
-    background: var(--panel); border: 1px solid var(--rule);
-    border-left: 3px solid var(--accent); border-radius: var(--radius);
-    padding: 7px 9px; font-size: 12px;
-    box-shadow: 0 6px 18px rgba(0,0,0,.4);
+  /* Leaflet sets this one with its own container-scoped rule, so match that
+     specificity or the credit line stays a white strip on a dark map. */
+  .leaflet-container .leaflet-control-attribution {
+    background: var(--panel); color: var(--muted);
+    border-top: 1px solid var(--rule);
   }
-  .card-info[hidden] { display: none; }
-  .card-info h3 { margin: 0 0 3px; font-family: var(--mono); font-size: 14px;
-                  color: var(--accent); font-weight: 500; }
-  .card-info dl { margin: 0; display: grid; grid-template-columns: auto 1fr;
-                  gap: 1px 8px; }
-  .card-info dt { color: var(--muted); }
-  .card-info dd { margin: 0; font-family: var(--mono); }
-  .card-info .links { margin-top: 5px; display: flex; gap: 8px; }
-  .card-info .links a { color: var(--signal); font-size: 11px; }
-  .card-info .x { position: absolute; top: 3px; right: 5px; border: 0;
-                  background: none; color: var(--muted); cursor: pointer;
-                  font-size: 13px; line-height: 1; }
-  .card-info .x:hover { color: var(--alert); }
+  .leaflet-container .leaflet-control-attribution a { color: var(--muted); }
+  .leaflet-bar a { border-bottom-color: var(--rule); }
+  .leaflet-bar a:hover { background: var(--panel-2); color: var(--accent); }
+  .leaflet-control-attribution a { color: var(--muted); }
+  .leaflet-control-layers-expanded { color: var(--ink); padding: 7px 9px; }
+  .leaflet-popup-content { margin: 8px 10px; }
+  .leaflet-popup-content h3 { margin: 0 0 3px; font-family: var(--mono);
+    font-size: 14px; color: var(--accent); font-weight: 500; }
+  .leaflet-popup-content dl { margin: 0; display: grid;
+    grid-template-columns: auto 1fr; gap: 1px 8px; }
+  .leaflet-popup-content dt { color: var(--muted); }
+  .leaflet-popup-content dd { margin: 0; font-family: var(--mono); }
+  .leaflet-popup-content .links { margin-top: 5px; display: flex; gap: 8px; }
+  .leaflet-popup-content .links a { color: var(--signal); font-size: 11px; }
+  /* Leaflet's tooltip is a light chip by default. */
+  .pin-label { background: transparent; border: 0; box-shadow: none;
+    color: var(--ink); font-family: var(--mono); font-size: 11px;
+    padding: 0; text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg); }
+  .pin-label::before { display: none; }
   .err { color: var(--alert); font-size: 12px; }
 </style>
 </head>
@@ -58,43 +53,46 @@
   <span class="who" id="who">—</span>
   <span class="muted" id="detail"></span>
 </div>
-
-<div class="wrap">
-  <svg id="map" role="img" aria-labelledby="t"><title id="t">Map</title></svg>
-  <div class="zoom">
-    <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
-    <button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
-    <button id="zfit" title="Back to the default view" aria-label="Reset view">&#8962;</button>
-  </div>
-  <div class="card-info" id="info" hidden>
-    <button class="x" id="info-x" title="Close" aria-label="Close">&times;</button>
-    <h3 id="i-call"></h3>
-    <dl id="i-rows"></dl>
-    <div class="links" id="i-links"></div>
-  </div>
-</div>
+<div id="map"></div>
 <p class="err" id="err"></p>
 
 <script src="/static/js/hamdash.js"></script>
+<script src="vendor/leaflet.js"></script>
 <script src="world.js"></script>
 <script>
 HD.cardId = 'path_map';
 const $ = (s) => document.querySelector(s);
-const SVGNS = 'http://www.w3.org/2000/svg';
 const D2R = Math.PI / 180;
-const WORLD = { cx: 0, cy: 0, w: 360 };
-const MIN_W = 1.5, MAX_W = 360;          // degrees across the view
+
+// Leaflet writes colours into SVG presentation attributes, where var(--x)
+// does not resolve. Read the theme's values once instead, so the map still
+// follows whichever theme the board is on.
+const css = (name, fallback) =>
+  getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
+const THEME = {};
+function readTheme() {
+  Object.assign(THEME, {
+    bg: css('--bg', '#0d1419'),
+    ink: css('--ink', '#d7e3ea'),
+    rule: css('--rule', '#26363f'),
+    grip: css('--grip', '#3b4d58'),
+    panel2: css('--panel-2', '#1c2932'),
+    accent: css('--accent', '#e9a13b'),
+    signal: css('--signal', '#56b6a8'),
+    alert: css('--alert', '#d9604a'),
+  });
+}
 
 let conf = {};
+let map = null;
 let me = null;          // {lat, lon, grid, call}
-let them = null;        // {lat, lon, grid, call}
-let lastInfo = null;    // the lookup.result payload behind `them`
-let view = { ...WORLD };
-let touched = false;    // has the operator moved the view themselves?
-let suppressClick = false;   // the click that ends a drag is not a choice
-const layers = {};
+let them = null;
+let lastInfo = null;
+let touched = false;    // has the operator moved the map themselves?
+let auroraTimer = null;
+const L_ = {};          // layers, by name
 
-// --- Maidenhead, client side ------------------------------------------------
+// --- Maidenhead --------------------------------------------------------------
 function toLatLon(loc) {
   const s = (loc || '').trim().toUpperCase();
   if (!/^[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?$/.test(s)) return null;
@@ -108,17 +106,17 @@ function toLatLon(loc) {
   return { lat, lon };
 }
 
-// --- great circle -----------------------------------------------------------
-// A straight line on this projection is not the path a signal takes. Sample
-// the real great circle and split it at the antimeridian, or it draws a stripe
-// back across the whole world.
-function greatCircle(a, b, steps = 160) {
-  const toVec = (p) => {
+// --- great circle ------------------------------------------------------------
+// Leaflet draws a polyline straight between consecutive points, so the path has
+// to be sampled. It is also split at the antimeridian, or crossing the Pacific
+// draws a stripe back across the entire map.
+function greatCircle(a, b, steps = 180) {
+  const vec = (p) => {
     const la = p.lat * D2R, lo = p.lon * D2R;
     return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
   };
-  const [v1, v2] = [toVec(a), toVec(b)];
-  const dot = Math.max(-1, Math.min(1, v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]));
+  const [v1, v2] = [vec(a), vec(b)];
+  const dot = Math.max(-1, Math.min(1, v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]));
   const om = Math.acos(dot);
   const segs = []; let run = []; let prev = null;
   for (let i = 0; i <= steps; i++) {
@@ -127,283 +125,259 @@ function greatCircle(a, b, steps = 160) {
     if (om >= 1e-9) {
       const s1 = Math.sin((1 - t) * om) / Math.sin(om);
       const s2 = Math.sin(t * om) / Math.sin(om);
-      p = [v1[0] * s1 + v2[0] * s2, v1[1] * s1 + v2[1] * s2, v1[2] * s1 + v2[2] * s2];
+      p = [v1[0]*s1 + v2[0]*s2, v1[1]*s1 + v2[1]*s2, v1[2]*s1 + v2[2]*s2];
     }
     const lat = Math.atan2(p[2], Math.hypot(p[0], p[1])) / D2R;
     const lon = Math.atan2(p[1], p[0]) / D2R;
     if (prev !== null && Math.abs(lon - prev) > 180) { segs.push(run); run = []; }
-    run.push([lon, -lat]);
+    run.push([lat, lon]);
     prev = lon;
   }
   if (run.length) segs.push(run);
   return segs.filter((s) => s.length > 1);
 }
 
-function el(name, attrs) {
-  const n = document.createElementNS(SVGNS, name);
-  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
-  return n;
+// --- greyline ----------------------------------------------------------------
+// Where the sun is, from the clock. No network and no service: this is a few
+// lines of trigonometry and asking a server would be a round trip for an
+// answer the browser already has everything to compute.
+function subsolar(when) {
+  const n = when.getTime() / 86400000 + 2440587.5 - 2451545.0;   // days from J2000
+  const L = (280.460 + 0.9856474 * n) % 360;
+  const g = ((357.528 + 0.9856003 * n) % 360) * D2R;
+  const lam = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
+  const eps = (23.439 - 0.0000004 * n) * D2R;
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  let lon = (ra / D2R - gmst * 15) % 360;
+  if (lon > 180) lon -= 360;
+  if (lon < -180) lon += 360;
+  return { lat: dec / D2R, lon, dec };
 }
 
-// --- the view ---------------------------------------------------------------
-// Pan and zoom change `view` and the viewBox, nothing else. The coastline is
-// 56 paths; rebuilding them on every wheel notch would make the map crawl, so
-// the static layers are built once and left alone.
-function aspect() {
-  const r = $('#map').getBoundingClientRect();
-  return r.height > 0 ? r.width / r.height : 2;
-}
-
-function clampView(v) {
-  const w = Math.min(MAX_W, Math.max(MIN_W, v.w));
-  const h = w / Math.max(0.2, aspect());
-  // Somewhere with map still in it, rather than off in empty space.
-  const cx = Math.min(180, Math.max(-180, v.cx));
-  const cy = h >= 180 ? 0 : Math.min(90 - h / 2, Math.max(-90 + h / 2, v.cy));
-  return { cx, cy, w };
-}
-
-function applyView() {
-  view = clampView(view);
-  const h = view.w / Math.max(0.2, aspect());
-  $('#map').setAttribute('viewBox',
-    `${view.cx - view.w / 2} ${view.cy - h / 2} ${view.w} ${h}`);
-  rescalePins();
-}
-
-function defaultView() {
-  if ((conf.zoom || 'fit the path') === 'whole world' || !me || !them) {
-    return { ...WORLD };
+function nightPolygon(when) {
+  const sun = subsolar(when);
+  const ring = [];
+  for (let lon = -180; lon <= 180; lon += 1) {
+    // Terminator latitude for this meridian: the circle 90 degrees from the
+    // subsolar point.
+    const lat = Math.atan(-Math.cos((lon - sun.lon) * D2R) / Math.tan(sun.dec)) / D2R;
+    ring.push([lat, lon]);
   }
-  const pad = 18;
-  const xs = [me.lon, them.lon], ys = [-me.lat, -them.lat];
-  const x1 = Math.min(...xs) - pad, x2 = Math.max(...xs) + pad;
-  const y1 = Math.min(...ys) - pad, y2 = Math.max(...ys) + pad;
-  if (x2 - x1 > 300) return { ...WORLD };
-  const a = Math.max(0.2, aspect());
-  // Widen to whichever dimension does not fit, so both stations stay in view
-  // whatever shape the tile has been dragged into.
-  const w = Math.max(x2 - x1, (y2 - y1) * a, 20);
-  return { cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, w };
+  // Close the ring over whichever pole is in darkness.
+  const pole = sun.dec > 0 ? -90 : 90;
+  ring.push([pole, 180], [pole, -180]);
+  return { ring, sun };
 }
 
-function resetView() { touched = false; view = defaultView(); applyView(); }
-
-function zoomBy(factor, at) {
-  const anchor = at || { x: view.cx, y: view.cy };
-  const w = Math.min(MAX_W, Math.max(MIN_W, view.w * factor));
-  const k = w / view.w;             // keep what is under the cursor under it
-  view = { w, cx: anchor.x + (view.cx - anchor.x) * k,
-           cy: anchor.y + (view.cy - anchor.y) * k };
-  touched = true;
-  applyView();
+function drawGreyline() {
+  if (!L_.greyline) return;
+  L_.greyline.clearLayers();
+  const { ring, sun } = nightPolygon(new Date());
+  L.polygon(ring, { stroke: false, fillColor: '#000', fillOpacity: 0.34,
+                    interactive: false }).addTo(L_.greyline);
+  L.circleMarker([sun.lat, sun.lon], {
+    radius: 4, color: THEME.accent, fillColor: THEME.accent, fillOpacity: 1,
+    weight: 1, interactive: false,
+  }).addTo(L_.greyline);
 }
 
-function atPointer(ev) {
-  const r = $('#map').getBoundingClientRect();
-  const h = view.w / Math.max(0.2, aspect());
-  return {
-    x: view.cx - view.w / 2 + ((ev.clientX - r.left) / r.width) * view.w,
-    y: view.cy - h / 2 + ((ev.clientY - r.top) / r.height) * h,
-  };
-}
-
-// --- pins -------------------------------------------------------------------
-function rescalePins() {
-  const k = view.w / 360;           // sizes below are degrees, so scale by view
-  layers.pins?.querySelectorAll('[data-pin]').forEach((g) => {
-    const dot = g.querySelector('.dot');
-    dot.setAttribute('r', 2.2 * k);
-    dot.setAttribute('stroke-width', 0.7 * k);
-    g.querySelector('.hit').setAttribute('r', 7 * k);
-    const t = g.querySelector('text');
-    t.setAttribute('x', 3.4 * k);
-    t.setAttribute('y', 1.6 * k);
-    t.setAttribute('font-size', 5.5 * k);
-  });
-}
-
-function pin(p, colour, label, onClick) {
-  const g = el('g', { transform: `translate(${p.lon} ${-p.lat})` });
-  g.dataset.pin = '1';
-  g.appendChild(el('circle', { class: 'dot', r: 2.2, fill: colour,
-                               stroke: 'var(--bg)', 'stroke-width': .7 }));
-  const t = el('text', { x: 3.4, y: 1.6, 'font-size': 5.5, fill: colour,
-                         'font-family': 'var(--mono)' });
-  t.textContent = label;
-  g.appendChild(t);
-  // A transparent disc on top: the pin stays clickable without having to hit
-  // a two-pixel dot, at any zoom.
-  const hit = el('circle', { class: 'hit', r: 7 });
-  hit.addEventListener('click', (e) => {
-    if (suppressClick) return;
-    e.stopPropagation();
-    onClick();
-  });
-  g.appendChild(hit);
-  return g;
-}
-
-// --- the details panel ------------------------------------------------------
-function rows(pairs) {
-  const dl = $('#i-rows');
-  dl.innerHTML = '';
-  pairs.filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .forEach(([k, v]) => {
-      const dt = document.createElement('dt'); dt.textContent = k;
-      const dd = document.createElement('dd'); dd.textContent = v;
-      dl.append(dt, dd);
+// --- aurora ------------------------------------------------------------------
+async function drawAurora() {
+  if (!L_.aurora) return;
+  try {
+    const d = await HD.get('/api/space/aurora', { threshold: 8 });
+    L_.aurora.clearLayers();
+    if (!d.ok) { $('#err').textContent = d.error || 'no aurora data'; return; }
+    $('#err').textContent = '';
+    // Canvas, not SVG: this is a couple of thousand cells and one DOM node
+    // each would make panning crawl.
+    d.cells.forEach(([lon, lat, pct]) => {
+      L.circleMarker([lat, lon], {
+        renderer: L_.auroraCanvas,
+        radius: 3,
+        stroke: false,
+        fillColor: pct >= 40 ? THEME.alert : pct >= 20 ? THEME.accent : THEME.signal,
+        fillOpacity: Math.min(0.8, 0.12 + pct / 100),
+        interactive: false,
+      }).addTo(L_.aurora);
     });
+    $('#detail').dataset.aurora = `aurora ${d.forecast || ''}`;
+  } catch (e) {
+    $('#err').textContent = `aurora: ${e.message}`;
+  }
 }
 
-function links(map) {
-  const box = $('#i-links');
-  box.innerHTML = '';
-  Object.entries(map || {}).forEach(([name, href]) => {
-    const a = document.createElement('a');
-    a.href = href; a.target = '_blank'; a.rel = 'noopener';
-    a.textContent = name;
-    // Plain anchors on purpose: hamdash.js intercepts target=_blank in the
-    // desktop shell and routes it to the real browser, because an unhandled
-    // new-window request inside a webview escapes to the OS.
-    box.appendChild(a);
+// --- basemaps ----------------------------------------------------------------
+function builtInBasemap() {
+  // The offline map is a Leaflet layer like any other, which is what lets it
+  // sit in the same picker as the tile ones.
+  return L.geoJSON(window.WORLD_LAND, {
+    style: { color: THEME.grip, weight: 0.6, fillColor: THEME.panel2,
+             fillOpacity: 1 },
+    interactive: false,
+    attribution: 'Natural Earth (public domain)',
   });
 }
 
-function showInfo(which) {
-  const i = lastInfo || {};
-  if (which === 'me') {
-    if (!me) return;
-    $('#i-call').textContent = me.call || 'My station';
-    rows([['Grid', me.grid], ['Latitude', me.lat.toFixed(3)],
-          ['Longitude', me.lon.toFixed(3)]]);
-    links({});
-  } else {
-    if (!them) return;
-    $('#i-call').textContent = them.call || them.grid;
-    rows([
-      ['Grid', them.grid],
-      ['Name', i.name],
-      ['Country', i.country],
-      ['Distance', i.path ? `${i.path.km.toLocaleString()} km` : ''],
-      ['Bearing', i.path ? `${Math.round(i.path.bearing)}° ${HD.bearingName(i.path.bearing)}` : ''],
-      ['Long path', i.path ? `${Math.round((i.path.bearing + 180) % 360)}°` : ''],
-      ['Worked', (i.worked_before || []).length
-        ? `${i.worked_before.length}× before` : ''],
-      ['Source', i.approximate ? `${i.source} (approximate)` : i.source],
-    ]);
-    links(i.links);
+function chosenBasemap() {
+  const pick = conf.basemap || 'built-in (offline)';
+  if (pick === 'OpenStreetMap') {
+    return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors',
+    });
   }
-  $('#info').hidden = false;
+  if (pick === 'custom tiles' && (conf.tile_url || '').trim()) {
+    return L.tileLayer(conf.tile_url.trim(), {
+      maxZoom: 19,
+      attribution: conf.tile_attribution || 'custom tiles',
+    });
+  }
+  return builtInBasemap();
 }
 
-// --- drawing ----------------------------------------------------------------
-function build() {
-  const svg = $('#map');
-  const land = el('g', { transform: 'scale(1 -1)' });
-  (window.WORLD_LAND || []).forEach((d) => land.appendChild(el('path', { d, class: 'land' })));
-  svg.appendChild(land);
-
-  layers.grat = el('g', { class: 'grat' });
-  for (let lon = -180; lon <= 180; lon += 30) {
-    layers.grat.appendChild(el('line', { x1: lon, y1: -90, x2: lon, y2: 90 }));
+// --- pins --------------------------------------------------------------------
+function popupFor(which) {
+  const i = lastInfo || {};
+  const esc = (v) => String(v).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push(`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`); };
+  let title, links = '';
+  if (which === 'me') {
+    title = me.call || 'My station';
+    add('Grid', me.grid);
+    add('Latitude', me.lat.toFixed(3));
+    add('Longitude', me.lon.toFixed(3));
+  } else {
+    title = them.call || them.grid;
+    add('Grid', them.grid);
+    add('Name', i.name);
+    add('Country', i.country);
+    if (i.path) {
+      add('Distance', `${i.path.km.toLocaleString()} km`);
+      add('Bearing', `${Math.round(i.path.bearing)}° ${HD.bearingName(i.path.bearing)}`);
+      add('Long path', `${Math.round((i.path.bearing + 180) % 360)}°`);
+    }
+    const seen = (i.worked_before || []).length;
+    if (seen) add('Worked', `${seen}× before`);
+    add('Source', i.approximate ? `${i.source} (approximate)` : i.source);
+    // Plain anchors: hamdash.js routes target=_blank to the real browser,
+    // because an unhandled new-window request inside a webview escapes to
+    // the OS.
+    links = Object.entries(i.links || {}).map(([n, href]) =>
+      `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(n)}</a>`).join('');
   }
-  for (let lat = -60; lat <= 60; lat += 30) {   // poles carry no information
-    layers.grat.appendChild(el('line', { x1: -180, y1: -lat, x2: 180, y2: -lat }));
-  }
-  layers.grat.appendChild(el('line', { x1: -180, y1: 0, x2: 180, y2: 0,
-                                       'stroke-width': .6 }));
-  svg.appendChild(layers.grat);
-
-  layers.path = el('g');
-  layers.pins = el('g');
-  svg.append(layers.path, layers.pins);
+  return `<h3>${esc(title)}</h3><dl>${rows.join('')}</dl>`
+       + (links ? `<div class="links">${links}</div>` : '');
 }
 
 function drawStation() {
-  layers.grat.style.display = conf.graticule === false ? 'none' : '';
-  layers.path.innerHTML = '';
-  layers.pins.innerHTML = '';
+  if (!L_.station) return;
+  L_.station.clearLayers();
   if (me && them && conf.great_circle !== false) {
     greatCircle(me, them).forEach((seg) => {
-      layers.path.appendChild(el('polyline', {
-        class: 'path', points: seg.map(([x, y]) => `${x},${y}`).join(' '),
-      }));
+      L.polyline(seg, { color: THEME.accent, weight: 2, interactive: false })
+        .addTo(L_.station);
     });
   }
-  if (me) layers.pins.appendChild(pin(me, 'var(--signal)', me.call || 'home',
-                                      () => showInfo('me')));
-  if (them) layers.pins.appendChild(pin(them, 'var(--accent)', them.call || '',
-                                        () => showInfo('them')));
-  rescalePins();
+  const pin = (p, colour, label, which) =>
+    L.circleMarker([p.lat, p.lon], {
+      radius: 6, color: THEME.bg, weight: 1.5,
+      fillColor: colour, fillOpacity: 1,
+    }).bindTooltip(label, { permanent: true, direction: 'right',
+                            className: 'pin-label', offset: [6, 0] })
+      .bindPopup(() => popupFor(which), { maxWidth: 280 })
+      .addTo(L_.station);
+  if (me) pin(me, THEME.signal, me.call || 'home', 'me');
+  if (them) pin(them, THEME.accent, them.call || them.grid, 'them');
 }
 
-// --- interaction ------------------------------------------------------------
-function wireInteraction() {
-  const svg = $('#map');
+// --- framing -----------------------------------------------------------------
+function fit() {
+  if (!map) return;
+  if ((conf.zoom || 'fit the path') === 'whole world' || !me || !them) {
+    map.setView([20, 0], 1);
+    return;
+  }
+  map.fitBounds(L.latLngBounds([[me.lat, me.lon], [them.lat, them.lon]]),
+                { padding: [30, 30], maxZoom: 7 });
+}
 
-  // passive:false because this has to preventDefault, or the wheel scrolls the
-  // card's page instead of zooming the map.
-  svg.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    zoomBy(Math.exp(e.deltaY * 0.0012), atPointer(e));
-  }, { passive: false });
+function resetView() { touched = false; fit(); }
 
-  let drag = null;
-  svg.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    drag = { p: atPointer(e), cx: view.cx, cy: view.cy,
-             sx: e.clientX, sy: e.clientY, moved: false };
+// --- setup -------------------------------------------------------------------
+function build() {
+  map = L.map('map', {
+    worldCopyJump: true,
+    zoomControl: true,
+    attributionControl: true,
+    minZoom: 1,
+  }).setView([20, 0], 1);
+
+  L_.base = chosenBasemap().addTo(map);
+  L_.station = L.layerGroup().addTo(map);
+  L_.auroraCanvas = L.canvas({ padding: 0.5 });
+  L_.greyline = L.layerGroup();
+  L_.aurora = L.layerGroup();
+
+  L.control.layers(null, {
+    'Greyline': L_.greyline,
+    'Aurora (NOAA)': L_.aurora,
+  }, { collapsed: true }).addTo(map);
+
+  // A reset control, because "fit the path" is otherwise lost the moment you
+  // touch the map.
+  const Reset = L.Control.extend({
+    onAdd() {
+      const a = L.DomUtil.create('a', 'leaflet-bar');
+      a.href = '#'; a.title = 'Back to the default view';
+      a.style.cssText = 'width:26px;height:26px;line-height:26px;text-align:center;display:block';
+      a.innerHTML = '&#8962;';
+      L.DomEvent.on(a, 'click', L.DomEvent.stop).on(a, 'click', resetView);
+      return a;
+    },
   });
-  svg.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    if (!drag.moved) {
-      // Capture only once this is really a drag. Capturing on pointerdown
-      // sends the following click to the svg instead of to whatever is under
-      // the cursor, which silently makes every pin unclickable.
-      if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) return;
-      drag.moved = true;
-      svg.setPointerCapture(e.pointerId);
-      svg.classList.add('dragging');
-    }
-    // atPointer is relative to the current view, so measure against where the
-    // grab started in the unmoved view rather than accumulating deltas, which
-    // would drift as the view moves under the cursor.
-    const now = atPointer(e);
-    view.cx = drag.cx - (now.x - drag.p.x);
-    view.cy = drag.cy - (now.y - drag.p.y);
-    touched = true;
-    applyView();
+  new Reset({ position: 'topleft' }).addTo(map);
+
+  map.on('zoomstart movestart', (e) => {
+    // Only a human moving the map counts; fit() moves it too.
+    if (e.hard !== true) touched = true;
   });
-  const end = (e) => {
-    if (!drag) return;
-    const wasDrag = drag.moved;
-    drag = null;
-    svg.classList.remove('dragging');
-    if (wasDrag) {
-      try { svg.releasePointerCapture(e.pointerId); } catch { /* gone */ }
-      // The click that follows a drag is the end of the drag, not a choice.
-      suppressClick = true;
-      setTimeout(() => { suppressClick = false; }, 0);
-    }
+  map.on('overlayadd overlayremove', syncOverlays);
+}
+
+function syncOverlays() {
+  const onGrey = map.hasLayer(L_.greyline);
+  const onAur = map.hasLayer(L_.aurora);
+  if (onGrey) drawGreyline();
+  clearInterval(auroraTimer);
+  if (onAur) {
+    drawAurora();
+    // NOAA publishes a new run about every five minutes; the host caches it,
+    // so this is cheap and mostly hits the cache.
+    auroraTimer = setInterval(drawAurora, 300000);
+  }
+}
+
+function applyConf() {
+  if (!map) return;
+  if (L_.base) map.removeLayer(L_.base);
+  L_.base = chosenBasemap().addTo(map);
+  L_.base.bringToBack?.();
+  const want = (name, on) => {
+    if (on && !map.hasLayer(L_[name])) map.addLayer(L_[name]);
+    if (!on && map.hasLayer(L_[name])) map.removeLayer(L_[name]);
   };
-  svg.addEventListener('pointerup', end);
-  svg.addEventListener('pointercancel', end);
-  svg.addEventListener('click', (e) => {
-    if (suppressClick) return;
-    if (e.target === svg || e.target.classList.contains('land')) {
-      $('#info').hidden = true;          // clicking the map closes the panel
-    }
-  });
-
-  $('#zin').onclick = () => zoomBy(1 / 1.6);
-  $('#zout').onclick = () => zoomBy(1.6);
-  $('#zfit').onclick = resetView;
-  $('#info-x').onclick = () => { $('#info').hidden = true; };
-  window.addEventListener('resize', applyView);
+  want('greyline', conf.greyline === true);
+  want('aurora', conf.aurora === true);
+  drawStation();
+  syncOverlays();
 }
 
-// --- state ------------------------------------------------------------------
+// --- state -------------------------------------------------------------------
 async function loadMe() {
   try {
     const st = await HD.station();
@@ -420,7 +394,6 @@ function show(info) {
     // Leaving the previous station up while the operator is looking at a
     // different callsign is worse than an empty map: a confident wrong answer.
     them = null; lastInfo = null;
-    $('#info').hidden = true;
     $('#who').textContent = info.callsign || '—';
     $('#detail').textContent = 'no grid known'
       + (info.source ? ` (via ${info.source})` : '');
@@ -437,24 +410,24 @@ function show(info) {
   }
   if (info.approximate) bits.push('approximate');
   $('#detail').textContent = bits.join(' · ');
-  $('#info').hidden = true;
   drawStation();
-  // A new station reframes the map - unless the operator has taken the view
-  // over themselves, in which case moving it back under them would be rude.
-  if (!touched) view = defaultView();
-  applyView();
+  if (!touched) fit();
 }
 
 HD.on('lookup.result', (p) => { if (p.callsign || p.locator) show(p); });
-HD.on('config.changed', () => loadMe().then(() => { drawStation(); applyView(); }));
-HD.onSettings((v) => { conf = v; drawStation(); resetView(); });
+HD.on('config.changed', () => loadMe().then(() => { drawStation(); if (!touched) fit(); }));
+HD.onSettings((v) => { conf = v; applyConf(); resetView(); });
+
+// The greyline moves about a degree every four minutes; once a minute is
+// smooth enough and costs nothing.
+setInterval(() => { if (map && map.hasLayer(L_.greyline)) drawGreyline(); }, 60000);
 
 (async function boot() {
+  readTheme();
   conf = await HD.settings();
   build();
-  wireInteraction();
   await loadMe();
-  drawStation();
+  applyConf();
   resetView();
 })();
 </script>

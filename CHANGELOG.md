@@ -7,6 +7,17 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- A **map card** (`path_map`): your station, the one you are looking at, and
+  the short-path great circle between them. Leaflet, bundled rather than from
+  a CDN, with a choice of base map — the built-in offline one (Natural Earth,
+  no network and no account), OpenStreetMap, or your own tile URL and key.
+  Scroll to zoom, drag to pan, click either pin for that station's details and
+  public links.
+- Two map layers: **greyline**, computed in the browser from the sun's
+  position with no network at all, and **aurora** from NOAA SWPC's OVATION
+  forecast, cached and thinned by the host so every tile does not poll NOAA.
+- **Clicking a logged contact** points the map and the path card at it,
+  preferring the grid that was logged over a fresh lookup.
 - **Test connection** for both sync services (read-only), and uploads that
   default to a dry run — they count what would be sent and send nothing until
   you say so, optionally narrowed to QSOs from a date.
