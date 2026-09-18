@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.spec
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# hamdash runtime state — config dir created by `python run.py --home ./dev`
+dev/
+*.log
+hamdash.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local settings (keep .claude/settings.json, drop the local one)
+.claude/settings.local.json

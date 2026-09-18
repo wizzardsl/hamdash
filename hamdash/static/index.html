@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-theme="night-watch">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HamDash</title>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail-left">
+    <span class="wordmark">HamDash</span>
+    <span class="station" id="station">N0CALL · DN02</span>
+  </div>
+  <div class="rail-right">
+    <span class="clock mono" id="clock">--:--:--</span>
+    <span class="clock-z">utc</span>
+    <select id="theme-pick" class="pick" aria-label="Theme"></select>
+    <button id="add-card" class="btn">Add card</button>
+    <button id="edit-toggle" class="btn btn-quiet" aria-pressed="false">Arrange</button>
+    <button id="settings" class="btn btn-quiet">Settings</button>
+  </div>
+</header>
+
+<main id="grid" class="grid" aria-label="Dashboard">
+  <p class="empty" id="empty">Nothing on the board yet. Add a card to start.</p>
+</main>
+
+<dialog id="palette" class="sheet">
+  <h2>Cards</h2>
+  <p class="sheet-note">Installed cards. Drag one onto the board to place it, or hit Add. Drop new cards into your cards folder and rescan.</p>
+  <ul id="palette-list" class="card-list"></ul>
+  <footer class="sheet-foot">
+    <button class="btn btn-quiet" id="rescan">Rescan folders</button>
+    <button class="btn" id="palette-close">Done</button>
+  </footer>
+</dialog>
+
+<dialog id="tile-sheet" class="sheet">
+  <h2 id="tile-sheet-title">Card settings</h2>
+  <p class="sheet-note" id="tile-sheet-note"></p>
+  <div id="tile-fields"></div>
+  <footer class="sheet-foot">
+    <button class="btn btn-quiet" id="tile-cancel">Cancel</button>
+    <button class="btn" id="tile-save">Save</button>
+  </footer>
+</dialog>
+
+<dialog id="settings-sheet" class="sheet">
+  <h2>Station</h2>
+  <label>Callsign <input id="s-call" class="mono" spellcheck="false"></label>
+  <label>Grid locator <input id="s-grid" class="mono" spellcheck="false"></label>
+  <label>Operator name <input id="s-op"></label>
+  <h2>Radio</h2>
+  <label class="row"><input type="checkbox" id="s-mock"> Use a simulated rig (no hardware)</label>
+  <label>rigctld host <input id="s-rig-host" class="mono" spellcheck="false"></label>
+  <label>rigctld port <input id="s-rig-port" class="mono" inputmode="numeric"></label>
+  <p class="sheet-note">Radio changes take effect when HamDash restarts.</p>
+  <footer class="sheet-foot">
+    <button class="btn btn-quiet" id="settings-cancel">Cancel</button>
+    <button class="btn" id="settings-save">Save</button>
+  </footer>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/js/hamdash.js"></script>
+<script src="/static/js/popout.js"></script>
+<script src="/static/js/grid.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

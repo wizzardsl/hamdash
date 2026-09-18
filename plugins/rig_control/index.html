@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { padding: 10px; overflow: auto; }
+  .dial { font-family: var(--mono); font-size: clamp(20px, 6vw, 34px); letter-spacing: -0.01em; }
+  .dial .frac { color: var(--muted); }
+  .line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .band { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  .state { color: var(--muted); font-size: 12px; }
+  .state.tx { color: var(--alert); }
+  .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  input.freq { width: 9em; font-family: var(--mono); }
+  select, input { font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--rule); border-radius: var(--radius); padding: 4px 6px; }
+  .mem { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .mem button { font-size: 12px; padding: 3px 7px; }
+  .ptt { background: var(--alert); color: var(--bg); }
+  .err { color: var(--alert); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="line">
+  <span class="dial" id="dial">--.------</span>
+  <span class="band" id="band"></span>
+  <span class="state" id="state"></span>
+</div>
+
+<div class="row">
+  <input class="freq mono" id="freq-in" placeholder="14.074000" inputmode="decimal">
+  <button class="btn" id="tune">Tune</button>
+  <select id="mode"></select>
+  <button class="btn ptt" id="ptt">Transmit</button>
+</div>
+
+<div class="mem" id="mem"></div>
+<p class="err" id="err"></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'rig_control';
+const $ = (s) => document.querySelector(s);
+
+function paint(s) {
+  if (!s.ok) {
+    $('#err').textContent = s.error || 'rig unavailable';
+    $('#state').textContent = 'offline';
+    $('#state').className = 'state';
+    return;
+  }
+  $('#err').textContent = '';
+  const mhz = HD.fmtHz(s.freq);
+  const [whole, frac] = mhz.split('.');
+  $('#dial').innerHTML = `${whole}.<span class="frac">${frac}</span>`;
+  $('#band').textContent = s.band;
+  $('#state').textContent = s.ptt ? 'transmitting' : `${s.mode}${s.mock ? ' · simulated' : ''}`;
+  $('#state').className = s.ptt ? 'state tx' : 'state';
+  if ($('#mode').value !== s.mode && [...$('#mode').options].some(o => o.value === s.mode)) {
+    $('#mode').value = s.mode;
+  }
+}
+
+async function boot() {
+  const modes = await HD.radio.modes();
+  $('#mode').innerHTML = modes.map(m => `<option>${m}</option>`).join('');
+  $('#mode').onchange = (e) => HD.radio.mode(e.target.value).then(paint).catch(fail);
+
+  $('#tune').onclick = () => {
+    const v = parseFloat($('#freq-in').value);
+    if (!v) { $('#err').textContent = 'Enter a frequency in MHz, like 14.074'; return; }
+    HD.radio.freq(Math.round(v * 1e6)).then(paint).catch(fail);
+  };
+  $('#freq-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#tune').click(); });
+
+  let tx = false;
+  $('#ptt').onclick = () => {
+    tx = !tx;
+    $('#ptt').textContent = tx ? 'Stop transmitting' : 'Transmit';
+    HD.radio.ptt(tx).then(paint).catch(fail);
+  };
+
+  const { memories } = await HD.card('rig_control', '/api/memories');
+  $('#mem').innerHTML = '';
+  memories.forEach((m) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-quiet';
+    b.textContent = m.label;
+    b.onclick = async () => {
+      try {
+        await HD.radio.freq(m.hz);
+        paint(await HD.radio.mode(m.mode));
+      } catch (e) { fail(e); }
+    };
+    $('#mem').appendChild(b);
+  });
+
+  paint(await HD.radio.state());
+  HD.on('radio.state', paint);
+}
+
+function fail(e) { $('#err').textContent = e.message; }
+boot().catch(fail);
+</script>
+</body>
+</html>

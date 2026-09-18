@@ -1,0 +1,24 @@
+{
+  "id": "web_embed",
+  "name": "Web page",
+  "kind": "url",
+  "version": "0.2.0",
+  "author": "HamDash",
+  "description": "Frame any page: cluster, propagation, WebSDR, RSS reader",
+  "url": "https://www.hamqsl.com/solar101vhf.php",
+  "w": 4, "h": 3,
+  "settings": {
+    "url": {
+      "type": "string",
+      "label": "Page address",
+      "default": "https://www.hamqsl.com/solar101vhf.php",
+      "help": "Per tile, so several of these can show different pages."
+    },
+    "refresh_s": {
+      "type": "number",
+      "label": "Reload every (seconds)",
+      "default": 0,
+      "help": "0 leaves the page alone."
+    }
+  }
+}

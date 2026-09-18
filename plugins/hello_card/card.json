@@ -1,0 +1,18 @@
+{
+  "id": "hello_card",
+  "name": "Hello card (template)",
+  "kind": "python",
+  "version": "0.2.0",
+  "author": "you",
+  "description": "Copy this folder to start your own card",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 3, "h": 2, "min_w": 2, "min_h": 2,
+  "permissions": ["radio"],
+  "settings": {
+    "greeting": {"type": "string", "label": "Greeting", "default": "Hello"},
+    "show_rig": {"type": "bool", "label": "Show the current frequency", "default": true},
+    "accent": {"type": "select", "label": "Emphasis",
+               "options": ["normal", "loud"], "default": "normal"}
+  }
+}

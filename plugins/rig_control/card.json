@@ -1,0 +1,12 @@
+{
+  "id": "rig_control",
+  "name": "Rig control",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Frequency, mode and PTT over Hamlib rigctld",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 4, "h": 3, "min_w": 3, "min_h": 3,
+  "permissions": ["radio"]
+}

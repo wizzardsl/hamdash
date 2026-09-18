@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { padding: 10px; overflow: auto; }
+  .entry { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; }
+  .entry label { font-size: 11px; color: var(--muted); display: block; }
+  .entry input { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--rule); border-radius: var(--radius); padding: 4px 6px; }
+  .entry input.mono { font-family: var(--mono); }
+  .actions { display: flex; gap: 6px; margin: 10px 0; align-items: center; }
+  .found { color: var(--muted); font-size: 12px; }
+  .found b { color: var(--accent); font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--rule); padding: 4px 4px; }
+  td { padding: 3px 4px; border-bottom: 1px solid var(--rule); }
+  td.c { font-family: var(--mono); color: var(--accent); }
+  .del { border: 0; background: none; color: var(--muted); cursor: pointer; }
+  .del:hover { color: var(--alert); }
+  .err { color: var(--alert); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="entry">
+  <div><label for="f-call">Callsign</label><input id="f-call" class="mono" spellcheck="false"></div>
+  <div><label for="f-sent">Sent</label><input id="f-sent" class="mono" value="59"></div>
+  <div><label for="f-rcvd">Received</label><input id="f-rcvd" class="mono" value="59"></div>
+  <div><label for="f-grid">Grid</label><input id="f-grid" class="mono" spellcheck="false"></div>
+  <div><label for="f-band">Band</label><input id="f-band" class="mono"></div>
+  <div><label for="f-mode">Mode</label><input id="f-mode" class="mono"></div>
+  <div><label for="f-comment">Comment</label><input id="f-comment"></div>
+</div>
+
+<div class="actions">
+  <button class="btn" id="save">Log it</button>
+  <button class="btn btn-quiet" id="adif">Export ADIF</button>
+  <span class="found" id="found"></span>
+</div>
+<p class="err" id="err"></p>
+
+<table>
+  <thead><tr><th>Call</th><th>Date</th><th>Band</th><th>Mode</th><th>Grid</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'logbook';
+const $ = (s) => document.querySelector(s);
+let lookupTimer;
+
+$('#f-call').addEventListener('input', (e) => {
+  const call = e.target.value.trim().toUpperCase();
+  e.target.value = call;
+  clearTimeout(lookupTimer);
+  if (call.length < 3) { $('#found').textContent = ''; return; }
+  lookupTimer = setTimeout(() => prefill(call), 450);
+});
+
+async function prefill(call) {
+  try {
+    const { qso, info } = await HD.card('logbook', `/api/prefill/${call}`);
+    ['grid:gridsquare', 'band:band', 'mode:mode'].forEach((pair) => {
+      const [field, key] = pair.split(':');
+      if (!$(`#f-${field}`).value && qso[key]) $(`#f-${field}`).value = qso[key];
+    });
+    const bits = [];
+    if (info.name) bits.push(info.name);
+    if (info.country) bits.push(info.country);
+    if (info.path) bits.push(`${info.path.km} km at ${info.path.bearing}° (${HD.bearingName(info.path.bearing)})`);
+    if (info.worked_before) bits.push(`worked ${info.worked_before}× before`);
+    $('#found').innerHTML = bits.length
+      ? `<b>${call}</b> · ${bits.join(' · ')} · via ${info.source}`
+      : `<b>${call}</b> · no record`;
+  } catch (e) { $('#err').textContent = e.message; }
+}
+
+$('#save').onclick = async () => {
+  const qso = {
+    call: $('#f-call').value, rst_sent: $('#f-sent').value,
+    rst_rcvd: $('#f-rcvd').value, gridsquare: $('#f-grid').value,
+    band: $('#f-band').value, mode: $('#f-mode').value,
+    comment: $('#f-comment').value,
+  };
+  try {
+    const full = await HD.card('logbook', `/api/prefill/${qso.call || 'X'}`);
+    await HD.card('logbook', '/api/save', { ...full.qso, ...clean(qso) });
+    ['#f-call', '#f-grid', '#f-comment'].forEach((s) => { $(s).value = ''; });
+    $('#found').textContent = '';
+    $('#err').textContent = '';
+    refresh();
+  } catch (e) { $('#err').textContent = e.message; }
+};
+
+const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
+
+$('#adif').onclick = () => { window.location = '/api/log/adif'; };
+
+async function refresh() {
+  const rows = await HD.log.recent(30);
+  $('#rows').innerHTML = '';
+  rows.forEach((r) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="c"></td><td class="mono"></td><td></td><td></td>
+                    <td class="mono"></td><td><button class="del">✕</button></td>`;
+    const cells = tr.querySelectorAll('td');
+    cells[0].textContent = r.call;
+    cells[1].textContent = `${r.qso_date.slice(4, 6)}-${r.qso_date.slice(6, 8)} ${r.time_on.slice(0, 4)}`;
+    cells[2].textContent = r.band || '';
+    cells[3].textContent = r.mode || '';
+    cells[4].textContent = r.gridsquare || '';
+    tr.querySelector('.del').onclick = async () => { await HD.log.remove(r.id); refresh(); };
+    $('#rows').appendChild(tr);
+  });
+}
+
+HD.on('log.qso_added', refresh);
+HD.on('radio.state', (s) => {
+  if (s.ok && !$('#f-band').value) $('#f-band').value = s.band || '';
+  if (s.ok && !$('#f-mode').value) $('#f-mode').value = s.mode || '';
+});
+refresh().catch((e) => { $('#err').textContent = e.message; });
+</script>
+</body>
+</html>

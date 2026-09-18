@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { margin: 0; padding: 12px; background: transparent; color: var(--ink);
+         font: 14px/1.5 system-ui, sans-serif; }
+  .big { font: 600 22px/1.2 system-ui, sans-serif; }
+  .loud { color: var(--accent); font-size: 30px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .err { color: var(--alert); font-size: 12px; margin-top: 6px; }
+</style>
+<div class="big" id="greeting">…</div>
+<div class="meta" id="meta"></div>
+<div class="err" id="err" hidden></div>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+  HD.cardId = 'hello_card';
+
+  async function paint() {
+    const s = await HD.card('hello_card', `/api/state?uid=${HD.tileUid}`);
+    const g = document.getElementById('greeting');
+    g.textContent = `${s.greeting}, ${(await HD.station()).callsign || 'N0CALL'}`;
+    g.classList.toggle('loud', s.accent === 'loud');
+    document.getElementById('meta').textContent = s.freq
+      ? `${HD.fmtHz(s.freq)} MHz · tile ${s.uid || '?'}`
+      : `tile ${s.uid || '?'}`;
+    const err = document.getElementById('err');
+    err.hidden = !s.error;
+    err.textContent = s.error || '';
+  }
+
+  paint();
+  HD.onSettings(paint);            // repaint when the operator edits this tile
+  HD.on('radio.state', paint);
+</script>

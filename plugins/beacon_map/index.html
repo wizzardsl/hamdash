@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { padding: 10px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+  .find { display: flex; gap: 6px; }
+  .find input { flex: 1; font: inherit; font-family: var(--mono); color: var(--ink);
+    background: var(--bg); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 5px 7px; }
+  .rose { flex: 1; min-height: 120px; display: grid; place-items: center; }
+  svg { width: 100%; height: 100%; max-height: 260px; }
+  .readout { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); }
+  .readout div { font-size: 11px; color: var(--muted); font-family: var(--font); }
+  .readout b { display: block; font-family: var(--mono); font-size: 17px;
+    color: var(--ink); font-weight: 500; }
+  .note { font-size: 12px; color: var(--muted); }
+  .note.err { color: var(--alert); }
+</style>
+</head>
+<body>
+
+<div class="find">
+  <input id="target" placeholder="callsign or grid" spellcheck="false">
+  <button class="btn" id="go">Find</button>
+</div>
+
+<div class="rose">
+  <svg viewBox="0 0 200 200" role="img" aria-labelledby="rose-t">
+    <title id="rose-t">Bearing to the station</title>
+    <circle cx="100" cy="100" r="84" fill="none" stroke="var(--rule)"/>
+    <circle cx="100" cy="100" r="56" fill="none" stroke="var(--rule)" stroke-dasharray="2 4"/>
+    <circle cx="100" cy="100" r="28" fill="none" stroke="var(--rule)" stroke-dasharray="2 4"/>
+    <g id="ticks" stroke="var(--rule)"></g>
+    <text x="100" y="12" text-anchor="middle" font-size="10" fill="var(--muted)">N</text>
+    <text x="192" y="104" text-anchor="middle" font-size="10" fill="var(--muted)">E</text>
+    <text x="100" y="197" text-anchor="middle" font-size="10" fill="var(--muted)">S</text>
+    <text x="8" y="104" text-anchor="middle" font-size="10" fill="var(--muted)">W</text>
+    <line id="needle" x1="100" y1="100" x2="100" y2="24"
+          stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="100" cy="100" r="3.5" fill="var(--accent)"/>
+    <text id="deg" x="100" y="118" text-anchor="middle" font-size="13"
+          font-family="var(--mono)" fill="var(--muted)">—</text>
+  </svg>
+</div>
+
+<div class="readout">
+  <div>Distance<b id="km">—</b></div>
+  <div>Miles<b id="mi">—</b></div>
+  <div>Long path<b id="lp">—</b></div>
+</div>
+<p class="note" id="note"></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'beacon_map';
+const $ = (s) => document.querySelector(s);
+
+// minor ticks every 15°
+const ticks = $('#ticks');
+for (let a = 0; a < 360; a += 15) {
+  const r = a % 45 === 0 ? 10 : 5;
+  const rad = (a - 90) * Math.PI / 180;
+  const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  l.setAttribute('x1', 100 + 84 * Math.cos(rad));
+  l.setAttribute('y1', 100 + 84 * Math.sin(rad));
+  l.setAttribute('x2', 100 + (84 - r) * Math.cos(rad));
+  l.setAttribute('y2', 100 + (84 - r) * Math.sin(rad));
+  ticks.appendChild(l);
+}
+
+function point(deg) {
+  const rad = (deg - 90) * Math.PI / 180;
+  $('#needle').setAttribute('x2', 100 + 76 * Math.cos(rad));
+  $('#needle').setAttribute('y2', 100 + 76 * Math.sin(rad));
+  $('#deg').textContent = `${deg.toFixed(0)}° ${HD.bearingName(deg)}`;
+}
+
+async function find(target) {
+  if (!target) return;
+  $('#note').className = 'note';
+  $('#note').textContent = 'looking up…';
+  try {
+    const res = await HD.card('beacon_map', `/api/path/${encodeURIComponent(target)}`);
+    if (!res.ok) {
+      $('#note').className = 'note err';
+      $('#note').textContent = res.error + (res.country ? ` (${res.country})` : '');
+      return;
+    }
+    const p = res.path;
+    point(p.bearing);
+    $('#km').textContent = `${p.km.toLocaleString()} km`;
+    $('#mi').textContent = `${p.miles.toLocaleString()} mi`;
+    $('#lp').textContent = `${((p.bearing + 180) % 360).toFixed(0)}°`;
+    const who = res.info ? `${res.info.callsign} · ${res.info.country || '—'} · ${res.info.locator}` : p.to.locator;
+    $('#note').textContent = `${p.from.locator} → ${who}`;
+  } catch (e) {
+    $('#note').className = 'note err';
+    $('#note').textContent = e.message;
+  }
+}
+
+$('#go').onclick = () => find($('#target').value.trim().toUpperCase());
+$('#target').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#go').click(); });
+
+// follow whatever the logbook card is looking up
+HD.on('lookup.result', (p) => {
+  if (p.callsign && p.locator) {
+    $('#target').value = p.callsign;
+    find(p.callsign);
+  }
+});
+</script>
+</body>
+</html>

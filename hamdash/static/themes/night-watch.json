@@ -1,0 +1,16 @@
+{
+  "id": "night-watch",
+  "name": "Night watch",
+  "vars": {
+    "--bg": "#0d1419",
+    "--panel": "#16212a",
+    "--panel-2": "#1c2932",
+    "--rule": "#26363f",
+    "--ink": "#d7e3ea",
+    "--muted": "#7e95a4",
+    "--accent": "#e9a13b",
+    "--signal": "#56b6a8",
+    "--alert": "#d9604a",
+    "--grip": "#3b4d58"
+  }
+}

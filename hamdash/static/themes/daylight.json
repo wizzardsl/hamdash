@@ -1,0 +1,16 @@
+{
+  "id": "daylight",
+  "name": "Daylight",
+  "vars": {
+    "--bg": "#dde3e6",
+    "--panel": "#f3f6f7",
+    "--panel-2": "#e7ecee",
+    "--rule": "#c3cfd5",
+    "--ink": "#16222b",
+    "--muted": "#5d7381",
+    "--accent": "#b4701a",
+    "--signal": "#1d7a6c",
+    "--alert": "#b8402c",
+    "--grip": "#9caab2"
+  }
+}

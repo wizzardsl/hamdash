@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-theme="night-watch">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HamDash card</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .pop-head {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    background: var(--panel-2); border-bottom: 1px solid var(--rule);
+    font: 12px/1 system-ui, sans-serif; color: var(--muted);
+    -webkit-user-select: none; user-select: none;
+  }
+  .pop-title { color: var(--ink); font-weight: 600; }
+  .pop-spacer { flex: 1; }
+  .pop-frame { flex: 1; min-height: 0; }
+  .pop-frame iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--panel); }
+  .pop-note { padding: 4px 8px; color: var(--alert); font: 11px/1.4 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<header class="pop-head">
+  <span class="pop-title" id="title">card</span>
+  <span class="pop-spacer"></span>
+  <label id="ontop-wrap" hidden><input type="checkbox" id="ontop" checked> on top</label>
+  <button class="tile-btn" id="reload" title="Reload card">↻</button>
+  <button class="btn btn-quiet" id="popin">Pop back in</button>
+</header>
+<div class="pop-frame"><iframe id="frame" title="card" referrerpolicy="no-referrer"></iframe></div>
+<p class="pop-note" id="note" hidden></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+(async function () {
+  const q = new URLSearchParams(location.search);
+  const uid = q.get('uid') || '';
+  const card = q.get('card') || '';
+  const native = q.get('native') === '1';
+  document.getElementById('title').textContent = q.get('title') || card;
+  document.title = `${q.get('title') || card} · HamDash`;
+  document.getElementById('frame').src = q.get('url') || `/cards/${card}/`;
+
+  // same theme as the board, without duplicating the theme list
+  try {
+    const [cfg, themes] = await Promise.all([HD.get('/api/config'), HD.get('/api/themes')]);
+    const t = themes.find((x) => x.id === cfg.theme) || themes[0];
+    if (t) {
+      document.documentElement.dataset.theme = t.id;
+      Object.entries(t.vars || {}).forEach(([k, v]) =>
+        document.documentElement.style.setProperty(k, v));
+    }
+  } catch { /* keep the default theme */ }
+  HD.on('config.changed', () => location.reload());
+
+  document.getElementById('reload').onclick = () => {
+    const f = document.getElementById('frame');
+    f.src = f.src;
+  };
+
+  const note = (msg) => {
+    const n = document.getElementById('note');
+    n.textContent = msg; n.hidden = !msg;
+  };
+
+  async function bridgeReady(ms = 8000) {
+    const ok = () => !!(window.pywebview && window.pywebview.api
+                        && window.pywebview.api.popout_set_on_top);
+    if (ok()) return true;
+    return new Promise((res) => {
+      window.addEventListener('pywebviewready', () => res(ok()), { once: true });
+      const t0 = Date.now();
+      const p = setInterval(() => {
+        if (ok()) { clearInterval(p); res(true); }
+        else if (Date.now() - t0 > ms) { clearInterval(p); res(false); }
+      }, 120);
+    });
+  }
+
+  if (native && await bridgeReady()) {
+    const wrap = document.getElementById('ontop-wrap');
+    wrap.hidden = false;
+    document.getElementById('ontop').onchange = async (e) => {
+      const r = await window.pywebview.api.popout_set_on_top(uid, e.target.checked);
+      if (r && r.ok === false) { note(r.error); e.target.checked = !e.target.checked; }
+      else note('');
+    };
+  }
+
+  document.getElementById('popin').onclick = async () => {
+    // tell the board first: it re-mounts the tile, then the window goes away
+    try { await HD.publish('ui.pop_in', { uid, card }); } catch { /* board may be gone */ }
+    if (native && window.pywebview && window.pywebview.api) {
+      await window.pywebview.api.popout_request_pop_in(uid);
+    } else {
+      window.close();
+    }
+  };
+})();
+</script>
+</body>
+</html>

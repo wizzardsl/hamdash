@@ -1,0 +1,16 @@
+{
+  "id": "sixty-hertz",
+  "name": "Sixty hertz",
+  "vars": {
+    "--bg": "#14100c",
+    "--panel": "#1e1813",
+    "--panel-2": "#26201a",
+    "--rule": "#3a2f25",
+    "--ink": "#f0e0c8",
+    "--muted": "#a08a68",
+    "--accent": "#ff9e2c",
+    "--signal": "#8fbf5a",
+    "--alert": "#e0503c",
+    "--grip": "#5a4a3a"
+  }
+}

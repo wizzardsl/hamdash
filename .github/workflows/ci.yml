@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # pywebview is deliberately NOT installed. It is optional at runtime and
+      # needs GTK/Qt on Linux; the host, the SDK and the js_api shape test must
+      # all import and pass without it. If that stops being true, CI says so
+      # before a Linux user does.
+      - name: Install runtime deps (no pywebview)
+        run: pip install "flask>=3.0" "requests>=2.31" "waitress>=3.0"
+
+      - name: Import the host without a GUI toolkit
+        run: python -c "import run, hamdash, hamdash.app, hamdash.windows, hamdash.sdk; print(hamdash.__version__)"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v

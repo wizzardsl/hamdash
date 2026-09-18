@@ -1,0 +1,12 @@
+{
+  "id": "logbook",
+  "name": "Logbook",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Log QSOs, look up callsigns, export ADIF",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 5, "h": 5, "min_w": 4, "min_h": 4,
+  "permissions": ["radio", "log", "lookup"]
+}
