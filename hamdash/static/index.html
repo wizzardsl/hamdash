@@ -91,7 +91,7 @@
     </select>
   </label>
   <label>Username <input id="s-lk-user" spellcheck="false" autocomplete="off"></label>
-  <label>Password <input id="s-lk-pass" type="password" autocomplete="off"></label>
+  <label>Password <input id="s-lk-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
   <p class="sheet-note">
     <strong>Automatic</strong> needs no account: callook and HamDB between them
     cover US and Canadian callsigns for free. Anywhere else needs an account —
@@ -106,7 +106,7 @@
   </p>
   <h2>Logbook sync</h2>
   <label>LoTW username <input id="s-lotw-user" spellcheck="false" autocomplete="off"></label>
-  <label>LoTW password <input id="s-lotw-pass" type="password" autocomplete="off"></label>
+  <label>LoTW password <input id="s-lotw-pass" type="password" autocomplete="off"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
   <div class="row-btns">
     <button class="btn btn-quiet" id="s-lotw-test" type="button">Test connection</button>
     <button class="btn btn-quiet" id="s-lotw-pull" type="button">Pull from LoTW</button>
@@ -115,7 +115,7 @@
   <p class="sheet-note" id="s-lotw-note"></p>
 
   <label>QRZ logbook API key <input id="s-qrz-key" class="mono" spellcheck="false"
-         autocomplete="off" placeholder="from logbook.qrz.com, not your password"></label>
+         autocomplete="off" placeholder="from logbook.qrz.com, not your password"><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
   <div class="row-btns">
     <button class="btn btn-quiet" id="s-qrz-test" type="button">Test connection</button>
     <button class="btn btn-quiet" id="s-qrz-pull" type="button">Pull from QRZ</button>

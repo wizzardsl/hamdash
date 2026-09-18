@@ -128,6 +128,20 @@ thread and lose exactly the diagnostics the log exists for.
 `run.ensure_streams()` runs first and points them at devnull. A real stream (a
 pipe from the supervisor) is left alone.
 
+## Secrets
+
+- `config.SECRETS` lists them, and `/api/config` never sends one. It used to
+  substitute the literal `"***"` so the form had something to show - the form
+  loaded that into the field and the next Save wrote `***` back as the
+  password. **Anything a form is shown, it will send back.**
+- Absent or empty means "not editing this" and keeps what is stored; an
+  explicit `null` clears it. That is the only way to remove one, so it cannot
+  happen by accident.
+- Tile settings of type `secret` follow the same rule, with one difference:
+  the card that owns the tile does get the real value, because it has to use
+  it (`path_map` builds a tile URL from its weather key). Everyone else gets
+  `secrets_set` and an empty string.
+
 ## Conventions
 
 - Cards are processes, not imports, on purpose: a card that crashes, hangs or

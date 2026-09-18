@@ -112,6 +112,7 @@
 
   // ---- per-tile settings ----------------------------------------------
   let settingTile = null;
+  let tileSecrets = {};
 
   function fieldRow(f, value) {
     const row = document.createElement('label');
@@ -131,8 +132,14 @@
       input = document.createElement('input');
       input.type = { number: 'number', bool: 'checkbox', secret: 'password' }[f.type] || 'text';
       if (f.type === 'bool') input.checked = value ?? f.default;
+      else if (f.type === 'secret') input.value = '';   // never shown one
       else input.value = value ?? f.default ?? '';
       if (f.placeholder) input.placeholder = f.placeholder;
+      if (f.type === 'secret') {
+        // The host does not send it, and an empty box means "leave it".
+        input.placeholder = tileSecrets[f.name] ? 'saved — type to replace'
+                                                : (f.placeholder || 'not set');
+      }
       if (f.type === 'secret' || f.type === 'number') input.classList.add('mono');
     }
     input.id = id;
@@ -158,7 +165,9 @@
     if (!schema.length) { toast(`${tile.title || tile.card} has no settings`); return; }
     let values = tile.settings || {};
     try {
-      values = (await HD.get(`/api/tiles/${tile.uid}/settings`)).values || values;
+      const got = await HD.get(`/api/tiles/${tile.uid}/settings`);
+      values = got.values || values;
+      tileSecrets = got.secrets_set || {};
     } catch { /* unsaved tile: fall back to what's in memory */ }
     settingTile = tile;
     $('#tile-sheet-title').textContent = `${tile.title || tile.card} settings`;
@@ -406,6 +415,45 @@
     syncNote(which, p.message, p.ok ? 'good' : 'warn');
   });
 
+  // ---- secrets --------------------------------------------------------
+  // A password field that shows the stored value - or a stand-in for it -
+  // sends that value back on the next save. That is how the callsign lookup
+  // password used to be replaced by the literal "***" whenever anyone opened
+  // settings and pressed Save. These boxes start empty, say whether something
+  // is stored, and are only sent when actually typed in.
+  function secretBox(sel, path) {
+    const el = $(sel);
+    el.value = '';
+    const set = (config.secrets_set || {})[path];
+    el.placeholder = set ? 'saved — type to replace' : 'not set';
+    el.dataset.cleared = '';
+    const clear = el.parentElement.querySelector('.clear-secret');
+    if (clear) clear.hidden = !set;
+  }
+
+  // '' means "leave it", null means "clear it", anything else is a new value.
+  function secretValue(sel) {
+    const el = $(sel);
+    if (el.dataset.cleared === 'yes') return null;
+    const v = el.value;
+    return v.trim() ? v : undefined;
+  }
+
+  function withSecret(obj, key, sel) {
+    const v = secretValue(sel);
+    if (v !== undefined) obj[key] = v;
+    return obj;
+  }
+
+  document.querySelectorAll('.clear-secret').forEach((btn) => {
+    btn.onclick = () => {
+      const el = btn.parentElement.querySelector('input');
+      el.value = '';
+      el.dataset.cleared = 'yes';
+      el.placeholder = 'will be cleared on save';
+    };
+  });
+
   // ---- settings -------------------------------------------------------
   function fillSettings() {
     $('#s-call').value = config.station.callsign || '';
@@ -417,13 +465,15 @@
     $('#s-rig-port').value = config.radio.rigctld_port || 4532;
     const sy = config.logbook_sync || {};
     $('#s-lotw-user').value = sy.lotw_user || '';
-    $('#s-lotw-pass').value = sy.lotw_password || '';
-    $('#s-qrz-key').value = sy.qrz_api_key || '';
+    secretBox('#s-lotw-pass', 'logbook_sync.lotw_password');
+    secretBox('#s-qrz-key', 'logbook_sync.qrz_api_key');
     refreshSync();
     const lk = config.callsign_lookup || {};
     $('#s-lk-provider').value = lk.provider || 'callook';
     $('#s-lk-user').value = lk.user || '';
-    $('#s-lk-pass').value = lk.password || '';
+    // Secrets are never sent to us, so the box starts empty and only says
+    // whether one is stored. Leaving it alone keeps whatever is there.
+    secretBox('#s-lk-pass', 'callsign_lookup.password');
     gridNote('');
   }
 
@@ -511,16 +561,14 @@
           rigctld_host: $('#s-rig-host').value.trim(),
           rigctld_port: Number($('#s-rig-port').value) || 4532,
         },
-        callsign_lookup: {
+        callsign_lookup: withSecret({
           provider: $('#s-lk-provider').value,
           user: $('#s-lk-user').value.trim(),
-          password: $('#s-lk-pass').value,
-        },
-        logbook_sync: {
+        }, 'password', '#s-lk-pass'),
+        logbook_sync: withSecret(withSecret({
           lotw_user: $('#s-lotw-user').value.trim(),
-          lotw_password: $('#s-lotw-pass').value,
-          qrz_api_key: $('#s-qrz-key').value.trim(),
-        },
+        }, 'lotw_password', '#s-lotw-pass'),
+          'qrz_api_key', '#s-qrz-key'),
       });
       config = await HD.get('/api/config');
       paintStation();

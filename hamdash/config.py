@@ -48,6 +48,15 @@ DEFAULTS = {
 }
 
 
+# Values that must never be sent to a browser, and must never be overwritten
+# by a save that did not mean to touch them. (section, key)
+SECRETS = (
+    ("callsign_lookup", "password"),
+    ("logbook_sync", "lotw_password"),
+    ("logbook_sync", "qrz_api_key"),
+)
+
+
 def default_home() -> Path:
     env = os.environ.get("HAMDASH_HOME")
     if env:

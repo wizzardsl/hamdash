@@ -86,6 +86,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **Saved passwords and API keys were destroyed by unrelated settings saves.**
+  `/api/config` replaced the callsign lookup password with the literal `"***"`
+  so the form had something to display; the form loaded it into the field and
+  the next Save stored `***` as the password. Secrets are no longer sent to
+  the browser at all — the form is told only that one exists — and a save only
+  changes a secret when a new one is actually typed. The same rule now covers
+  a card's own secret settings, such as the map's weather key.
 - Auto sync could be switched on for LoTW and QRZ at once, which would have
   uploaded every new contact to both and then re-uploaded each service's
   confirmations to the other. It is now one at a time.

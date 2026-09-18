@@ -13,7 +13,7 @@ from flask import (Flask, Response, abort, jsonify, request,
 
 from . import registry
 from .bus import BUS, MAX_SUBSCRIBERS
-from .config import BUNDLED_STATIC, Config
+from .config import BUNDLED_STATIC, SECRETS, Config
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import dxcc
 from .services import grid as gridlib
@@ -275,10 +275,26 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         caller, _ = _calling_card()
         if caller and caller.id != tile.get("card"):
             return jsonify(error=f"{caller.id} cannot read another card's tile"), 403
+        values = {**(card.defaults() if card else {}),
+                  **(tile.get("settings") or {})}
+        secret_set = {}
+        if card:
+            # The owning card needs its real values - path_map builds a tile
+            # URL from its weather key. Everyone else, the settings form
+            # included, gets to know a secret exists and not what it is. A
+            # form that is shown a secret sends it back on the next save,
+            # which is how the lookup password used to become "***".
+            mine = caller is not None and caller.id == card.id
+            for f in card.schema():
+                if f["type"] != "secret":
+                    continue
+                secret_set[f["name"]] = bool(str(values.get(f["name"]) or "").strip())
+                if not mine:
+                    values[f["name"]] = ""
         return jsonify({"uid": uid, "card": tile.get("card"),
                         "schema": card.schema() if card else [],
-                        "values": {**(card.defaults() if card else {}),
-                                   **(tile.get("settings") or {})}})
+                        "secrets_set": secret_set,
+                        "values": values})
 
     @app.put("/api/tiles/<uid>/settings")
     def tile_settings_put(uid):
@@ -289,8 +305,21 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         caller, _ = _calling_card()
         if caller and caller.id != tile.get("card"):
             return jsonify(error=f"{caller.id} cannot write another card's tile"), 403
+        incoming = dict(body.get("values", body) or {})
+        # An empty secret means "I was not editing this", never "erase it".
+        # The settings form is not shown a secret, so it cannot send one back,
+        # and an untouched box must not wipe what is stored.
+        card_for_tile = cards.get(tile.get("card"))
+        if card_for_tile:
+            held = tile.get("settings") or {}
+            for f in card_for_tile.schema():
+                name = f["name"]
+                if f["type"] != "secret":
+                    continue
+                if not str(incoming.get(name) or "").strip() and held.get(name):
+                    incoming[name] = held[name]
         try:
-            values = cfg.set_tile_settings(uid, body.get("values", body))
+            values = cfg.set_tile_settings(uid, incoming)
         except KeyError as exc:
             return jsonify(error=str(exc)), 404
         # Cards cache settings; this is how they find out to stop.
@@ -301,14 +330,31 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     @app.get("/api/config")
     def get_config():
+        """Config without the secrets.
+
+        They used to come back as the literal "***", which the settings form
+        loaded into the field and saved straight back - so opening settings and
+        pressing Save replaced the password with three asterisks. Secrets now
+        leave as empty, and `secrets_set` says which ones exist so the form can
+        show that without knowing them.
+        """
         safe = json.loads(json.dumps(cfg.data))
-        safe["callsign_lookup"]["password"] = "***" if safe["callsign_lookup"].get("password") else ""
+        which = {}
+        for section, key in SECRETS:
+            block = safe.get(section)
+            if not isinstance(block, dict):
+                continue
+            which[f"{section}.{key}"] = bool((block.get(key) or "").strip())
+            block[key] = ""
+        safe["secrets_set"] = which
         return jsonify(safe)
 
     @app.put("/api/config")
     def put_config():
         nonlocal look
         body = request.get_json(silent=True) or {}
+        kept = {f"{sec}.{k}": (cfg.data.get(sec, {}) or {}).get(k, "")
+                for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
                     "callsign_lookup", "logbook_sync", "units"):
             if key in body:
@@ -316,6 +362,22 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     cfg.data[key].update(body[key])
                 else:
                     cfg.data[key] = body[key]
+        # A secret is only changed when a new one is actually supplied. Absent
+        # or empty means "I was not editing this"; an explicit null means
+        # "clear it". Without that rule every save rewrites every secret with
+        # whatever the form happened to be showing.
+        for section, key in SECRETS:
+            incoming = body.get(section)
+            if not isinstance(incoming, dict) or key not in incoming:
+                continue
+            value = incoming[key]
+            if value is None:
+                cfg.data.setdefault(section, {})[key] = ""
+            elif str(value).strip():
+                cfg.data.setdefault(section, {})[key] = value
+            else:
+                cfg.data.setdefault(section, {})[key] = kept.get(f"{section}.{key}", "")
+
         if "callsign_lookup" in body:
             # Rebuilt rather than left until restart: the point of changing the
             # provider is usually to look something up straight afterwards, and
