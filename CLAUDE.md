@@ -41,7 +41,9 @@ hamdash/services/   radio (rigctld), callsign, logbook, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, web_embed, hello_card
-tests/              regression guards — currently the js_api shape test
+tests/              regression guards — js_api shape, release-notes extractor
+tools/              release_notes.py — what the release workflow publishes
+.github/workflows/  ci.yml (matrix, reusable), release.yml (on tag)
 ```
 
 ## Invariants — break these and it breaks in ways that are hard to trace
@@ -108,6 +110,22 @@ interpreter. If packaging comes up, the app has to become its own card runner
   `--- Logging error ---` instead of a message).
 - Errors in the UI name what to fix, not just what failed. The SDK unwraps the
   host's JSON `error` rather than raising a bare `403 Forbidden`.
+
+## Releasing
+
+Tagging is the trigger; the tree is the source of truth.
+
+1. Bump `__version__` in `hamdash/__init__.py`.
+2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under `## [X.Y.Z]`.
+3. Commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+`release.yml` runs the full CI matrix, then publishes a GitHub Release whose
+notes are that CHANGELOG section, extracted by `tools/release_notes.py`. It
+refuses to publish if the tag disagrees with `__version__` or the section is
+missing or empty — a tag can't be edited after the fact, so those fail the job
+rather than shipping wrong notes. Write the changelog entry when the fix
+lands, not at release time; the 0.3.3 entry had to be reconstructed from the
+README and is guesswork as a result.
 
 ## Open threads
 

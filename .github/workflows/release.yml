@@ -1,0 +1,57 @@
+name: release
+
+# Tagging is the whole trigger. The tree is the source of truth: the tag must
+# match hamdash.__version__ and CHANGELOG.md must already describe the
+# version, or nothing is published. See tools/release_notes.py.
+#
+#   git tag v0.3.4 && git push origin v0.3.4
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v0.3.4"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A release that fails CI is worse than a late one, and a tag cannot be
+  # edited after the fact — so the full matrix gates publication.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the release and upload its notes
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Resolve the tag
+        run: echo "TAG=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+
+      # Fails the job if the tag disagrees with hamdash/__init__.py, or if
+      # CHANGELOG.md has no section for it. No runtime deps needed.
+      - name: Extract release notes
+        run: |
+          python tools/release_notes.py "${TAG#v}" | tee notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "hamdash ${TAG#v}" \
+            --notes-file notes.md \
+            --verify-tag
