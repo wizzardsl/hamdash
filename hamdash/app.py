@@ -21,7 +21,7 @@ from .services.callsign import Lookup
 from .services.logbook import Logbook
 from .services.qsl import Lotw, QrzLogbook, Runner, SyncError
 from .services.radio import MODES, Rig
-from .services.space import Aurora
+from .services.space import Aurora, Drap, Ionosondes
 
 HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
               "connection", "keep-alive", "upgrade", "proxy-authenticate",
@@ -43,6 +43,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     look = _make_lookup(cfg)
     syncer = Runner(lambda t, p: BUS.publish(t, p, source='host'))
     aurora = Aurora()
+    drap = Drap()
+    ionosondes = Ionosondes()
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -414,6 +416,30 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         except ValueError:
             threshold = 5
         return jsonify(aurora.get(threshold))
+
+    @app.get("/api/space/drap")
+    @guard("space")
+    def space_drap():
+        """D-region absorption: the highest frequency being absorbed.
+
+        Zero over the whole planet is the normal, good case, so the answer
+        carries `quiet` rather than leaving an empty list looking broken.
+        """
+        try:
+            threshold = max(0.1, float(request.args.get("threshold", 1)))
+        except ValueError:
+            threshold = 1.0
+        return jsonify(drap.get(threshold))
+
+    @app.get("/api/space/muf")
+    @guard("space")
+    def space_muf():
+        """Measured MUF and foF2 from the world's ionosondes.
+
+        Points, not a field: the smooth MUF maps everyone knows are an
+        interpolation of exactly these stations.
+        """
+        return jsonify(ionosondes.get())
 
     @app.post("/api/grid/locator")
     @guard("lookup")

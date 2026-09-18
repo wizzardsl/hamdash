@@ -306,6 +306,18 @@ shape it settled on is worth reusing:
 - Leaflet's canvas renderer only paints the padded viewport, so a marker on
   that boundary is drawn as half a dot. Markers use SVG unless there are
   thousands of them.
+- **Leaflet fixes a map's CRS at construction**, and the layer control is
+  built once, so changing projection or supplying a weather key means
+  `map.remove()` and build again (`needsRebuild`/`rebuild`), not adjusting in
+  place.
+- Azimuthal cannot use tiles: no service publishes tiles in aeqd, so the base
+  map is forced to the built-in vector one, which reprojects like any other
+  GeoJSON.
+- Everything under `/api/space/*` is cached for five minutes by the host.
+  That is not politeness alone - NOAA resets the connection after a handful of
+  rapid requests, which is easy to hit while developing.
+- D-RAP arrives as a text table, not JSON. All-zero is the normal, good case
+  and is reported as `quiet`, not as an empty failure.
 - `path_map` is Leaflet, vendored in the card (`vendor/`, BSD-2, ~190 kB with
   its images) rather than from a CDN, so it works offline and frozen. The
   offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the

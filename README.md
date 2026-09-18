@@ -310,11 +310,29 @@ it needs an API key with billing enabled and its terms restrict mixing with
 other base maps, which would mean every user had to open a cloud account
 before the map worked.
 
+**Projection.** Flat, or **azimuthal centred on your station** — every bearing
+leaves the middle as a straight line and every distance from the centre is to
+scale, which is the geometry a beam heading actually lives in. It only works
+with the built-in base map: no tile service publishes tiles in that
+projection, so picking it switches the base map rather than drawing a broken
+one.
+
 **Layers**, from the control in the corner:
 
 - **Greyline** — the day/night terminator and the subsolar point, worked out in
   the browser from the clock. No network, no service, no provider. Verified
   against the solstices and the equinox.
+- **Absorption (D-RAP)** — NOAA's D-region absorption, as the highest
+  frequency being absorbed. An empty layer is the good news: most of the time
+  the ionosphere is undisturbed, and the card says so rather than looking like
+  it failed to load.
+- **Ionosondes (MUF)** — measured MUF and foF2 from about a hundred
+  ionosondes, via prop.kc2g.com and GIRO. Points, not a field: the familiar
+  smooth MUF map is an interpolation of exactly these stations, and plotting
+  the measurements says what is known and where without inventing the rest.
+- **Clouds** — OpenWeatherMap, and the only layer here that needs an account.
+  Paste a key in the tile's settings; without one the layer is hidden rather
+  than offered and broken.
 - **Aurora** — NOAA SWPC's OVATION forecast. Public data, no account. It comes
   through the host, which caches it for five minutes and drops the cells at
   zero: the raw grid is about 1.5 MB of mostly nothing, and every open tile

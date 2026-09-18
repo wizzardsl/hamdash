@@ -7,6 +7,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- An **azimuthal projection** for the map, centred on your station, so every
+  bearing is a straight line out from the middle.
+- Three more map layers: **D-RAP absorption** and **ionosonde MUF/foF2**, both
+  free and cached by the host, and **clouds** from OpenWeatherMap for anyone
+  with a key.
 - A **country flag beside every callsign**, from its prefix, carried through
   the log, the contact details, the map popups and the path card. Flags are
   bundled rather than fetched from a CDN.

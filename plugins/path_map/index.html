@@ -58,6 +58,8 @@
 
 <script src="/static/js/hamdash.js"></script>
 <script src="vendor/leaflet.js"></script>
+<script src="vendor/proj4.js"></script>
+<script src="vendor/proj4leaflet.js"></script>
 <script src="world.js"></script>
 <script>
 HD.cardId = 'path_map';
@@ -227,6 +229,86 @@ async function drawAurora() {
   }
 }
 
+// --- projection --------------------------------------------------------------
+// Azimuthal equidistant centred on the operator: every bearing leaves the
+// middle as a straight line and every distance from the centre is to scale,
+// which is the projection a beam heading actually lives in.
+//
+// It cannot be combined with tiles. No tile service publishes tiles in this
+// projection, so the base map is forced to the built-in vector one - which is
+// GeoJSON, and reprojects like any other geometry.
+function azimuthalCRS(at) {
+  const proj = `+proj=aeqd +lat_0=${at.lat} +lon_0=${at.lon} `
+             + '+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs';
+  const half = 20037508.34;            // half the planet, in metres
+  const res = [];
+  for (let z = 0; z < 12; z++) res.push((2 * half / 256) / Math.pow(2, z));
+  return new L.Proj.CRS('AEQD:hamdash', proj, {
+    resolutions: res,
+    origin: [-half, half],
+    bounds: L.bounds([-half, -half], [half, half]),
+  });
+}
+
+function wantAzimuthal() {
+  return (conf.projection || 'flat').startsWith('azimuthal') && !!me;
+}
+
+// --- absorption and ionosondes ----------------------------------------------
+async function drawDrap() {
+  if (!L_.drap) return;
+  try {
+    const d = await HD.get('/api/space/drap', { threshold: 1 });
+    L_.drap.clearLayers();
+    if (!d.ok) { $('#err').textContent = d.error; return; }
+    $('#err').textContent = '';
+    if (d.quiet) {
+      // An empty layer here is the good news, not a failure to load.
+      $('#detail').textContent = `no HF absorption anywhere (${d.valid_at})`;
+      return;
+    }
+    d.cells.forEach(([lon, lat, mhz]) => {
+      L.circleMarker([lat, lon], {
+        renderer: L_.auroraCanvas, radius: 4, stroke: false,
+        fillColor: mhz >= 20 ? THEME.alert : mhz >= 10 ? THEME.accent : THEME.signal,
+        fillOpacity: Math.min(0.75, 0.2 + mhz / 40), interactive: false,
+      }).addTo(L_.drap);
+    });
+    $('#detail').textContent = `absorption up to `
+      + `${Math.max(...d.cells.map((c) => c[2]))} MHz (${d.valid_at})`;
+  } catch (e) { $('#err').textContent = `D-RAP: ${e.message}`; }
+}
+
+async function drawMuf() {
+  if (!L_.muf) return;
+  try {
+    const d = await HD.get('/api/space/muf');
+    L_.muf.clearLayers();
+    if (!d.ok) { $('#err').textContent = d.error; return; }
+    $('#err').textContent = '';
+    d.stations.forEach((st) => {
+      const muf = st.mufd;
+      // Measured points, not a field. The familiar smooth MUF map is an
+      // interpolation of exactly these stations; drawing the measurements
+      // says what is known and where, without inventing the rest.
+      const colour = muf === null ? THEME.grip
+        : muf >= 28 ? THEME.signal : muf >= 14 ? THEME.accent : THEME.alert;
+      L.circleMarker([st.lat, st.lon], {
+        radius: 5, weight: 1, color: THEME.bg, fillColor: colour, fillOpacity: 1,
+      }).bindTooltip(muf === null ? st.name : `${st.name}: ${muf} MHz`,
+                     { direction: 'top' })
+        .bindPopup(`<h3>${st.code || st.name}</h3><dl>`
+          + `<dt>Station</dt><dd>${st.name}</dd>`
+          + (muf !== null ? `<dt>MUF(3000)</dt><dd>${muf} MHz</dd>` : '')
+          + (st.fof2 !== null ? `<dt>foF2</dt><dd>${st.fof2} MHz</dd>` : '')
+          + `<dt>Measured</dt><dd>${(st.time || '').replace('T', ' ')}</dd>`
+          + '</dl>')
+        .addTo(L_.muf);
+    });
+    $('#detail').textContent = `${d.stations.length} ionosondes · ${d.credit}`;
+  } catch (e) { $('#err').textContent = `MUF: ${e.message}`; }
+}
+
 // --- basemaps ----------------------------------------------------------------
 function builtInBasemap() {
   // The offline map is a Leaflet layer like any other, which is what lets it
@@ -240,6 +322,9 @@ function builtInBasemap() {
 }
 
 function chosenBasemap() {
+  // Tiles are square in Web Mercator and nothing else, so azimuthal always
+  // gets the vector map. Saying so beats drawing a broken one.
+  if (wantAzimuthal()) return builtInBasemap();
   const pick = conf.basemap || 'built-in (offline)';
   if (pick === 'OpenStreetMap') {
     return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -338,17 +423,28 @@ function fitSelected() {
 
 // --- setup -------------------------------------------------------------------
 function build() {
-  map = L.map('map', {
-    worldCopyJump: true,
-    zoomControl: true,
-    attributionControl: true,
-    minZoom: 1,
-  }).setView([20, 0], 1);
+  const az = wantAzimuthal();
+  const opts = { zoomControl: true, attributionControl: true, minZoom: 0 };
+  if (az) {
+    opts.crs = azimuthalCRS(me);
+    opts.worldCopyJump = false;      // there are no world copies in aeqd
+  } else {
+    opts.worldCopyJump = true;
+    opts.minZoom = 1;
+  }
+  map = L.map('map', opts);
+  if (az) map.setView([me.lat, me.lon], 2);
+  else map.setView([20, 0], 1);
 
   L_.base = chosenBasemap().addTo(map);
   L_.station = L.layerGroup().addTo(map);
   L_.auroraCanvas = L.canvas({ padding: 0.5 });
+  builtAzimuthal = az;
+  builtWithKey = (conf.owm_key || '').trim();
   L_.greyline = L.layerGroup();
+  L_.drap = L.layerGroup();
+  L_.muf = L.layerGroup();
+  L_.weather = null;                 // built on demand: it needs a key
   L_.logged = L.layerGroup();
   // Its own renderer. Sharing the aurora's canvas tied the log's dots to
   // whether a completely unrelated layer happened to be switched on, and put
@@ -356,11 +452,22 @@ function build() {
   L_.loggedCanvas = L.canvas({ padding: 0.3 });
   L_.aurora = L.layerGroup();
 
-  L.control.layers(null, {
+  const overlays = {
     'Logged contacts': L_.logged,
     'Greyline': L_.greyline,
     'Aurora (NOAA)': L_.aurora,
-  }, { collapsed: true }).addTo(map);
+    'Absorption (D-RAP)': L_.drap,
+    'Ionosondes (MUF)': L_.muf,
+  };
+  // Clouds need somebody's API key, so the layer only exists once there is
+  // one. An entry that always fails is worse than no entry.
+  if ((conf.owm_key || '').trim() && !wantAzimuthal()) {
+    L_.weather = L.tileLayer(
+      `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${conf.owm_key.trim()}`,
+      { opacity: 0.45, attribution: '&copy; OpenWeatherMap' });
+    overlays.Clouds = L_.weather;
+  }
+  L.control.layers(null, overlays, { collapsed: true }).addTo(map);
 
   // A reset control, because "fit the path" is otherwise lost the moment you
   // touch the map.
@@ -384,20 +491,44 @@ function build() {
 }
 
 function syncOverlays() {
-  const onGrey = map.hasLayer(L_.greyline);
-  const onAur = map.hasLayer(L_.aurora);
-  if (onGrey) drawGreyline();
+  if (map.hasLayer(L_.greyline)) drawGreyline();
   clearInterval(auroraTimer);
-  if (onAur) {
-    drawAurora();
-    // NOAA publishes a new run about every five minutes; the host caches it,
-    // so this is cheap and mostly hits the cache.
-    auroraTimer = setInterval(drawAurora, 300000);
+  const live = [
+    [L_.aurora, drawAurora],
+    [L_.drap, drawDrap],
+    [L_.muf, drawMuf],
+  ].filter(([layer]) => map.hasLayer(layer));
+  live.forEach(([, draw]) => draw());
+  if (live.length) {
+    // Everything here is published about every five minutes and cached by the
+    // host, so this mostly hits the cache and never hits the source harder
+    // than it wants - NOAA resets the connection if you ask too often.
+    auroraTimer = setInterval(() => live.forEach(([, draw]) => draw()), 300000);
   }
+}
+
+let builtAzimuthal = false, builtWithKey = '';
+
+function needsRebuild() {
+  // Leaflet fixes a map's CRS when it is created, and the layer control is
+  // built once, so a projection change or a newly supplied weather key means
+  // starting the map again rather than adjusting it.
+  return wantAzimuthal() !== builtAzimuthal
+      || (conf.owm_key || '').trim() !== builtWithKey;
+}
+
+function rebuild() {
+  if (map) { map.remove(); map = null; }
+  document.getElementById('map').innerHTML = '';
+  build();
+  drawStation();
+  syncOverlays();
+  resetView();
 }
 
 function applyConf() {
   if (!map) return;
+  if (needsRebuild()) { rebuild(); return; }
   if (L_.base) map.removeLayer(L_.base);
   L_.base = chosenBasemap().addTo(map);
   L_.base.bringToBack?.();
@@ -407,6 +538,8 @@ function applyConf() {
   };
   want('greyline', conf.greyline === true);
   want('aurora', conf.aurora === true);
+  // In azimuthal the world has no left or right edge, so framing the whole
+  // planet is the only sensible default.
   drawStation();
   syncOverlays();
 }
