@@ -6,7 +6,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+- The release workflow built the per-platform zips and then published without
+  attaching them, so 0.3.4 shipped with no downloads. The publish step now
+  verifies at least one asset landed and fails if not, and is idempotent so a
+  `workflow_dispatch` re-run repairs an existing release rather than erroring
+  because the tag is already there.
 
 ## [0.3.4]
 

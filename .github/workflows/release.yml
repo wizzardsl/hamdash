@@ -66,12 +66,27 @@ jobs:
         run: |
           python tools/release_notes.py "${TAG#v}" | tee notes.md
 
+      # Idempotent on purpose: a tag push creates the release, and a later
+      # workflow_dispatch on the same tag re-uploads the builds instead of
+      # failing because the release already exists. That is the only way to
+      # repair a release, since the tag itself cannot be edited.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "hamdash ${TAG#v}" \
-            --notes-file notes.md \
-            --verify-tag
+          set -x
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists; uploading builds to it"
+            gh release upload "$TAG" assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "hamdash ${TAG#v}" \
+              --notes-file notes.md \
+              --verify-tag \
+              assets/*.zip
+          fi
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                    --json assets --jq '.assets | length')" -gt 0 \
+            || { echo "no assets attached to $TAG"; exit 1; }
