@@ -26,6 +26,50 @@
   .eye:hover { color: var(--accent); }
   .del:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
+
+  /* What is known about the station being typed, before it is logged. */
+  .peek {
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: var(--radius); background: var(--panel-2);
+    padding: 7px 10px; margin: 0 0 8px;
+  }
+  .peek[hidden] { display: none; }
+  .peek-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .peek-call { font-family: var(--mono); font-size: 16px; color: var(--accent); }
+  .peek-name { font-size: 14px; }
+  .peek-dist { margin-left: auto; font-family: var(--mono); font-size: 15px; }
+  .peek-sub {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 4px; font-size: 12px; color: var(--muted);
+  }
+  .peek-sub .mono, .peek-brg { font-family: var(--mono); }
+  .peek-worked, .peek-notes { display: flex; align-items: center; gap: 5px; }
+  .peek-view { font-size: 11px; padding: 1px 6px; }
+  .peek-note { margin-top: 4px; font-size: 11px; color: var(--muted); }
+  .peek-note.warn { color: var(--alert); }
+  .worked-list { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+  .worked-list li { padding: 4px 0; border-bottom: 1px solid var(--rule); }
+  .worked-list .when { font-family: var(--mono); color: var(--muted); }
+  .worked-list .said { display: block; margin-top: 2px; }
+
+  .tools { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; }
+  .tools #q { flex: 1; min-width: 0; font: inherit; font-family: var(--mono);
+    color: var(--ink); background: var(--bg); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 4px 7px; }
+  .tools .btn { font-size: 12px; padding: 4px 9px; }
+  .cols-wrap { position: relative; }
+  .cols { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 6px 9px; white-space: nowrap;
+    box-shadow: 0 8px 22px rgba(0,0,0,.4); }
+  .cols[hidden] { display: none; }
+  .cols label { display: flex; align-items: center; gap: 6px; padding: 2px 0;
+    font-size: 12px; cursor: pointer; }
+  tr.day td { color: var(--muted); font-size: 12px; padding-top: 10px;
+    border-bottom: 1px solid var(--accent); }
+  th.num, td.num { text-align: right; }
+  td.conf.yes { color: var(--signal); }
+  td.conf.part { color: var(--accent); }
   .sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
           margin: 8px 0 2px; font-size: 12px; }
   .sync[hidden] { display: none; }
@@ -65,8 +109,38 @@
 </div>
 <p class="err" id="err"></p>
 
+<div class="tools">
+  <input id="q" class="mono" placeholder="Search by callsign" spellcheck="false">
+  <button class="btn btn-quiet" id="q-clear">Clear</button>
+  <div class="cols-wrap">
+    <button class="btn btn-quiet" id="cols-btn" aria-expanded="false">Columns</button>
+    <div class="cols" id="cols" hidden></div>
+  </div>
+</div>
+
+<div class="peek" id="peek" hidden>
+  <div class="peek-top">
+    <span class="peek-call" id="peek-call"></span>
+    <span class="peek-name" id="peek-name"></span>
+    <span class="peek-dist" id="peek-dist"></span>
+  </div>
+  <div class="peek-sub">
+    <span class="peek-where" id="peek-where"></span>
+    <span class="peek-brg" id="peek-brg"></span>
+    <span class="peek-worked">
+      <span id="peek-qsos">no QSOs</span>
+      <button class="btn btn-quiet peek-view" id="peek-qsos-view" hidden>View</button>
+    </span>
+    <span class="peek-notes">
+      <span id="peek-notes-n">no notes</span>
+      <button class="btn btn-quiet peek-view" id="peek-notes-view" hidden>View</button>
+    </span>
+  </div>
+  <div class="peek-note" id="peek-note"></div>
+</div>
+
 <table>
-  <thead><tr><th>Call</th><th>Date</th><th>Freq</th><th>Band</th><th>Mode</th><th>Grid</th><th></th></tr></thead>
+  <thead><tr id="log-head"></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 
@@ -100,12 +174,13 @@
 HD.cardId = 'logbook';
 const $ = (s) => document.querySelector(s);
 let lookupTimer;
+let conf = {};
 
 $('#f-call').addEventListener('input', (e) => {
   const call = e.target.value.trim().toUpperCase();
   e.target.value = call;
   clearTimeout(lookupTimer);
-  if (call.length < 3) { $('#found').textContent = ''; return; }
+  if (call.length < 3) { $('#found').textContent = ''; hidePeek(); return; }
   lookupTimer = setTimeout(() => prefill(call), 450);
 });
 
@@ -116,17 +191,97 @@ async function prefill(call) {
       const [field, key] = pair.split(':');
       if (!$(`#f-${field}`).value && qso[key]) $(`#f-${field}`).value = qso[key];
     });
-    const bits = [];
-    if (info.name) bits.push(info.name);
-    if (info.country) bits.push(info.country);
-    if (info.path) bits.push(`${HD.fmtDistance(info.path.km)} at ${Math.round(info.path.bearing)}° (${HD.bearingName(info.path.bearing)})`);
-    const seen = (info.worked_before || []).length;
-    if (seen) bits.push(`worked ${seen}× before`);
-    $('#found').innerHTML = bits.length
-      ? `<b>${call}</b> · ${bits.join(' · ')} · via ${info.source}`
-      : `<b>${call}</b> · no record`;
+    showPeek(call, info);
   } catch (e) { $('#err').textContent = e.message; }
 }
+
+// ---- what is known about the station being typed ---------------------------
+// Filled from the same lookup that prefills the form, so it costs nothing
+// extra, and it appears while the QSO is still in progress - which is when
+// knowing you have worked somebody before is actually useful.
+let peekWorked = [], peekCall = '';
+
+function showPeek(call, info) {
+  peekCall = call;
+  peekWorked = info.worked_before || [];
+  $('#peek').hidden = false;
+
+  $('#peek-call').textContent = call;
+  $('#peek-name').textContent = info.name || '';
+
+  const where = [info.country, info.state].filter(Boolean).join(' · ');
+  $('#peek-where').innerHTML = HD.flag(info.iso, info.country) + '<span></span>';
+  $('#peek-where').querySelector('span').textContent = where || 'unknown';
+
+  if (info.path) {
+    $('#peek-dist').textContent = `↔ ${HD.fmtDistance(info.path.km)}`;
+    $('#peek-brg').textContent =
+      `⦾ ${Math.round(info.path.bearing)}° ${HD.bearingName(info.path.bearing)}`;
+  } else {
+    $('#peek-dist').textContent = '';
+    $('#peek-brg').textContent = info.locator ? '' : 'no grid known';
+  }
+
+  const n = peekWorked.length;
+  $('#peek-qsos').textContent = n ? `${n} QSO${n === 1 ? '' : 's'}` : 'first contact';
+  $('#peek-qsos-view').hidden = !n;
+
+  const notes = peekWorked.filter((q) => (q.comment || '').trim());
+  $('#peek-notes-n').textContent = notes.length
+    ? `${notes.length} note${notes.length === 1 ? '' : 's'}` : 'no notes';
+  $('#peek-notes-view').hidden = !notes.length;
+
+  const note = $('#peek-note');
+  // Say where it came from, and say when it is a guess: the prefix table
+  // answers with the middle of a country and that is not a location.
+  note.className = 'peek-note' + (info.approximate ? ' warn' : '');
+  note.textContent = info.note ? info.note
+    : info.approximate ? `no record for ${call}; showing the ${info.country || 'prefix'} guess`
+    : info.source ? `via ${info.source}${info.locator ? ' · ' + info.locator : ''}`
+    : '';
+}
+
+function hidePeek() { $('#peek').hidden = true; }
+
+function whenOf(q) {
+  const d = q.qso_date || '';
+  const t = (q.time_on || '').slice(0, 4);
+  return d.length === 8
+    ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)} ${t}` : t;
+}
+
+function listSheet(title, items) {
+  $('#qso-title').textContent = title;
+  const dl = $('#qso-rows');
+  dl.innerHTML = '';
+  const ul = document.createElement('ul');
+  ul.className = 'worked-list';
+  items.forEach((q) => {
+    const li = document.createElement('li');
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = [whenOf(q), q.band, q.mode,
+                        q.freq ? `${Number(q.freq).toFixed(3)} MHz` : '',
+                        q.rst_sent ? `${q.rst_sent}/${q.rst_rcvd}` : '']
+      .filter(Boolean).join('  ');
+    li.appendChild(when);
+    if ((q.comment || '').trim()) {
+      const said = document.createElement('span');
+      said.className = 'said';
+      said.textContent = q.comment;
+      li.appendChild(said);
+    }
+    ul.appendChild(li);
+  });
+  dl.appendChild(ul);
+  $('#qso-sheet').showModal();
+}
+
+$('#peek-qsos-view').onclick = () =>
+  listSheet(`${peekCall} · previous contacts`, peekWorked);
+$('#peek-notes-view').onclick = () =>
+  listSheet(`${peekCall} · notes`,
+            peekWorked.filter((q) => (q.comment || '').trim()));
 
 async function select(qso, tr) {
   document.querySelectorAll('#rows tr.on').forEach((n) => n.classList.remove('on'));
@@ -157,6 +312,7 @@ $('#save').onclick = async () => {
     await HD.card('logbook', '/api/save', { ...full.qso, ...clean(qso) });
     ['#f-call', '#f-grid', '#f-comment'].forEach((s) => { $(s).value = ''; });
     $('#found').textContent = '';
+    hidePeek();
     $('#err').textContent = '';
     refresh();
   } catch (e) { $('#err').textContent = e.message; }
@@ -320,37 +476,183 @@ HD.on('log.sync', (p) => {
 });
 refreshSync();
 
+const DAY = (d) => (d && d.length === 8
+  ? new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T00:00:00Z`)
+      .toLocaleDateString(undefined,
+        { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+  : 'undated');
+
+function confOf(r) {
+  // What the far end has actually acknowledged, strongest first.
+  if ((r.lotw_qsl_rcvd || '').toUpperCase() === 'Y') return ['LoTW', 'yes'];
+  if ((r.qsl_rcvd || '').toUpperCase() === 'Y') return ['QSL', 'yes'];
+  if ((r.eqsl_qsl_rcvd || '').toUpperCase() === 'Y') return ['eQSL', 'yes'];
+  if ((r.lotw_qsl_sent || '').toUpperCase() === 'Y'
+      || (r.qsl_sent || '').toUpperCase() === 'Y') return ['sent', 'part'];
+  return ['\u2014', ''];
+}
+
+// The table is built from this list, so the picker only has to choose which
+// entries to walk. A `fixed` column is one the row says nothing without.
+const COLUMNS = [
+  { key: 'call', label: 'Call', fixed: true, fill: (td, r) => {
+      td.className = 'c';
+      td.innerHTML = HD.flag(r.iso, r.call) + '<span></span>';
+      td.querySelector('span').textContent = r.call;
+    } },
+  { key: 'time', label: 'Time', mono: true,
+    fill: (td, r) => { td.textContent = (r.time_on || '').slice(0, 4); } },
+  { key: 'state', label: 'State',
+    fill: (td, r) => { td.textContent = r.state || ''; } },
+  { key: 'sent', label: 'Sent', mono: true, num: true,
+    fill: (td, r) => { td.textContent = r.rst_sent || ''; } },
+  { key: 'rcvd', label: 'Rcvd', mono: true, num: true,
+    fill: (td, r) => { td.textContent = r.rst_rcvd || ''; } },
+  // Frequency is what you were actually on; band is the bucket it falls in.
+  { key: 'freq', label: 'Freq', mono: true, num: true, fill: (td, r) => {
+      td.textContent = r.freq ? Number(r.freq).toFixed(3) : (r.band || '');
+    } },
+  { key: 'band', label: 'Band', off: true,
+    fill: (td, r) => { td.textContent = r.band || ''; } },
+  { key: 'mode', label: 'Mode',
+    fill: (td, r) => { td.textContent = r.mode || ''; } },
+  { key: 'grid', label: 'Grid', mono: true, off: true,
+    fill: (td, r) => { td.textContent = r.gridsquare || ''; } },
+  { key: 'dist', label: 'Distance', mono: true, num: true, fill: (td, r) => {
+      td.textContent = (r.km === null || r.km === undefined)
+        ? '' : HD.fmtDistance(r.km, 0);
+    } },
+  { key: 'conf', label: 'Conf', fill: (td, r) => {
+      const [label, state] = confOf(r);
+      td.textContent = label;
+      td.className = `conf ${state}`;
+    } },
+];
+
+let shown = null;                    // Set of visible column keys
+
+function visibleColumns() {
+  if (!shown) {
+    const saved = (conf.columns || '').trim();
+    shown = new Set(saved
+      ? saved.split(',').map((x) => x.trim()).filter(Boolean)
+      : COLUMNS.filter((c) => !c.off).map((c) => c.key));
+  }
+  return COLUMNS.filter((c) => c.fixed || shown.has(c.key));
+}
+
+function renderColumnPicker() {
+  const box = $('#cols');
+  box.innerHTML = '';
+  COLUMNS.forEach((c) => {
+    const label = document.createElement('label');
+    const tick = document.createElement('input');
+    tick.type = 'checkbox';
+    tick.checked = c.fixed || shown.has(c.key);
+    tick.disabled = !!c.fixed;       // a row without its callsign says nothing
+    tick.onchange = async () => {
+      if (tick.checked) shown.add(c.key); else shown.delete(c.key);
+      // Kept on the tile: two logbook tiles can show different columns, and
+      // the choice travels with the tile.
+      conf = { ...conf, columns: [...shown].join(',') };
+      try { await HD.saveSettings(conf); } catch { /* still applies now */ }
+      refresh();
+    };
+    label.append(tick, document.createTextNode(' ' + c.label));
+    box.appendChild(label);
+  });
+}
+
+$('#cols-btn').onclick = (e) => {
+  e.stopPropagation();
+  const box = $('#cols');
+  visibleColumns();
+  if (box.hidden) renderColumnPicker();
+  box.hidden = !box.hidden;
+  $('#cols-btn').setAttribute('aria-expanded', String(!box.hidden));
+};
+document.addEventListener('click', () => { $('#cols').hidden = true; });
+$('#cols').addEventListener('click', (e) => e.stopPropagation());
+
+let searchTimer;
+$('#q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refresh, 250);
+});
+$('#q-clear').onclick = () => { $('#q').value = ''; refresh(); };
+
 async function refresh() {
-  const rows = await HD.log.recent(30);
-  $('#rows').innerHTML = '';
+  const q = $('#q').value.trim();
+  // The host already searches callsign, grid and name, over the whole log
+  // rather than over whichever page happens to be on screen.
+  const rows = await HD.get('/api/log', q ? { q } : { limit: 200 });
+  // Newest first, by when the contact happened rather than when the row was
+  // written: an imported log arrives in whatever order its file had.
+  rows.sort((a, b) => `${b.qso_date}${b.time_on}`
+    .localeCompare(`${a.qso_date}${a.time_on}`));
+
+  const cols = visibleColumns();
+  const head = document.querySelector('#log-head');
+  head.innerHTML = '';
+  cols.forEach((c) => {
+    const th = document.createElement('th');
+    th.textContent = c.label;
+    if (c.num) th.className = 'num';
+    head.appendChild(th);
+  });
+  head.appendChild(document.createElement('th'));
+
+  const body = $('#rows');
+  body.innerHTML = '';
+  let day = null;
   rows.forEach((r) => {
+    const d = DAY(r.qso_date);
+    if (d !== day) {                 // a date only needs saying when it changes
+      day = d;
+      const sep = document.createElement('tr');
+      sep.className = 'day';
+      const td = document.createElement('td');
+      td.colSpan = cols.length + 1;
+      td.textContent = d;
+      sep.appendChild(td);
+      body.appendChild(sep);
+    }
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="c"></td><td class="mono"></td><td class="mono"></td>
-                    <td></td><td></td><td class="mono"></td>
-                    <td class="row-acts"><button class="eye" title="All the details">◉</button>
-                    <button class="del" title="Remove this contact">✕</button></td>`;
-    const cells = tr.querySelectorAll('td');
-    cells[0].innerHTML = HD.flag(r.iso, r.call) + '<span></span>';
-    cells[0].querySelector('span').textContent = r.call;
-    cells[1].textContent = `${r.qso_date.slice(4, 6)}-${r.qso_date.slice(6, 8)} ${r.time_on.slice(0, 4)}`;
-    // Frequency is what you were actually on; band is a bucket it falls into.
-    cells[2].textContent = r.freq ? Number(r.freq).toFixed(3) : '';
-    cells[3].textContent = r.band || '';
-    cells[4].textContent = r.mode || '';
-    cells[5].textContent = r.gridsquare || '';
-    tr.querySelector('.eye').onclick = (e) => { e.stopPropagation(); showDetails(r); };
-    // Clicking a contact makes it the one every other card is looking at.
-    // The lookup publishes lookup.result, which the map and the path card
-    // already follow, so nothing here needs to know they exist.
-    tr.onclick = () => select(r, tr);
-    tr.title = `Show ${r.call} on the map`;
-    tr.querySelector('.del').onclick = async (e) => {
-      e.stopPropagation();                 // deleting a row is not selecting it
+    cols.forEach((c) => {
+      const td = document.createElement('td');
+      if (c.mono) td.classList.add('mono');
+      if (c.num) td.classList.add('num');
+      c.fill(td, r);
+      tr.appendChild(td);
+    });
+    const acts = document.createElement('td');
+    acts.className = 'row-acts';
+    acts.innerHTML = '<button class="eye" title="All the details">\u25c9</button>'
+      + '<button class="del" title="Remove this contact">\u2715</button>';
+    acts.querySelector('.eye').onclick = (e) => {
+      e.stopPropagation();
+      showDetails(r);
+    };
+    acts.querySelector('.del').onclick = async (e) => {
+      e.stopPropagation();           // deleting a row is not selecting it
       await HD.log.remove(r.id);
       refresh();
     };
-    $('#rows').appendChild(tr);
+    tr.appendChild(acts);
+    // Clicking a contact makes it the one every other card is looking at.
+    tr.onclick = () => select(r, tr);
+    tr.title = `Show ${r.call} on the map`;
+    body.appendChild(tr);
   });
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = cols.length + 1;
+    td.className = 'day';
+    td.textContent = q ? `nothing logged matching "${q}"` : 'nothing logged yet';
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
 }
 
 HD.on('log.qso_added', refresh);
@@ -358,7 +660,11 @@ HD.on('radio.state', (s) => {
   if (s.ok && !$('#f-band').value) $('#f-band').value = s.band || '';
   if (s.ok && !$('#f-mode').value) $('#f-mode').value = s.mode || '';
 });
-refresh().catch((e) => { $('#err').textContent = e.message; });
+(async function boot() {
+  try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  HD.onSettings((v) => { conf = v; shown = null; refresh(); });
+  await refresh();
+})().catch((e) => { $('#err').textContent = e.message; });
 </script>
 </body>
 </html>

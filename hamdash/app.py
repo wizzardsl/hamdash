@@ -474,13 +474,25 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return jsonify(error=str(exc)), 400
 
     def _flagged(rows):
-        """Attach the country a callsign's prefix implies.
+        """Attach what can be worked out rather than stored: the country a
+        callsign's prefix implies, and how far away it was.
 
-        Done here rather than stored on the QSO: the prefix table improves
-        over time and a log written last year should get today's answer.
+        Derived at serve time on purpose. The prefix table improves, and the
+        station's own grid can change - a log written last year should get
+        today's answer to both, not the answer that was true when it was
+        written.
         """
+        mine = cfg.data["station"].get("grid", "")
+        home = gridlib.valid(mine)
         for r in rows:
             r["iso"] = dxcc.iso_for(r.get("call", ""))
+            r["km"] = None
+            loc = (r.get("gridsquare") or "").strip()
+            if home and loc and gridlib.valid(loc):
+                try:
+                    r["km"] = gridlib.distance_bearing(mine, loc)["km"]
+                except ValueError:
+                    pass
         return rows
 
     @app.get("/api/log")

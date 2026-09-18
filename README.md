@@ -341,6 +341,20 @@ one.
   zero: the raw grid is about 1.5 MB of mostly nothing, and every open tile
   polling NOAA directly would be both rude and slow.
 
+## The log
+
+Typing a callsign fills in a panel above the table before the QSO is even
+finished: who they are, their country and state with a flag, how far and on
+what bearing, how many times you have worked them and what you wrote down
+about them last time. It costs no extra request — it is the same lookup that
+prefills the form.
+
+The table groups by date, newest first, and carries signal reports, frequency,
+distance in your units and what each contact has been confirmed by. **Columns**
+chooses which of those to show and the choice is kept on the tile, so two
+logbook tiles can show different things. The search box searches the whole log,
+not the page on screen.
+
 ## Logbook sync
 
 Settings → Logbook sync. Credentials there, then Pull or Push.

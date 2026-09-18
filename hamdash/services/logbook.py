@@ -213,12 +213,18 @@ class Logbook:
             return int(db.execute("SELECT COALESCE(MAX(id), 0) FROM qso")
                        .fetchone()[0])
 
-    def worked_before(self, call: str) -> list[dict]:
+    def worked_before(self, call: str, limit: int = 25) -> list[dict]:
+        """Previous contacts with this station.
+
+        Carries the comment as well as the log line: what you wrote down last
+        time is usually the reason you wanted to know you had worked them.
+        """
         with self._conn() as db:
             return [dict(r) for r in db.execute(
-                "SELECT id, qso_date, time_on, band, mode FROM qso "
-                "WHERE call=? ORDER BY id DESC LIMIT 10",
-                ((call or "").strip().upper(),))]
+                "SELECT id, qso_date, time_on, band, mode, freq, rst_sent, "
+                "rst_rcvd, comment FROM qso "
+                "WHERE call=? ORDER BY id DESC LIMIT ?",
+                ((call or "").strip().upper(), int(limit)))]
 
     def stats(self) -> dict:
         with self._conn() as db:

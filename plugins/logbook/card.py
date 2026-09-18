@@ -34,6 +34,10 @@ def prefill(call):
         "name": info.get("name", ""),
         "qth": info.get("qth", ""),
         "country": info.get("country", ""),
+        # Stored on the QSO, not derived later: a licence can be reissued and
+        # an operator can move, so where they were when you worked them is a
+        # fact about the contact rather than about the callsign.
+        "state": info.get("state", ""),
         "my_callsign": station.get("callsign", ""),
         "my_gridsquare": station.get("grid", ""),
     }

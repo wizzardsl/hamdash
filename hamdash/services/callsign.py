@@ -153,6 +153,7 @@ class Lookup:
             "country": c.get("country", "United States"),
             "locator": (c.get("grid") or "").upper(),
             "lat": _f(c.get("lat")), "lon": _f(c.get("lon")),
+            "state": c.get("state", ""), "grid_src": "hamdb",
             "license_class": c.get("class", ""), "source": "hamdb",
             "approximate": False,
         }
@@ -204,6 +205,7 @@ class Lookup:
             "country": g.get("country", ""),
             "locator": (g.get("grid") or "").upper(),
             "lat": _f(g.get("lat")), "lon": _f(g.get("lon")),
+            "state": g.get("state", ""),
             "county": g.get("county", ""), "license_class": g.get("class", ""),
             "source": "qrz", "approximate": False,
         }

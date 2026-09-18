@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- A **station panel** above the log table, filled as you type a callsign:
+  name, country and state with a flag, distance, bearing, how many times you
+  have worked them, and the notes from those contacts.
+- The log table now groups by date, sorts by when the contact happened, and
+  shows signal reports, distance and confirmation status. **Columns** picks
+  which to show (kept per tile) and a search box filters the whole log.
 - **Import ADIF** in the logbook, for a file from any other logger, and a
   **Pull** as well as a Push for each sync service. All of them go through the
   same importer, so all of them dedupe: importing a file twice reports nothing
