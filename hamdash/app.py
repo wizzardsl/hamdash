@@ -15,6 +15,7 @@ from . import registry
 from .bus import BUS, MAX_SUBSCRIBERS
 from .config import BUNDLED_STATIC, Config
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
+from .services import dxcc
 from .services import grid as gridlib
 from .services.callsign import Lookup
 from .services.logbook import Logbook
@@ -393,6 +394,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         if res.get("locator") and gridlib.valid(my_grid) \
                 and gridlib.valid(res["locator"]):
             res["path"] = gridlib.distance_bearing(my_grid, res["locator"])
+        # The flag comes from the prefix, not from the provider's country
+        # name: providers spell countries differently and some give none.
+        res["iso"] = dxcc.iso_for(res.get("callsign") or call)
         res["worked_before"] = log.worked_before(call)
         BUS.publish("lookup.result", res, source="host")
         return jsonify(res)
@@ -443,12 +447,22 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
 
+    def _flagged(rows):
+        """Attach the country a callsign's prefix implies.
+
+        Done here rather than stored on the QSO: the prefix table improves
+        over time and a log written last year should get today's answer.
+        """
+        for r in rows:
+            r["iso"] = dxcc.iso_for(r.get("call", ""))
+        return rows
+
     @app.get("/api/log")
     @guard("log")
     def log_list():
         q = request.args.get("q")
-        return jsonify(log.search(q) if q else log.recent(
-            int(request.args.get("limit", 25))))
+        return jsonify(_flagged(log.search(q) if q else log.recent(
+            int(request.args.get("limit", 25)))))
 
     @app.post("/api/log")
     @guard("log")

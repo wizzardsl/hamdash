@@ -133,7 +133,8 @@ async function select(qso, tr) {
     if (info.locator) bits.push(info.locator);
     if (info.path) bits.push(`${HD.fmtDistance(info.path.km)} at `
                              + `${Math.round(info.path.bearing)}°`);
-    $('#found').innerHTML = `<b>${qso.call}</b> · ${bits.slice(1).join(' · ')}`;
+    $('#found').innerHTML = HD.flag(info.iso, info.country)
+      + `<b>${qso.call}</b> · ${bits.slice(1).join(' · ')}`;
     $('#err').textContent = '';
   } catch (e) { $('#err').textContent = e.message; }
 }
@@ -176,7 +177,8 @@ const LABELS = {
 };
 
 function showDetails(qso) {
-  $('#qso-title').textContent = qso.call || 'Contact';
+  $('#qso-title').innerHTML = HD.flag(qso.iso, qso.call) + '<span></span>';
+  $('#qso-title').querySelector('span').textContent = qso.call || 'Contact';
   const dl = $('#qso-rows');
   dl.innerHTML = '';
   Object.keys(LABELS).forEach((k) => {
@@ -201,7 +203,7 @@ $('#plot-all').onclick = async () => {
     const stations = rows
       .filter((r) => (r.gridsquare || '').trim())
       .map((r) => ({ call: r.call, grid: r.gridsquare, band: r.band,
-                     mode: r.mode, date: r.qso_date }));
+                     mode: r.mode, date: r.qso_date, iso: r.iso }));
     await HD.publish('logbook.plot', { stations });
     $('#err').textContent = stations.length ? ''
       : 'No logged contact has a grid square, so there is nothing to plot.';
@@ -286,7 +288,8 @@ async function refresh() {
                     <td class="row-acts"><button class="eye" title="All the details">◉</button>
                     <button class="del" title="Remove this contact">✕</button></td>`;
     const cells = tr.querySelectorAll('td');
-    cells[0].textContent = r.call;
+    cells[0].innerHTML = HD.flag(r.iso, r.call) + '<span></span>';
+    cells[0].querySelector('span').textContent = r.call;
     cells[1].textContent = `${r.qso_date.slice(4, 6)}-${r.qso_date.slice(6, 8)} ${r.time_on.slice(0, 4)}`;
     // Frequency is what you were actually on; band is a bucket it falls into.
     cells[2].textContent = r.freq ? Number(r.freq).toFixed(3) : '';

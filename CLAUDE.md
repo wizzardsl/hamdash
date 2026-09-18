@@ -327,6 +327,20 @@ shape it settled on is worth reusing:
   Marker sizes are in degrees and must be scaled by the view width, or a pin
   becomes the size of Spain when the view zooms in.
 
+## Flags and prefixes
+
+- `services/dxcc.py` maps prefix -> (country, ISO alpha-2, rough locator),
+  longest prefix first. Everything from it is `approximate`; a real provider
+  always wins. `cty.dat` remains the proper answer and an open thread.
+- The flag is derived from the **callsign**, never from a provider's country
+  name: providers spell countries differently and some return none.
+- `iso` is attached when rows are served, not stored on the QSO, so a log
+  written last year gets today's table.
+- A flag answers "where is this person", so DXCC entities collapse: GM/GW/GI
+  all fly `gb`, KL7 and KH6 fly `us`. Places with their own flag keep it.
+- Flags are bundled (`static/flags/*.svg`, flag-icons, MIT). Not a CDN: it
+  would leak which countries the operator works, and break offline.
+
 ## Callsign lookup
 
 - Default provider is `auto`: callook then hamdb (both free, no account), then

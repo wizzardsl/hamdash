@@ -236,6 +236,16 @@
     // One distance, in the operator's units, everywhere. Showing km and miles
     // side by side asks the reader to pick, which is the card failing to
     // decide rather than being helpful.
+    // Flags are served from this app, not a CDN: which countries you work is
+    // nobody else's business, and a shack with no internet still gets them.
+    flag(iso, title) {
+      const code = (iso || '').toLowerCase();
+      if (!/^[a-z]{2}$/.test(code)) return '';
+      const t = (title || '').replace(/"/g, '&quot;');
+      return `<img class="flag" src="/static/flags/${code}.svg" alt="" `
+           + `title="${t}" loading="lazy">`;
+    },
+
     units: 'km',
     distanceUnit() {
       return { km: 'km', mi: 'mi', nmi: 'nmi' }[HD.units] || 'km';

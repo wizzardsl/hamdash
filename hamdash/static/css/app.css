@@ -311,3 +311,11 @@ html, body {
   font-size: 12px; color: var(--muted); }
 .row-btns label.inline input[type=text], .row-btns label.inline input:not([type]) {
   width: 8em; padding: 2px 4px; }
+
+/* Country flags beside a callsign. Sized to the text, not to the image. */
+.flag {
+  width: 1.15em; height: .86em; object-fit: cover;
+  vertical-align: -.08em; margin-right: .4em;
+  border: 1px solid var(--rule); border-radius: 1px;
+  background: var(--panel-2);
+}

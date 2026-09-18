@@ -359,6 +359,21 @@ A sync runs off the request thread and reports on the `log.sync` bus topic:
 a year of QSOs is a slow download, and a request handler blocking on it would
 hold one of the server's threads for the duration.
 
+## Flags
+
+Every callsign is shown with the flag its prefix implies — in the log, in a
+contact's details, on the map and in the path card. `services/dxcc.py` holds
+the prefix table; the flags are SVGs served from this app, not from a CDN,
+because which countries you work is nobody else's business and a shack with no
+internet should still see them.
+
+It is a prefix table, not `cty.dat`, so treat it the way you treat the rest of
+the prefix fallbacks: it is right about where somebody is, and it is not a
+DXCC reference. Scotland, Wales and England are three DXCC entities and one
+flag; Alaska and Hawaii fly the US flag. Places with their own flag — Puerto
+Rico, Bermuda — keep it. A prefix it doesn't know shows no flag rather than a
+guess.
+
 ## Units
 
 One setting, in Settings: kilometres, miles or nautical miles. Every card that

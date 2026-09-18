@@ -90,7 +90,9 @@ function render(p, label, note) {
   $('#brg').textContent = `${p.bearing.toFixed(0)}° ${HD.bearingName(p.bearing)}`;
   $('#lp').textContent = `${((p.bearing + 180) % 360).toFixed(0)}°`;
   $('#note').className = 'note';
-  $('#note').textContent = note || `${p.from.locator} → ${label}`;
+  // innerHTML because the label may carry a flag image; both are built here,
+  // never from user input.
+  $('#note').innerHTML = note || `${p.from.locator} → ${label}`;
 }
 
 async function find(target) {
@@ -129,8 +131,8 @@ HD.on('lookup.result', (p) => {
   if (!p.locator) return;
   $('#target').value = p.callsign || p.locator;
   if (p.path) {
-    const who = [p.callsign || p.locator, p.country, p.locator]
-      .filter(Boolean).join(' · ');
+    const who = HD.flag(p.iso, p.country)
+      + [p.callsign || p.locator, p.country, p.locator].filter(Boolean).join(' · ');
     render(p.path, who, p.approximate
       ? `${p.path.from.locator} → ${who} (approximate)` : null);
   } else {

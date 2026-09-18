@@ -7,6 +7,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- A **country flag beside every callsign**, from its prefix, carried through
+  the log, the contact details, the map popups and the path card. Flags are
+  bundled rather than fetched from a CDN.
 - A **distance units** setting — kilometres, miles or nautical miles — used by
   every card that shows a distance. They now show one distance rather than km
   beside miles, and changing it applies immediately.

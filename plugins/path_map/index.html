@@ -288,7 +288,8 @@ function popupFor(which) {
     links = Object.entries(i.links || {}).map(([n, href]) =>
       `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(n)}</a>`).join('');
   }
-  return `<h3>${esc(title)}</h3><dl>${rows.join('')}</dl>`
+  const flag = which === 'me' ? '' : HD.flag(i.iso, i.country);
+  return `<h3>${flag}${esc(title)}</h3><dl>${rows.join('')}</dl>`
        + (links ? `<div class="links">${links}</div>` : '');
 }
 
@@ -448,7 +449,7 @@ function plotLogged(stations) {
       radius: 5, weight: 1.5, color: THEME.bg,
       fillColor: THEME.signal, fillOpacity: 1,
     }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
-      .bindPopup(`<h3>${esc(st.call)}</h3><dl>`
+      .bindPopup(`<h3>${HD.flag(st.iso, st.call)}${esc(st.call)}</h3><dl>`
       + `<dt>Grid</dt><dd>${esc(st.grid)}</dd>`
       + (st.band ? `<dt>Band</dt><dd>${esc(st.band)}</dd>` : '')
       + (st.mode ? `<dt>Mode</dt><dd>${esc(st.mode)}</dd>` : '')
@@ -491,7 +492,8 @@ function show(info) {
   }
   lastInfo = info;
   them = { ...at, grid: info.locator, call: info.callsign || '' };
-  $('#who').textContent = info.callsign || info.locator;
+  $('#who').innerHTML = HD.flag(info.iso, info.country) + '<span></span>';
+  $('#who').querySelector('span').textContent = info.callsign || info.locator;
   const bits = [info.locator, info.country].filter(Boolean);
   if (info.path) {
     bits.push(HD.fmtDistance(info.path.km),
