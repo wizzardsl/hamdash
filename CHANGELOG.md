@@ -7,6 +7,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Import ADIF** in the logbook, for a file from any other logger, and a
+  **Pull** as well as a Push for each sync service. All of them go through the
+  same importer, so all of them dedupe: importing a file twice reports nothing
+  new the second time.
 - An **azimuthal projection** for the map, centred on your station, so every
   bearing is a straight line out from the middle.
 - Three more map layers: **D-RAP absorption** and **ionosonde MUF/foF2**, both

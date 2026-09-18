@@ -350,6 +350,11 @@ Settings → Logbook sync. Credentials there, then Pull or Push.
 | **LoTW** | username + password | **only through TQSL** |
 | **QRZ logbook** | API key | API key |
 
+Each service has its own **Pull** and **Push**, and there is an **Import
+ADIF** button for a file from anywhere else — another logger, a contest, a
+club's export. All three go through the same importer, so they all dedupe the
+same way.
+
 **Pulling never duplicates what you already have.** An incoming QSO is matched
 against the log on callsign, date, band, mode and a start time within 30
 minutes — two logs almost never agree to the second, and matching on callsign

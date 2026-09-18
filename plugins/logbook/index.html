@@ -33,6 +33,7 @@
   .sync-svc { display: flex; align-items: center; gap: 5px; }
   .sync-svc[hidden] { display: none; }
   .sync-svc .btn { font-size: 12px; padding: 3px 7px; }
+  .sync-name { color: var(--muted); font-family: var(--mono); }
   .sync-svc label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
   .sync-state { color: var(--muted); }
   .sync-state.warn { color: var(--alert); }
@@ -58,6 +59,8 @@
 <div class="actions">
   <button class="btn" id="save">Log it</button>
   <button class="btn btn-quiet" id="adif">Export ADIF</button>
+  <button class="btn btn-quiet" id="import" title="Read a .adi or .adif file into the log. Contacts already here are updated, not duplicated.">Import ADIF</button>
+  <input type="file" id="import-file" accept=".adi,.adif,.txt" hidden>
   <span class="found" id="found"></span>
 </div>
 <p class="err" id="err"></p>
@@ -78,11 +81,15 @@
 <div class="sync" id="sync" hidden>
   <span class="sync-label">Sync</span>
   <span class="sync-svc" id="sync-lotw" hidden>
-    <button class="btn btn-quiet" data-push="lotw">Push LoTW</button>
+    <span class="sync-name">LoTW</span>
+    <button class="btn btn-quiet" data-pull="lotw" title="Fetch from LoTW. Nothing is duplicated: a contact already in the log is updated, not added again.">Pull</button>
+    <button class="btn btn-quiet" data-push="lotw">Push</button>
     <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="lotw"> auto</label>
   </span>
   <span class="sync-svc" id="sync-qrz" hidden>
-    <button class="btn btn-quiet" data-push="qrz">Push QRZ</button>
+    <span class="sync-name">QRZ</span>
+    <button class="btn btn-quiet" data-pull="qrz" title="Fetch from QRZ. Nothing is duplicated: a contact already in the log is updated, not added again.">Pull</button>
+    <button class="btn btn-quiet" data-push="qrz">Push</button>
     <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="qrz"> auto</label>
   </span>
   <span class="sync-state" id="sync-state"></span>
@@ -158,6 +165,29 @@ $('#save').onclick = async () => {
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
 
 $('#adif').onclick = () => { window.location = '/api/log/adif'; };
+
+// ---- import a file --------------------------------------------------------
+// Same importer the syncs use, so the same dedupe applies: a contact already
+// in the log is updated with anything the file knows and this one doesn't,
+// never added twice. Importing the same file again reports nothing new.
+$('#import').onclick = () => $('#import-file').click();
+$('#import-file').onchange = async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  $('#err').textContent = '';
+  $('#found').textContent = `reading ${file.name}…`;
+  try {
+    const text = await file.text();
+    const r = await HD.postText('/api/log/adif', text);
+    $('#found').innerHTML = `<b>${file.name}</b> · ${r.added} added, `
+      + `${r.updated} updated, ${r.skipped} already had`;
+    refresh();
+  } catch (err) {
+    $('#err').textContent = err.message;
+  } finally {
+    e.target.value = '';          // so the same file can be chosen again
+  }
+};
 
 // ---- every field of one contact -------------------------------------------
 // The table shows what you scan; this shows what was actually recorded,
@@ -266,6 +296,18 @@ function setAuto(name, on) {
 
 document.querySelectorAll('[data-push]').forEach((b) => {
   b.onclick = () => pushNew(b.dataset.push);
+});
+document.querySelectorAll('[data-pull]').forEach((b) => {
+  b.onclick = async () => {
+    const name = b.dataset.pull;
+    syncState(`pulling from ${name.toUpperCase()}…`);
+    try {
+      // Always deduped: import_adif matches on callsign, date, band, mode and
+      // start time, updates the match and adds only what is new. Pulling the
+      // same range twice adds nothing the second time.
+      await HD.post(`/api/log/sync/${name}/pull`, {});
+    } catch (e) { syncState(e.message, 'warn'); }
+  };
 });
 document.querySelectorAll('[data-auto]').forEach((c) => {
   c.onchange = () => setAuto(c.dataset.auto, c.checked);

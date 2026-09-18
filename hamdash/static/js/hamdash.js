@@ -213,6 +213,23 @@
     get: (p, params) => req('GET', params ? `${p}?${new URLSearchParams(params)}` : p),
     post: (p, body) => req('POST', p, body || {}),
     put: (p, body) => req('PUT', p, body || {}),
+    // A raw body, for endpoints that take a document rather than JSON -
+    // ADIF import being the one that exists.
+    async postText(path, text, contentType) {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType || 'text/plain' },
+        body: text,
+      });
+      const body = await r.text();
+      let data = body;
+      try { data = body ? JSON.parse(body) : {}; } catch { /* leave as text */ }
+      if (!r.ok) {
+        throw new Error((data && data.error)
+          || `POST ${path} failed (${r.status})`);
+      }
+      return data;
+    },
     del: (p) => req('DELETE', p),
 
     // this card's own backend, without hardcoding the mount path
