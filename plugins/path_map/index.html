@@ -107,9 +107,28 @@ function toLatLon(loc) {
 }
 
 // --- great circle ------------------------------------------------------------
-// Leaflet draws a polyline straight between consecutive points, so the path has
-// to be sampled. It is also split at the antimeridian, or crossing the Pacific
-// draws a stripe back across the entire map.
+// Leaflet draws a polyline straight between consecutive points, so the path is
+// sampled.
+//
+// Longitudes are *unwrapped*, not split at the antimeridian. Splitting left a
+// polyline stopping dead at +-180 with no station on the end, which reads as a
+// dot that failed to draw - and the real end was 360 degrees away off the
+// other side of the map. Leaflet is happy with longitudes beyond +-180 and
+// draws them in the neighbouring world copy, so the line and its dot stay
+// together and a short path across the Pacific is drawn going west, the way
+// the signal actually goes.
+function unwrapLon(fromLon, lon) {
+  let out = lon;
+  while (out - fromLon > 180) out -= 360;
+  while (out - fromLon < -180) out += 360;
+  return out;
+}
+
+// Where to put the far end so it lines up with the path drawn from `from`.
+function endpoint(from, to) {
+  return { lat: to.lat, lon: from ? unwrapLon(from.lon, to.lon) : to.lon };
+}
+
 function greatCircle(a, b, steps = 180) {
   const vec = (p) => {
     const la = p.lat * D2R, lo = p.lon * D2R;
@@ -118,7 +137,7 @@ function greatCircle(a, b, steps = 180) {
   const [v1, v2] = [vec(a), vec(b)];
   const dot = Math.max(-1, Math.min(1, v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]));
   const om = Math.acos(dot);
-  const segs = []; let run = []; let prev = null;
+  const run = []; let prev = null;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     let p = v1;
@@ -128,13 +147,12 @@ function greatCircle(a, b, steps = 180) {
       p = [v1[0]*s1 + v2[0]*s2, v1[1]*s1 + v2[1]*s2, v1[2]*s1 + v2[2]*s2];
     }
     const lat = Math.atan2(p[2], Math.hypot(p[0], p[1])) / D2R;
-    const lon = Math.atan2(p[1], p[0]) / D2R;
-    if (prev !== null && Math.abs(lon - prev) > 180) { segs.push(run); run = []; }
+    let lon = Math.atan2(p[1], p[0]) / D2R;
+    if (prev !== null) lon = unwrapLon(prev, lon);
     run.push([lat, lon]);
     prev = lon;
   }
-  if (run.length) segs.push(run);
-  return segs.filter((s) => s.length > 1);
+  return run;
 }
 
 // --- greyline ----------------------------------------------------------------
@@ -278,10 +296,9 @@ function drawStation() {
   if (!L_.station) return;
   L_.station.clearLayers();
   if (me && them && conf.great_circle !== false) {
-    greatCircle(me, them).forEach((seg) => {
-      L.polyline(seg, { color: THEME.accent, weight: 2, interactive: false })
-        .addTo(L_.station);
-    });
+    L.polyline(greatCircle(me, them),
+               { color: THEME.accent, weight: 2, interactive: false })
+      .addTo(L_.station);
   }
   const pin = (p, colour, label, which) =>
     L.circleMarker([p.lat, p.lon], {
@@ -292,7 +309,8 @@ function drawStation() {
       .bindPopup(() => popupFor(which), { maxWidth: 280 })
       .addTo(L_.station);
   if (me) pin(me, THEME.signal, me.call || 'home', 'me');
-  if (them) pin(them, THEME.accent, them.call || them.grid, 'them');
+  // Same unwrapping as the path, so the pin sits on the end of its line.
+  if (them) pin(endpoint(me, them), THEME.accent, them.call || them.grid, 'them');
 }
 
 // --- framing -----------------------------------------------------------------
@@ -302,7 +320,8 @@ function fit() {
     map.setView([20, 0], 1);
     return;
   }
-  map.fitBounds(L.latLngBounds([[me.lat, me.lon], [them.lat, them.lon]]),
+  const far = endpoint(me, them);
+  map.fitBounds(L.latLngBounds([[me.lat, me.lon], [far.lat, far.lon]]),
                 { padding: [30, 30], maxZoom: 7 });
 }
 
@@ -310,7 +329,8 @@ function resetView() { touched = false; fit(); }
 
 function fitSelected() {
   if (!map || !them) return;
-  const pts = [[them.lat, them.lon]];
+  const far = endpoint(me, them);
+  const pts = [[far.lat, far.lon]];
   if (me) pts.push([me.lat, me.lon]);
   map.fitBounds(L.latLngBounds(pts), { padding: [35, 35], maxZoom: 7 });
 }
@@ -400,26 +420,35 @@ function plotLogged(stations) {
   let shown = 0;
   const bounds = [];
   if (me) bounds.push([me.lat, me.lon]);
-  stations.forEach((st) => {
-    const at = toLatLon(st.grid);
-    if (!at) return;
+  // SVG under a few thousand: Leaflet's canvas renderer only paints the
+  // padded viewport, and a marker sitting on that boundary is drawn as the
+  // half dot this used to show. SVG has no such edge, and a log of this size
+  // is nothing for it.
+  const renderer = stations.length > 2000 ? L_.loggedCanvas : undefined;
+  stations.forEach((raw) => {
+    const home = toLatLon(raw.grid);
+    if (!home) return;
+    // The dot goes at the end of its own line, which may be in the world copy
+    // next door if the path crosses the antimeridian.
+    const at = endpoint(me, home);
+    const st = raw;
     shown += 1;
     bounds.push([at.lat, at.lon]);
     // A line home, the way the signal went. Thin and translucent so a big log
     // reads as a fan from the station rather than a ball of string.
     if (me) {
-      greatCircle(me, at).forEach((seg) => {
-        L.polyline(seg, { color: THEME.signal, weight: 1, opacity: 0.35,
-                          interactive: false }).addTo(L_.logged);
-      });
+      L.polyline(greatCircle(me, at), { color: THEME.signal, weight: 1,
+                                        opacity: 0.35, interactive: false })
+        .addTo(L_.logged);
     }
     const when = (st.date || '').length === 8
       ? `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}` : '';
     L.circleMarker([at.lat, at.lon], {
-      renderer: L_.loggedCanvas,      // canvas: a big log is thousands of dots
+      renderer,
       radius: 5, weight: 1.5, color: THEME.bg,
       fillColor: THEME.signal, fillOpacity: 1,
-    }).bindPopup(`<h3>${esc(st.call)}</h3><dl>`
+    }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
+      .bindPopup(`<h3>${esc(st.call)}</h3><dl>`
       + `<dt>Grid</dt><dd>${esc(st.grid)}</dd>`
       + (st.band ? `<dt>Band</dt><dd>${esc(st.band)}</dd>` : '')
       + (st.mode ? `<dt>Mode</dt><dd>${esc(st.mode)}</dd>` : '')

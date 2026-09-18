@@ -295,6 +295,17 @@ shape it settled on is worth reusing:
   and suppress the click that ends a drag.
 - Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per
   wheel notch is the difference between a map and a slideshow.
+- **Longitudes are unwrapped, never split at the antimeridian.** Splitting a
+  great circle into two polylines leaves one stopping dead at +-180 with no
+  station on the end - it reads as a dot that failed to draw, and the real end
+  is 360 degrees away off the other side. Leaflet accepts longitudes beyond
+  +-180 and draws them in the neighbouring world copy, so `unwrapLon` keeps
+  the line continuous and `endpoint()` puts the marker on the end of its own
+  line. Anything framing a path must use `endpoint()` too, or fitBounds spans
+  the wrong way round the planet.
+- Leaflet's canvas renderer only paints the padded viewport, so a marker on
+  that boundary is drawn as half a dot. Markers use SVG unless there are
+  thousands of them.
 - `path_map` is Leaflet, vendored in the card (`vendor/`, BSD-2, ~190 kB with
   its images) rather than from a CDN, so it works offline and frozen. The
   offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the

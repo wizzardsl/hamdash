@@ -66,6 +66,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- Map lines that crossed the antimeridian ended in mid-ocean with no dot: the
+  great circle was split into two polylines, so one stopped at ±180 with no
+  station there and the real end was on the other side of the map. Longitudes
+  are unwrapped instead, so each line runs continuously to its own dot.
+- Some dots were drawn as half dots — Leaflet's canvas renderer only paints
+  its padded viewport, and a marker on that edge gets clipped. Markers are SVG
+  unless a log runs to thousands.
+- Hovering a logged contact now names it, as well as clicking it.
 - The dots from **Map all** shared the aurora layer's canvas renderer, so they
   were tied to whether an unrelated layer was switched on and drawn on a
   surface meant for a heat map. They have their own renderer now, and match
