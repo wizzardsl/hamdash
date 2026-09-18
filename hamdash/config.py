@@ -57,6 +57,23 @@ SECRETS = (
 )
 
 
+# Fields that must never keep the whitespace a clipboard adds to them. A
+# credential with a trailing newline is rejected by the service as simply
+# "incorrect", which sends you looking at the password rather than at the
+# paste. Includes the zero-width characters a rich-text copy carries.
+CRUFT = "".join(chr(c) for c in (
+    9, 10, 11, 12, 13, 32, 0xa0, 0x200b, 0x200c, 0x200d, 0xfeff))
+CREDENTIALS = SECRETS + (
+    ("callsign_lookup", "user"),
+    ("logbook_sync", "lotw_user"),
+)
+
+
+def tidy_credential(value):
+    """Strip surrounding cruft, leaving None and non-strings alone."""
+    return value.strip(CRUFT) if isinstance(value, str) else value
+
+
 def default_home() -> Path:
     env = os.environ.get("HAMDASH_HOME")
     if env:

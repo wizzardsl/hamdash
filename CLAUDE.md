@@ -137,6 +137,14 @@ pipe from the supervisor) is left alone.
 - Absent or empty means "not editing this" and keeps what is stored; an
   explicit `null` clears it. That is the only way to remove one, so it cannot
   happen by accident.
+- **Clear is not a mode.** Pressing it marks the field for clearing; typing
+  or pasting afterwards has to cancel that, or the new value is discarded and
+  the secret is wiped by a save the operator thought was setting it.
+- **Credentials are trimmed, on paste and on the server.** A key copied from a
+  web page carries a trailing newline or a zero-width character; nothing on
+  screen shows it and the service answers only "incorrect", which sends you
+  looking at the password rather than at the paste. `config.tidy_credential`
+  and `CREDENTIALS`.
 - Tile settings of type `secret` follow the same rule, with one difference:
   the card that owns the tile does get the real value, because it has to use
   it (`path_map` builds a tile URL from its weather key). Everyone else gets
@@ -373,9 +381,19 @@ shape it settled on is worth reusing:
 
 ## Callsign lookup
 
-- Default provider is `auto`: callook then hamdb (both free, no account), then
-  hamqth if credentials exist. QRZ is never reached for unasked because its
-  XML interface is a paid add-on.
+- Default provider is `auto`: callook then hamdb, both free and needing no
+  account. It reaches an account provider only when `callsign_lookup.account`
+  says which one the credentials are for. It used to assume HamQTH, which
+  posted a QRZ password to a company that never asked for it and spent a
+  failed login doing it.
+- **A refused login is remembered, not retried.** The logbook looks a callsign
+  up every few characters you type, so a wrong password used to cost a failed
+  login per keystroke - and QRZ and HamQTH both lock an account after a
+  handful. `Lookup._refused` holds the refusal until the provider's own
+  `blocked until` time, or 15 minutes if it gives none; saving credentials
+  rebuilds the `Lookup` and `retry_auth()` (the Test button, or `?refresh=1`)
+  forgets it. Sessions are per provider and behind one lock, because several
+  waitress threads miss the cache at once and would each open their own.
 - **A provider that refuses for a reason the operator can act on raises
   `Refused`, and that text reaches the UI.** Falling back to the prefix table
   quietly would turn "your QRZ subscription lapsed" into a station sitting in

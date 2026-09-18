@@ -13,7 +13,8 @@ from flask import (Flask, Response, abort, jsonify, request,
 
 from . import registry
 from .bus import BUS, MAX_SUBSCRIBERS
-from .config import BUNDLED_STATIC, SECRETS, Config
+from .config import (BUNDLED_STATIC, CREDENTIALS, SECRETS, Config,
+                     tidy_credential)
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import dxcc
 from .services import grid as gridlib
@@ -353,6 +354,12 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def put_config():
         nonlocal look
         body = request.get_json(silent=True) or {}
+        # Before anything reads them: a credential never means the whitespace
+        # around it, and the service that rejects it only says "incorrect".
+        for section, key in CREDENTIALS:
+            block = body.get(section)
+            if isinstance(block, dict) and key in block:
+                block[key] = tidy_credential(block[key])
         kept = {f"{sec}.{k}": (cfg.data.get(sec, {}) or {}).get(k, "")
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",

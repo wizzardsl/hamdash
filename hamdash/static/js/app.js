@@ -432,12 +432,21 @@
     if (clear) clear.hidden = !set;
   }
 
+  // What a clipboard adds to a credential and nobody ever means: ordinary
+  // whitespace, the non-breaking space a web page's markup leaves behind, the
+  // zero-width joiners a rich-text copy carries, and a BOM. Only the ends —
+  // the middle of a password is the operator's business.
+  const CRUFT = /^[\s\u00a0\u200b-\u200d\ufeff]+|[\s\u00a0\u200b-\u200d\ufeff]+$/g;
+  const cleanCred = (v) => (v || '').replace(CRUFT, '');
+
   // '' means "leave it", null means "clear it", anything else is a new value.
   function secretValue(sel) {
     const el = $(sel);
-    if (el.dataset.cleared === 'yes') return null;
-    const v = el.value;
-    return v.trim() ? v : undefined;
+    const v = cleanCred(el.value);
+    // Typing beats a pending Clear: the button is how you remove a secret,
+    // not a mode you have to leave before you can set a new one.
+    if (!v) return el.dataset.cleared === 'yes' ? null : undefined;
+    return v;
   }
 
   function withSecret(obj, key, sel) {
@@ -453,6 +462,26 @@
       el.dataset.cleared = 'yes';
       el.placeholder = 'will be cleared on save';
     };
+  });
+
+  // Credentials lose their surrounding whitespace where it can be seen, not
+  // silently on save: pasting a key with a trailing newline used to store the
+  // newline, and the service then said the password was wrong.
+  document.querySelectorAll('#s-lk-user, #s-lk-pass, #s-lotw-user, '
+    + '#s-lotw-pass, #s-qrz-key, #s-call').forEach((el) => {
+    const tidy = () => {
+      const v = cleanCred(el.value);
+      if (v !== el.value) el.value = v;
+    };
+    // After the paste has landed, and again when the field is left.
+    el.addEventListener('paste', () => setTimeout(tidy, 0));
+    el.addEventListener('blur', tidy);
+    el.addEventListener('input', () => {
+      if (el.dataset.cleared === 'yes' && el.value) {
+        el.dataset.cleared = '';
+        el.placeholder = 'saved \u2014 type to replace';
+      }
+    });
   });
 
   // ---- settings -------------------------------------------------------

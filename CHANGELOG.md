@@ -109,6 +109,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   open one session between them instead of one each.
 - HamQTH and QRZ no longer share one session id, which logged you out of
   whichever you used second.
+- **Pressing Clear on a password and then typing a new one wiped it instead.**
+  Nothing reset the pending clear, so the value you typed was discarded and
+  the save stored nothing - which then read as "needs a username and
+  password". Typing now cancels the clear.
+- **A pasted credential kept the whitespace the clipboard put around it.** A
+  key copied from a web page carries a trailing newline or a zero-width
+  character, nothing on screen shows it, and the service answers only
+  "incorrect" - so you go looking at the password rather than at the paste.
+  Usernames, passwords and API keys are trimmed on paste and on leaving the
+  field, where it can be seen, and again on the server.
 - **Saved passwords and API keys were destroyed by unrelated settings saves.**
   `/api/config` replaced the callsign lookup password with the literal `"***"`
   so the form had something to display; the form loaded it into the field and

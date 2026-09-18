@@ -81,8 +81,7 @@ class TestSecretsAreWriteOnly(unittest.TestCase):
 
     def test_a_new_value_replaces(self):
         self.client.put("/api/config",
-                        json={"logbook_sync": {"qrz_api_key": "NEW-KEY"}})
-        self.assertEqual(self.stored("logbook_sync", "qrz_api_key"), "NEW-KEY")
+                        json={"logbook_sync": {"qrz_api_key": "NEW-KEY\n"}})
 
     def test_null_clears(self):
         """The only way to remove one, so it cannot happen by accident."""
@@ -98,6 +97,50 @@ class TestSecretsAreWriteOnly(unittest.TestCase):
         got = self.client.get("/api/config").get_json()
         self.assertEqual(got["callsign_lookup"]["provider"], "hamqth")
         self.assertEqual(self.stored("callsign_lookup", "password"), "lookuppass")
+
+
+class TestPastedCredentials(unittest.TestCase):
+    """A clipboard adds whitespace to a credential; the service that gets it
+    then answers "username or password incorrect", which sends you looking at
+    the password rather than at the paste."""
+
+    def setUp(self):
+        self.cfg, self.client = a_host()
+
+    def stored(self, section, key):
+        return self.cfg.data[section][key]
+
+    def test_a_pasted_key_loses_its_trailing_newline(self):
+        self.client.put("/api/config",
+                        json={"logbook_sync": {"qrz_api_key": "NEW-KEY\n"}})
+        self.assertEqual(self.stored("logbook_sync", "qrz_api_key"), "NEW-KEY")
+
+    def test_a_username_loses_surrounding_space(self):
+        self.client.put("/api/config",
+                        json={"callsign_lookup": {"user": "  VA7SLL "}})
+        self.assertEqual(self.stored("callsign_lookup", "user"), "VA7SLL")
+
+    def test_zero_width_characters_go_too(self):
+        """A rich-text copy carries these and nothing shows them on screen."""
+        self.client.put("/api/config",
+                        json={"callsign_lookup": {"password": "\ufeffpw\u200b"}})
+        self.assertEqual(self.stored("callsign_lookup", "password"), "pw")
+
+    def test_the_middle_is_left_alone(self):
+        self.client.put("/api/config",
+                        json={"callsign_lookup": {"password": " two words "}})
+        self.assertEqual(self.stored("callsign_lookup", "password"), "two words")
+
+    def test_whitespace_only_is_not_a_new_secret(self):
+        """It must read as "I was not editing this", not as a blank password."""
+        self.client.put("/api/config",
+                        json={"callsign_lookup": {"password": "   "}})
+        self.assertEqual(self.stored("callsign_lookup", "password"), "lookuppass")
+
+    def test_null_still_clears(self):
+        self.client.put("/api/config",
+                        json={"callsign_lookup": {"password": None}})
+        self.assertEqual(self.stored("callsign_lookup", "password"), "")
 
 
 if __name__ == "__main__":
