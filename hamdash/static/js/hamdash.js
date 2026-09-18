@@ -68,18 +68,34 @@
     return pattern.endsWith('.*') && topic.startsWith(pattern.slice(0, -1));
   }
 
-  async function req(method, path, body) {
+  // GET and DELETE carry their arguments in the query string, everything else
+  // in a JSON body. Sending them as a body on a GET is what fetch will happily
+  // do and what no server reads: request.args stays empty, the call looks like
+  // it worked, and the argument is silently dropped.
+  const QUERY = new Set(['GET', 'DELETE', 'HEAD']);
+
+  async function req(method, path, args) {
     const opts = { method, headers: {} };
-    if (body !== undefined) {
-      opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body);
+    let url = path;
+    if (args !== undefined && args !== null) {
+      if (QUERY.has(method)) {
+        const q = new URLSearchParams();
+        for (const [k, v] of Object.entries(args)) {
+          if (v !== undefined && v !== null && v !== '') q.append(k, v);
+        }
+        const s = q.toString();
+        if (s) url += (path.includes('?') ? '&' : '?') + s;
+      } else {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(args);
+      }
     }
-    const r = await fetch(path, opts);
+    const r = await fetch(url, opts);
     const text = await r.text();
     let data = text;
     try { data = text ? JSON.parse(text) : {}; } catch { /* leave as text */ }
     if (!r.ok) {
-      const msg = (data && data.error) || `${method} ${path} failed (${r.status})`;
+      const msg = (data && data.error) || `${method} ${url} failed (${r.status})`;
       throw new Error(msg);
     }
     return data;

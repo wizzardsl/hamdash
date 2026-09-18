@@ -1,0 +1,35 @@
+{
+  "id": "path_map",
+  "name": "Map",
+  "kind": "html",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Where you are and who you are working, with the path between",
+  "view": "index.html",
+  "w": 6,
+  "h": 4,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": ["lookup"],
+  "subscribes": ["lookup.result", "config.changed"],
+  "settings": {
+    "graticule": {
+      "type": "bool",
+      "label": "Show the grid lines",
+      "default": true
+    },
+    "great_circle": {
+      "type": "bool",
+      "label": "Draw the path",
+      "default": true,
+      "help": "The short-path great circle, which is the way the signal actually goes, not a straight line on the map."
+    },
+    "zoom": {
+      "type": "select",
+      "label": "Framing",
+      "options": ["fit the path", "whole world"],
+      "default": "fit the path",
+      "help": "Fit keeps both stations in view; whole world keeps the map still."
+    }
+  }
+}

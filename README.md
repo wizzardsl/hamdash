@@ -278,6 +278,26 @@ calls carry its token and are checked properly. A card's *page* is identified
 by `Referer`, which the page itself controls. Treat this as a namespace policy
 that stops honest cards colliding, not as protection from a hostile one.
 
+## Following one station
+
+Three cards show the same station without knowing about each other. The host
+publishes `lookup.result` whenever anything looks a callsign up, and the map
+and the path card draw from it:
+
+- **Typing a callsign in the logbook** looks it up as you type (debounced), so
+  the map and the bearing are there before you have finished the QSO.
+- **Clicking a logged contact** switches all of them to that QSO. The grid
+  that was logged wins over a fresh lookup — `?grid=` on `/api/lookup/<call>`
+  overrides the locator for that one answer — because a portable activation or
+  an operator who has since moved would otherwise plot in the wrong place.
+
+The `path_map` card draws both stations and the short-path great circle. It
+carries its own coastlines (Natural Earth 1:110m, public domain, simplified to
+about 14 kB) rather than fetching map tiles, so it works with no network and
+adds no third-party dependency. The path is sampled along the real great
+circle and split at the antimeridian — a straight line between two points on
+this projection is not the way the signal goes.
+
 ## Logbook sync
 
 Settings → Logbook sync. Credentials there, then Pull or Push.

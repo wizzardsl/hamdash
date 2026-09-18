@@ -102,5 +102,44 @@ class TestLinks(unittest.TestCase):
         self.assertIn("qrz", lk.lookup("W1AW")["links"])
 
 
+
+class TestGridlessAnswers(unittest.TestCase):
+    """callook answers for some US callsigns with a name and no gridsquare.
+
+    That is a real answer, but it cannot put anyone on a map, so it must not
+    end the chain while a provider that does know the grid is still untried.
+    """
+
+    def setUp(self):
+        self.thin = {"ok": True, "callsign": "K1JT", "locator": "",
+                     "country": "United States", "source": "callook",
+                     "approximate": False}
+        self.full = {"ok": True, "callsign": "K1JT", "locator": "FN20QI",
+                     "source": "hamdb", "approximate": False}
+
+    def test_chain_continues_past_an_answer_with_no_grid(self):
+        lk = offline_lookup(provider="auto")
+        with mock.patch.object(lk, "_callook", return_value=self.thin), \
+             mock.patch.object(lk, "_hamdb", return_value=self.full):
+            r = lk.lookup("K1JT")
+        self.assertEqual(r["source"], "hamdb")
+        self.assertEqual(r["locator"], "FN20QI")
+
+    def test_it_is_still_used_when_nothing_better_turns_up(self):
+        """A name and a country beat the prefix table's guess."""
+        lk = offline_lookup(provider="auto")
+        with mock.patch.object(lk, "_callook", return_value=self.thin), \
+             mock.patch.object(lk, "_hamdb", return_value=None):
+            r = lk.lookup("K1JT")
+        self.assertEqual(r["source"], "callook")
+        self.assertFalse(r["approximate"])
+
+    def test_naming_one_provider_still_means_only_that_one(self):
+        lk = offline_lookup(provider="callook")
+        with mock.patch.object(lk, "_callook", return_value=self.thin), \
+             mock.patch.object(lk, "_hamdb", return_value=self.full) as hamdb:
+            lk.lookup("K1JT")
+        hamdb.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

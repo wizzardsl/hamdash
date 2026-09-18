@@ -242,6 +242,28 @@ shape it settled on is worth reusing:
 - Untested against the live services — there is no LoTW or QRZ account here.
   The HTTP shapes come from their docs and the tests mock them.
 
+## One station, several cards
+
+- `lookup.result` is the "what are we looking at" event. Cards draw from the
+  payload; they must not call a lookup *back* in response to one.
+  `beacon_map` did exactly that and it was a feedback loop: one click produced
+  200+ events, and because the echo carried no `?grid=` it replaced a logged
+  QSO's real grid with the provider's guess for the callsign.
+- `?grid=` on `/api/lookup/<call>` overrides the locator for that answer only
+  and never touches the cache. A logged QSO's grid is what was actually
+  worked.
+- A lookup can succeed with an empty `locator` (callook does this for some US
+  calls). `auto` falls through to the next provider in that case and only
+  settles for the grid-less answer if nothing better turns up. Anything that
+  plots must handle "answered, no grid" without leaving the previous station
+  on screen.
+- `path_map` carries its own coastlines instead of fetching tiles: no network,
+  no third-party dependency, no tile-usage policy. SVG y is `-lat`, so
+  anything computing a viewBox has to work in projected space — framing on
+  latitude centres the view on the mirror of the path in the other hemisphere.
+  Marker sizes are in degrees and must be scaled by the view width, or a pin
+  becomes the size of Spain when the view zooms in.
+
 ## Callsign lookup
 
 - Default provider is `auto`: callook then hamdb (both free, no account), then

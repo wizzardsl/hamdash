@@ -15,9 +15,11 @@ dist/
 venv/
 env/
 
-# hamdash runtime state — config dirs created by --home / HAMDASH_HOME
-dev/
-frozen-home/
+# hamdash runtime state — config dirs created by --home / HAMDASH_HOME.
+# dev*/ rather than dev/: throwaway homes get numbered when you want two
+# boards side by side, and dev2/ nearly got committed.
+dev*/
+*-home/
 *.log
 hamdash.log
 

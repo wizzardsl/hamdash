@@ -17,6 +17,9 @@
   th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--rule); padding: 4px 4px; }
   td { padding: 3px 4px; border-bottom: 1px solid var(--rule); }
   td.c { font-family: var(--mono); color: var(--accent); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--panel-2); }
+  tbody tr.on td { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
   .del { border: 0; background: none; color: var(--muted); cursor: pointer; }
   .del:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
@@ -71,10 +74,27 @@ async function prefill(call) {
     if (info.name) bits.push(info.name);
     if (info.country) bits.push(info.country);
     if (info.path) bits.push(`${info.path.km} km at ${info.path.bearing}° (${HD.bearingName(info.path.bearing)})`);
-    if (info.worked_before) bits.push(`worked ${info.worked_before}× before`);
+    const seen = (info.worked_before || []).length;
+    if (seen) bits.push(`worked ${seen}× before`);
     $('#found').innerHTML = bits.length
       ? `<b>${call}</b> · ${bits.join(' · ')} · via ${info.source}`
       : `<b>${call}</b> · no record`;
+  } catch (e) { $('#err').textContent = e.message; }
+}
+
+async function select(qso, tr) {
+  document.querySelectorAll('#rows tr.on').forEach((n) => n.classList.remove('on'));
+  if (tr) tr.classList.add('on');
+  try {
+    // Prefer the grid that was logged: it is what was actually worked.
+    const info = await HD.get(`/api/lookup/${encodeURIComponent(qso.call)}`,
+                              qso.gridsquare ? { grid: qso.gridsquare } : undefined);
+    const bits = [qso.call];
+    if (info.locator) bits.push(info.locator);
+    if (info.path) bits.push(`${info.path.km.toLocaleString()} km at `
+                             + `${Math.round(info.path.bearing)}°`);
+    $('#found').innerHTML = `<b>${qso.call}</b> · ${bits.slice(1).join(' · ')}`;
+    $('#err').textContent = '';
   } catch (e) { $('#err').textContent = e.message; }
 }
 
@@ -112,7 +132,16 @@ async function refresh() {
     cells[2].textContent = r.band || '';
     cells[3].textContent = r.mode || '';
     cells[4].textContent = r.gridsquare || '';
-    tr.querySelector('.del').onclick = async () => { await HD.log.remove(r.id); refresh(); };
+    // Clicking a contact makes it the one every other card is looking at.
+    // The lookup publishes lookup.result, which the map and the path card
+    // already follow, so nothing here needs to know they exist.
+    tr.onclick = () => select(r, tr);
+    tr.title = `Show ${r.call} on the map`;
+    tr.querySelector('.del').onclick = async (e) => {
+      e.stopPropagation();                 // deleting a row is not selecting it
+      await HD.log.remove(r.id);
+      refresh();
+    };
     $('#rows').appendChild(tr);
   });
 }

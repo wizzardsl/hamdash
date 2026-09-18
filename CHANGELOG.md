@@ -40,6 +40,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- `HD.get(path, params)` sent its parameters in the request body, where no
+  server reads them. `HD.distance()` had therefore never worked, the Rescan
+  folders button never rescanned, and `HD.log.recent(30)` quietly returned 25.
+- `beacon_map` answered every `lookup.result` with another lookup, a feedback
+  loop that turned one click into 200+ bus events and overwrote a logged QSO's
+  grid with the provider's guess.
+- A lookup that succeeded with no gridsquare ended the provider chain, so a
+  callsign callook knows by name but not by grid never reached hamdb, which
+  does know it.
 - A QRZ pull returned nothing: QRZ HTML-escapes the ADIF in its reply, so
   splitting the response on `&` cut the payload off at its first `&lt;` and
   left the ADIF field present but empty.

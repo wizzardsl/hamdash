@@ -377,7 +377,16 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.get("/api/lookup/<call>")
     @guard("lookup")
     def lookup(call):
-        res = look.lookup(call)
+        res = dict(look.lookup(call))
+        # ?grid= overrides the locator for this answer only. A logged QSO
+        # carries the grid that was actually worked, which is not always where
+        # the operator lives now - a portable activation, or someone who has
+        # moved. The cached lookup is left alone.
+        want = (request.args.get("grid") or "").strip().upper()
+        if want and gridlib.valid(want) and want.upper() != (res.get("locator") or "").upper():
+            res["locator"] = want
+            res["locator_from"] = "log"
+            res["approximate"] = False
         my_grid = cfg.data["station"].get("grid", "")
         if res.get("locator") and gridlib.valid(my_grid) \
                 and gridlib.valid(res["locator"]):

@@ -77,6 +77,15 @@ function point(deg) {
   $('#deg').textContent = `${deg.toFixed(0)}° ${HD.bearingName(deg)}`;
 }
 
+function render(p, label, note) {
+  point(p.bearing);
+  $('#km').textContent = `${p.km.toLocaleString()} km`;
+  $('#mi').textContent = `${p.miles.toLocaleString()} mi`;
+  $('#lp').textContent = `${((p.bearing + 180) % 360).toFixed(0)}°`;
+  $('#note').className = 'note';
+  $('#note').textContent = note || `${p.from.locator} → ${label}`;
+}
+
 async function find(target) {
   if (!target) return;
   $('#note').className = 'note';
@@ -88,13 +97,10 @@ async function find(target) {
       $('#note').textContent = res.error + (res.country ? ` (${res.country})` : '');
       return;
     }
-    const p = res.path;
-    point(p.bearing);
-    $('#km').textContent = `${p.km.toLocaleString()} km`;
-    $('#mi').textContent = `${p.miles.toLocaleString()} mi`;
-    $('#lp').textContent = `${((p.bearing + 180) % 360).toFixed(0)}°`;
-    const who = res.info ? `${res.info.callsign} · ${res.info.country || '—'} · ${res.info.locator}` : p.to.locator;
-    $('#note').textContent = `${p.from.locator} → ${who}`;
+    const who = res.info
+      ? `${res.info.callsign} · ${res.info.country || '—'} · ${res.info.locator}`
+      : res.path.to.locator;
+    render(res.path, who);
   } catch (e) {
     $('#note').className = 'note err';
     $('#note').textContent = e.message;
@@ -104,11 +110,26 @@ async function find(target) {
 $('#go').onclick = () => find($('#target').value.trim().toUpperCase());
 $('#target').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#go').click(); });
 
-// follow whatever the logbook card is looking up
+// Follow whatever the rest of the board is looking at.
+//
+// Draw straight from the event. Calling find() here instead looked harmless
+// and was not: find() does its own lookup, which publishes lookup.result,
+// which lands back here - a loop that ran until the bus history filled with
+// the same event. Worse, that second lookup carries no ?grid, so selecting a
+// logged QSO with a known grid had its answer immediately replaced by the
+// provider's guess for the callsign.
 HD.on('lookup.result', (p) => {
-  if (p.callsign && p.locator) {
-    $('#target').value = p.callsign;
-    find(p.callsign);
+  if (!p.locator) return;
+  $('#target').value = p.callsign || p.locator;
+  if (p.path) {
+    const who = [p.callsign || p.locator, p.country, p.locator]
+      .filter(Boolean).join(' · ');
+    render(p.path, who, p.approximate
+      ? `${p.path.from.locator} → ${who} (approximate)` : null);
+  } else {
+    $('#note').className = 'note';
+    $('#note').textContent = `${p.callsign || p.locator}: no path — is your `
+      + `station grid set?`;
   }
 });
 </script>

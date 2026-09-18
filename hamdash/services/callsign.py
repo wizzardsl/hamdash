@@ -271,7 +271,7 @@ class Lookup:
         operator when nothing answered."""
         methods = {"callook": self._callook, "hamdb": self._hamdb,
                    "hamqth": self._hamqth, "qrz": self._qrz}
-        note = None
+        note, thin = None, None
         for name in self._chain():
             fn = methods.get(name)
             if fn is None:                      # "offline", or a typo
@@ -287,8 +287,16 @@ class Lookup:
             except (ET.ParseError, ValueError) as exc:
                 note = note or f"{name} returned something unreadable ({exc})"
                 continue
-            if hit:
+            if hit and hit.get("locator"):
                 return hit, None
+            if hit and thin is None:
+                # Answered, but with no grid - callook does this for some US
+                # calls. It is a real answer (name, country) and worth keeping,
+                # but it cannot place anyone on a map, so try the next provider
+                # before settling for it.
+                thin = hit
+        if thin:
+            return thin, None
         return None, note
 
     # ------------------------------------------------------------------ public
