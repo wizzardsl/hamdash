@@ -11,6 +11,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from hamdash import bus
+
 KINDS = ("url", "html", "python")
 
 
@@ -31,8 +33,15 @@ class Card:
     min_w: int = 2
     min_h: int = 2
     permissions: list[str] = field(default_factory=list)
+    # Bus namespace, declared. Both default to empty, which means "not
+    # declared" rather than "none": publishes falls back to the whole of
+    # <card_id>.*, subscribes to everything. Declaring narrows.
+    publishes: list[str] = field(default_factory=list)
+    subscribes: list[str] = field(default_factory=list)
     settings: dict = field(default_factory=dict)
     error: str | None = None
+    # Things wrong with the manifest that don't stop the card running.
+    warnings: list[str] = field(default_factory=list)
 
     def schema(self) -> list[dict]:
         """Manifest settings, normalised into fields the UI can render.
@@ -65,6 +74,40 @@ class Card:
     def may(self, permission: str) -> bool:
         return permission in (self.permissions or [])
 
+    def may_publish(self, topic: str) -> str | None:
+        """None if this card may publish the topic, else why not."""
+        return bus.refusal(self.id, topic, self.publishes)
+
+    def subscribe_filter(self) -> list[str] | None:
+        """Topics this card may receive, or None for unrestricted.
+
+        Its own namespace is implicit. Two tiles of one card are separate
+        pages served by one process, so a tile has to be able to hear what
+        another tile published without declaring its own id - and it cannot
+        learn anything it did not produce that way.
+        """
+        if not self.subscribes:
+            return None
+        return [*self.subscribes, self.id]
+
+    def check_namespace(self) -> None:
+        """Validate the declared namespace against the policy.
+
+        A publishes entry outside the card's own namespace can never fire, so
+        it is a manifest mistake worth naming at load rather than leaving the
+        author to wonder why a subscriber is silent. It is a warning and not
+        an error: the card still runs, it just can't publish that topic.
+        """
+        self.subscribes = _strings(self.subscribes)
+        kept = []
+        for topic in _strings(self.publishes):
+            why = bus.refusal(self.id, topic)
+            if why:
+                self.warnings.append(f"publishes: {why}")
+            else:
+                kept.append(topic)
+        self.publishes = kept
+
     def public(self) -> dict:
         d = {k: v for k, v in self.__dict__.items() if k != "path"}
         d["path"] = str(self.path)
@@ -90,6 +133,8 @@ def _read(d: Path) -> Card | None:
         if hasattr(card, key):
             setattr(card, key, val)
 
+    card.check_namespace()
+
     if card.kind not in KINDS:
         card.error = f"unknown kind {card.kind!r} (expected one of {', '.join(KINDS)})"
     elif card.kind == "python" and not (d / card.entry).exists():
@@ -99,6 +144,13 @@ def _read(d: Path) -> Card | None:
     elif card.kind == "url" and not card.url:
         card.error = "kind is 'url' but no url is set in card.json"
     return card
+
+
+def _strings(value) -> list[str]:
+    """A manifest list that survives being written as a bare string."""
+    if isinstance(value, str):
+        value = [value]
+    return [v.strip() for v in (value or []) if isinstance(v, str) and v.strip()]
 
 
 def discover(dirs) -> dict[str, Card]:

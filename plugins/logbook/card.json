@@ -7,6 +7,20 @@
   "description": "Log QSOs, look up callsigns, export ADIF",
   "entry": "card.py",
   "view": "index.html",
-  "w": 5, "h": 5, "min_w": 4, "min_h": 4,
-  "permissions": ["radio", "log", "lookup"]
+  "w": 5,
+  "h": 5,
+  "min_w": 4,
+  "min_h": 4,
+  "permissions": [
+    "radio",
+    "log",
+    "lookup"
+  ],
+  "publishes": [
+    "logbook.saved"
+  ],
+  "subscribes": [
+    "log.qso_added",
+    "radio.state"
+  ]
 }

@@ -108,7 +108,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return jsonify(error="too many event streams open",
                            subscribers=BUS.subscribers), 503
         topics = request.args.get("topics", "*")
-        gen = stream_with_context(BUS.stream(topics))
+        card, _ = _calling_card()
+        gen = stream_with_context(
+            BUS.stream(topics, card.subscribe_filter() if card else None))
         # No Connection header: PEP 3333 forbids hop-by-hop headers from a
         # WSGI app and waitress asserts on it. The server keeps it alive anyway.
         return Response(gen, mimetype="text/event-stream", headers={
@@ -116,17 +118,34 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     @app.post("/api/publish")
     def publish():
+        """Publish to the bus, inside the caller's namespace.
+
+        The host owns bus.RESERVED; a card owns <card_id>.* and nothing more.
+        Identified callers do not get to choose `source` either - it used to
+        be taken from the body, so a card could label its events "host".
+        """
         body = request.get_json(silent=True) or {}
         topic = body.get("topic")
         if not topic:
             return jsonify(error="topic is required"), 400
-        src = body.get("source") or request.headers.get("X-Hamdash-Card", "ui")
+        card, verified = _calling_card()
+        if card:
+            why = card.may_publish(topic)
+            if why:
+                return jsonify(error=why, topic=topic, card=card.id,
+                               verified=verified), 403
+            src = card.id
+        else:
+            # The board and the pop-out shell: host pages, not cards.
+            src = body.get("source") or request.headers.get("X-Hamdash-Card", "ui")
         return jsonify(BUS.publish(topic, body.get("payload") or {}, source=src))
 
     @app.get("/api/events/recent")
     def recent_events():
+        card, _ = _calling_card()
         return jsonify(BUS.recent(request.args.get("topics", "*"),
-                                  int(request.args.get("limit", 50))))
+                                  int(request.args.get("limit", 50)),
+                                  allow=card.subscribe_filter() if card else None))
 
     # ---------------- cards -------------------------------------------
     @app.get("/api/cards")

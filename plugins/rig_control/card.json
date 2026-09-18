@@ -7,6 +7,15 @@
   "description": "Frequency, mode and PTT over Hamlib rigctld",
   "entry": "card.py",
   "view": "index.html",
-  "w": 4, "h": 3, "min_w": 3, "min_h": 3,
-  "permissions": ["radio"]
+  "w": 4,
+  "h": 3,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": [
+    "radio"
+  ],
+  "subscribes": [
+    "log.qso_added",
+    "radio.state"
+  ]
 }

@@ -29,6 +29,8 @@ from pathlib import Path
 import requests
 from flask import Flask, jsonify, request, send_from_directory
 
+from hamdash import bus     # topic policy only; no shared state
+
 __all__ = ["Card", "HostClient"]
 
 
@@ -186,12 +188,19 @@ class Card:
 
     # --- bus ------------------------------------------------------------
     def publish(self, topic: str, payload: dict | None = None) -> None:
+        """Publish inside this card's own namespace: <card_id>.*
+
+        The host refuses anything else - the reserved host namespaces, another
+        card's namespace, and (if card.json declares `publishes`) a topic not
+        on that list. A refusal prints the host's reason and returns; a card
+        reacting to a bus event should not die because a topic name was
+        wrong, but the reason does end up in hamdash.log.
+        """
         try:
             self.host.post("/api/publish", {"topic": topic,
-                                            "payload": payload or {},
-                                            "source": self.id})
+                                            "payload": payload or {}})
         except requests.RequestException as exc:
-            print(f"publish {topic} failed: {exc}")
+            print(f"publish {topic} refused or failed: {exc}")
 
     def on(self, pattern: str):
         def deco(fn):
@@ -238,11 +247,38 @@ class Card:
 
     # --- run ------------------------------------------------------------
     def run(self) -> None:
+        self._warn_unreachable_subscriptions()
         if self._subs:
             threading.Thread(target=self._listen, daemon=True).start()
         print(f"{self.id} listening on 127.0.0.1:{self.port}")
         self.app.run(host="127.0.0.1", port=self.port, threaded=True,
                      use_reloader=False, debug=False)
+
+
+    def _warn_unreachable_subscriptions(self) -> None:
+        """Say so when a handler can never fire.
+
+        `subscribes` in card.json is enforced server-side, so an @card.on for
+        a topic outside it is dead code that looks like working code. The
+        failure is otherwise silent: the card runs, the events never arrive,
+        and there is nothing in the log to explain it.
+        """
+        declared = _strings(self.manifest.get("subscribes"))
+        if not declared:
+            return
+        for pattern, fn in self._subs:
+            if pattern in bus.ALWAYS or bus.owns(self.id, pattern):
+                continue        # delivered regardless of the declaration
+            if pattern != "*" and not bus.covered(pattern, declared):
+                print(f"{self.id}: @on({pattern!r}) can never fire - "
+                      f"subscribes in card.json is "
+                      f"{', '.join(declared)}. Add {pattern!r} to it.")
+
+
+def _strings(value) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    return [v.strip() for v in (value or []) if isinstance(v, str) and v.strip()]
 
 
 def _match(pattern: str, topic: str) -> bool:

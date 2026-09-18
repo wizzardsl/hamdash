@@ -7,12 +7,35 @@
   "description": "Copy this folder to start your own card",
   "entry": "card.py",
   "view": "index.html",
-  "w": 3, "h": 2, "min_w": 2, "min_h": 2,
-  "permissions": ["radio"],
+  "w": 3,
+  "h": 2,
+  "min_w": 2,
+  "min_h": 2,
+  "permissions": [
+    "radio"
+  ],
+  "subscribes": [
+    "radio.state"
+  ],
   "settings": {
-    "greeting": {"type": "string", "label": "Greeting", "default": "Hello"},
-    "show_rig": {"type": "bool", "label": "Show the current frequency", "default": true},
-    "accent": {"type": "select", "label": "Emphasis",
-               "options": ["normal", "loud"], "default": "normal"}
+    "greeting": {
+      "type": "string",
+      "label": "Greeting",
+      "default": "Hello"
+    },
+    "show_rig": {
+      "type": "bool",
+      "label": "Show the current frequency",
+      "default": true
+    },
+    "accent": {
+      "type": "select",
+      "label": "Emphasis",
+      "options": [
+        "normal",
+        "loud"
+      ],
+      "default": "normal"
+    }
   }
 }

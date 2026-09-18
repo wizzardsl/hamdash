@@ -7,6 +7,17 @@
   "description": "Great-circle distance and bearing to a callsign or grid",
   "entry": "card.py",
   "view": "index.html",
-  "w": 3, "h": 4, "min_w": 3, "min_h": 3,
-  "permissions": ["lookup"]
+  "w": 3,
+  "h": 4,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": [
+    "lookup"
+  ],
+  "publishes": [
+    "beacon_map.target"
+  ],
+  "subscribes": [
+    "lookup.result"
+  ]
 }

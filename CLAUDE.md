@@ -41,7 +41,7 @@ hamdash/services/   radio (rigctld), callsign, logbook, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, web_embed, hello_card
-tests/              regression guards — js_api shape, release-notes extractor
+tests/              regression guards — js_api shape, bus namespace, release notes
 tools/              release_notes.py — what the release workflow publishes
 .github/workflows/  ci.yml (matrix, reusable), release.yml (on tag)
 ```
@@ -102,6 +102,20 @@ interpreter. If packaging comes up, the app has to become its own card runner
   `/api/lookup/*`. Enforced properly for a card's *server* calls (token);
   matched on `Referer` for a card's *page* calls, which is a speed bump, not a
   sandbox. Don't describe it as security.
+- **Bus namespace.** The host owns `card. config. log. lookup. radio. rig.
+  ui.` (`bus.RESERVED`); a card owns `<card_id>.*` and nothing else. A card
+  publishing outside it gets a 403 naming the fix. `publishes`/`subscribes` in
+  `card.json` narrow further — undeclared means "the whole of my namespace" /
+  "everything", so adding a declaration is opt-in and never silently breaks an
+  existing card. Two things are delivered regardless of `subscribes`:
+  `bus.ALWAYS` (`card.settings_changed`, which the SDK subscribes to on the
+  card's behalf) and the card's own namespace (two tiles of one card are
+  separate pages sharing a process). `source` on `/api/publish` is no longer
+  taken from the body for an identified caller — a card used to be able to
+  label its events `"host"`.
+- The topic is `radio.state`, not `rig.state`. The docs said `rig.` for a
+  while; `rig.` is reserved so nothing can squat the name they point at, but
+  nothing publishes it.
 - `wedged` ≠ `crashed`. A card can bind its port and hang; `/‌_health` polling
   catches that. Wedged cards are deliberately not auto-restarted — restarting
   something hung while holding a serial handle makes it worse.
@@ -129,11 +143,14 @@ README and is guesswork as a result.
 
 ## Open threads
 
-- Confirm `pywebview X.Y, gui backend Z` from the startup log — decides
-  whether always-on-top is available at all on this machine.
-- Bus namespace policy: cards can currently publish on any topic, including
-  `rig.*`. Reserve `rig. log. lookup. ui. card.` and confine cards to
-  `<card_id>.*`; declare `publishes`/`subscribes` in the manifest.
+- This machine logs `pywebview 6.2.1` on win32. The gui backend only resolves
+  once a window opens, so `--browser` won't tell you; run `python run.py` and
+  read the first lines of the log to decide whether always-on-top is available.
+- Manifest `warnings` (a bad `publishes` entry) are computed and returned by
+  `/api/cards` but nothing in the UI renders them yet.
+- Card *pages* are still identified by `Referer`, which the page controls. The
+  namespace policy is enforced properly only for a card's server calls. Same
+  caveat as `permissions`; real isolation needs card pages on their own origin.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.

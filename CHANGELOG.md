@@ -6,9 +6,30 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- Bus namespace policy. The host owns the reserved namespaces
+  (`card. config. log. lookup. radio. rig. ui.`); a card may publish only
+  `<card_id>.*` and is refused elsewhere with a message naming the fix.
+- `publishes` and `subscribes` in `card.json`. Both narrow what a card may do;
+  undeclared means unrestricted, so existing cards are unaffected. A
+  `publishes` entry outside the card's own namespace is a manifest warning
+  rather than an error — the card still runs, it just can't use that topic.
+- The SDK warns at startup when an `@card.on` handler falls outside the
+  card's declared `subscribes`, which would otherwise be a card that runs
+  and silently never reacts.
+
 ### Fixed
+- A card could publish `radio.state` and make every tile on the board believe
+  the rig had moved. It can't now.
+- `/api/publish` took `source` from the request body, so a card could label
+  its own events `"host"`. An identified caller's source is now its card id.
+- `/api/events/recent` ignored the subscription filter, so a card held to a
+  `subscribes` list could read the same events back out of history.
 - `__version__` said `0.1.0` while the app was 0.3.3; it is now the single
   source of truth and appears in the first line of `hamdash.log`.
+- `bus.py` documented the radio topic as `rig.state`; it is and always was
+  `radio.state`. `rig.` is now reserved so nothing can squat the name the
+  docs pointed at.
 
 ## [0.3.3]
 
