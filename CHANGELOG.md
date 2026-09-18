@@ -6,6 +6,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.4]
+
 ### Added
 - The app can be packaged as a desktop build. `hamdash.spec` (onedir),
   `--run-card` so the frozen binary is its own card runner, `build.yml` for
