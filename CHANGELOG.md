@@ -7,6 +7,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- Two ways to fill in your grid, in Settings: **Use my location** (browser
+  geolocation, converted by the host; coordinates go in a POST body, never a
+  URL) and **From my callsign**. The second refuses to write anything when the
+  answer is only approximate, because the prefix table answers with the middle
+  of a country.
+- Callsign lookup is configurable in Settings, and defaults to a new
+  `auto` provider that tries the free no-account sources first. Added
+  **HamDB** (free, no account, US and Canada) and **QRZ.com** (needs a paid
+  XML subscription; its refusal is shown rather than swallowed).
+- Lookup results carry `links` to the public pages for that callsign.
 - A **Cards menu** in the rail: everything installed, with a tick beside what
   is on the board. Tick to add, untick to remove, and closing a tile with its
   ✕ unticks it there. Unticking a card with several tiles takes them all off
@@ -17,6 +27,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- `callsign_lookup` was not in the list of settings `/api/config` would accept,
+  so lookup settings could never be saved. Changing it now also rebuilds the
+  lookup instead of quietly using the old provider until restart.
 - `card.settings()` fell back to `manifest["settings_defaults"]`, a key no
   card.json has ever had, so a card asking about a tile that isn't on the
   board got `{}` instead of its manifest defaults.

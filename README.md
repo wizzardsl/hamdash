@@ -278,6 +278,49 @@ calls carry its token and are checked properly. A card's *page* is identified
 by `Referer`, which the page itself controls. Treat this as a namespace policy
 that stops honest cards colliding, not as protection from a hostile one.
 
+## Filling in your grid
+
+Settings has two buttons under the grid field.
+
+**Use my location** asks the browser for a position and turns it into a
+locator. The coordinates go to the host in a POST body, never a query string,
+so they don't end up in a log or in history, and nothing leaves the machine.
+In the desktop app this usually fails — a webview has no location provider —
+and it says so rather than spinning.
+
+**From my callsign** looks your callsign up and takes the grid from the
+result. It refuses to fill anything in when the answer is approximate: the
+built-in prefix table replies with the middle of a country, and a station grid
+that is silently 300 km out makes every distance the dashboard ever reports
+wrong.
+
+### Lookup providers
+
+| provider | account | covers |
+|---|---|---|
+| **Automatic** (default) | none | callook then HamDB, then your account if set |
+| callook | none | US |
+| HamDB | none | US and Canada |
+| HamQTH | free registration | worldwide |
+| QRZ.com | paid XML subscription | worldwide |
+| Offline | none | built-in prefix table only |
+
+**Automatic needs no account and is the default.** Between them callook and
+HamDB cover US and Canadian callsigns for free. Anywhere else needs an
+account, and a free HamQTH one is enough — QRZ is the only one that charges,
+and only for its XML interface. Without that subscription QRZ refuses the
+session, and hamdash shows you what QRZ said instead of quietly falling back
+to a guess.
+
+**LoTW is not in that list on purpose.** It is a QSL confirmation service, not
+a callsign directory: there is no public per-callsign page and no lookup API,
+so it cannot fill in a grid. What it does publish is a list of who has
+uploaded recently, which would answer "is this station on LoTW" — a different
+feature, not done yet.
+
+Lookup results carry `links` to the public pages for that callsign (QRZ,
+HamQTH, callook) for a card to offer.
+
 ## Permissions
 
 A card gets the shared services it declares, and no others:

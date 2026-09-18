@@ -37,11 +37,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
               mock=cfg.data["radio"].get("mock", True))
     rig.start_polling(hz=2)
     log = Logbook(cfg.db_path)
-    look = Lookup(cfg.data["callsign_lookup"].get("provider", "callook"),
-                  cfg.data["callsign_lookup"].get("user", ""),
-                  cfg.data["callsign_lookup"].get("password", ""),
-                  cache_path=cfg.db_path,
-                  cache_days=cfg.data["callsign_lookup"].get("cache_days", 30))
+    look = _make_lookup(cfg)
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -304,13 +300,20 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     @app.put("/api/config")
     def put_config():
+        nonlocal look
         body = request.get_json(silent=True) or {}
-        for key in ("station", "theme", "radio", "grid_cols", "row_px"):
+        for key in ("station", "theme", "radio", "grid_cols", "row_px",
+                    "callsign_lookup", "units"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
                 else:
                     cfg.data[key] = body[key]
+        if "callsign_lookup" in body:
+            # Rebuilt rather than left until restart: the point of changing the
+            # provider is usually to look something up straight afterwards, and
+            # silently using the old one is the kind of trap that costs an hour.
+            look = _make_lookup(cfg)
         cfg.save()
         BUS.publish("config.changed", cfg.data, source="host")
         return jsonify(ok=True)
@@ -380,6 +383,25 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         res["worked_before"] = log.worked_before(call)
         BUS.publish("lookup.result", res, source="host")
         return jsonify(res)
+
+    @app.post("/api/grid/locator")
+    @guard("lookup")
+    def grid_locator():
+        """Coordinates to a Maidenhead locator.
+
+        POST, not GET with a query string: this carries the operator's actual
+        position, and a query string is the one place it would end up written
+        down - in a log, in history, in a referer.
+        """
+        body = request.get_json(silent=True) or {}
+        try:
+            lat, lon = float(body["lat"]), float(body["lon"])
+        except (KeyError, TypeError, ValueError):
+            return jsonify(error="send lat and lon as numbers"), 400
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return jsonify(error=f"{lat},{lon} is not on Earth"), 400
+        return jsonify(locator=gridlib.to_locator(lat, lon),
+                       precision=6)
 
     @app.get("/api/grid/distance")
     @guard("lookup")
@@ -452,6 +474,13 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         rig.stop()
 
     return app, shutdown
+
+
+def _make_lookup(cfg) -> Lookup:
+    c = cfg.data["callsign_lookup"]
+    return Lookup(c.get("provider", "callook"), c.get("user", ""),
+                  c.get("password", ""), cache_path=cfg.db_path,
+                  cache_days=c.get("cache_days", 30))
 
 
 def _card_error(card):

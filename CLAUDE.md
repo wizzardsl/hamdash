@@ -204,6 +204,26 @@ shape it settled on is worth reusing:
 - **Mock by default**, like the rig. A card that needs hardware to show
   anything can't be developed or demonstrated.
 
+## Callsign lookup
+
+- Default provider is `auto`: callook then hamdb (both free, no account), then
+  hamqth if credentials exist. QRZ is never reached for unasked because its
+  XML interface is a paid add-on.
+- **A provider that refuses for a reason the operator can act on raises
+  `Refused`, and that text reaches the UI.** Falling back to the prefix table
+  quietly would turn "your QRZ subscription lapsed" into a station sitting in
+  the middle of its own country.
+- `approximate: true` means the prefix table answered — a country centre.
+  Anything that writes a grid somewhere must refuse it; the settings sheet
+  does.
+- `/api/grid/locator` is a POST because the body is the operator's real
+  position. A query string is the one place it would get written down.
+- Changing `callsign_lookup` rebuilds the `Lookup` in `put_config` rather than
+  waiting for a restart: the point of changing provider is usually to look
+  something up immediately afterwards.
+- LoTW has no public per-callsign page, so `links_for` has no lotw entry and
+  should not grow one. Its public user-activity list is a separate feature.
+
 ## Open threads
 
 - This machine logs `pywebview 6.2.1` on win32. The gui backend only resolves
@@ -215,6 +235,8 @@ shape it settled on is worth reusing:
   namespace policy is enforced properly only for a card's server calls. Same
   caveat as `permissions`; real isolation needs card pages on their own origin.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
+- LoTW user-activity list ("is this station on LoTW"), from the public CSV.
+- `cty.dat` for real DXCC, replacing the short PREFIX table.
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a

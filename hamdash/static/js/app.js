@@ -346,7 +346,81 @@
     $('#s-mock').checked = !!config.radio.mock;
     $('#s-rig-host').value = config.radio.rigctld_host || '';
     $('#s-rig-port').value = config.radio.rigctld_port || 4532;
+    const lk = config.callsign_lookup || {};
+    $('#s-lk-provider').value = lk.provider || 'callook';
+    $('#s-lk-user').value = lk.user || '';
+    $('#s-lk-pass').value = lk.password || '';
+    gridNote('');
   }
+
+  // ---- filling in the grid --------------------------------------------
+  function gridNote(msg, kind) {
+    const n = $('#s-grid-note');
+    n.textContent = msg;
+    n.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
+  function setGrid(locator, how) {
+    $('#s-grid').value = locator;
+    gridNote(`${locator} — ${how}. Save to keep it.`, 'good');
+  }
+
+  // The operator's position. Asked for only on a click, turned into a locator
+  // by the host and never written into a URL, so it does not end up in a log.
+  $('#s-geo').onclick = () => {
+    if (!navigator.geolocation || !window.isSecureContext) {
+      gridNote('This browser will not give a location to a non-secure page. '
+               + 'Use "From my callsign", or type the locator in.', 'warn');
+      return;
+    }
+    gridNote('Asking your browser for a position…');
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const r = await HD.post('/api/grid/locator',
+                                  { lat: coords.latitude, lon: coords.longitude });
+          const acc = coords.accuracy ? ` (±${Math.round(coords.accuracy)} m)` : '';
+          setGrid(r.locator, `from your device's position${acc}`);
+        } catch (e) { gridNote(e.message, 'warn'); }
+      },
+      (err) => {
+        const why = {
+          1: 'Permission was refused. Allow location for this page, or use '
+             + '"From my callsign".',
+          2: 'Your device could not work out where it is. In the desktop app '
+             + 'this is normal — the webview has no location provider. Use '
+             + '"From my callsign", or type the locator in.',
+          3: 'The request timed out.',
+        }[err.code] || err.message;
+        gridNote(why, 'warn');
+      },
+      // A 6-character locator is about 9 km across, so precise fixes buy
+      // nothing and cost battery, a slower answer and a more invasive prompt.
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
+  };
+
+  $('#s-from-call').onclick = async () => {
+    const call = $('#s-call').value.trim().toUpperCase();
+    if (!call) { gridNote('Enter your callsign first.', 'warn'); return; }
+    gridNote(`Looking up ${call}…`);
+    try {
+      const r = await HD.get(`/api/lookup/${encodeURIComponent(call)}`);
+      if (r.note) { gridNote(r.note, 'warn'); return; }
+      if (!r.locator) {
+        gridNote(`${r.source} has no locator for ${call}.`, 'warn');
+        return;
+      }
+      if (r.approximate) {
+        // The prefix table answers with the middle of a country. Filling that
+        // in would look like it worked and make every distance wrong.
+        gridNote(`Only a rough guess for ${call} (${r.locator} is the middle `
+                 + `of ${r.country || 'the country'}). Set a real lookup `
+                 + `provider below, or type your locator in.`, 'warn');
+        return;
+      }
+      setGrid(r.locator, `from ${r.source}`);
+    } catch (e) { gridNote(e.message, 'warn'); }
+  };
   $('#settings').onclick = () => { fillSettings(); $('#settings-sheet').showModal(); };
   $('#settings-cancel').onclick = () => $('#settings-sheet').close();
   $('#settings-save').onclick = async () => {
@@ -361,6 +435,11 @@
           mock: $('#s-mock').checked,
           rigctld_host: $('#s-rig-host').value.trim(),
           rigctld_port: Number($('#s-rig-port').value) || 4532,
+        },
+        callsign_lookup: {
+          provider: $('#s-lk-provider').value,
+          user: $('#s-lk-user').value.trim(),
+          password: $('#s-lk-pass').value,
         },
       });
       config = await HD.get('/api/config');

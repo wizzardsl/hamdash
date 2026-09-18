@@ -62,8 +62,40 @@
 <dialog id="settings-sheet" class="sheet">
   <h2>Station</h2>
   <label>Callsign <input id="s-call" class="mono" spellcheck="false"></label>
-  <label>Grid locator <input id="s-grid" class="mono" spellcheck="false"></label>
+  <label>Grid locator <input id="s-grid" class="mono" spellcheck="false"
+         placeholder="DO10ab"></label>
+  <div class="row-btns">
+    <button class="btn btn-quiet" id="s-geo" type="button">Use my location</button>
+    <button class="btn btn-quiet" id="s-from-call" type="button">From my callsign</button>
+  </div>
+  <p class="sheet-note" id="s-grid-note"></p>
   <label>Operator name <input id="s-op"></label>
+
+  <h2>Callsign lookup</h2>
+  <label>Provider
+    <select id="s-lk-provider">
+      <option value="auto">Automatic — free sources first, then your account</option>
+      <option value="callook">callook — free, no account, US only</option>
+      <option value="hamdb">HamDB — free, no account, US and Canada</option>
+      <option value="hamqth">HamQTH — free account, worldwide</option>
+      <option value="qrz">QRZ.com — account plus a paid XML subscription</option>
+      <option value="offline">Offline — built-in prefix table only</option>
+    </select>
+  </label>
+  <label>Username <input id="s-lk-user" spellcheck="false" autocomplete="off"></label>
+  <label>Password <input id="s-lk-pass" type="password" autocomplete="off"></label>
+  <p class="sheet-note">
+    <strong>Automatic</strong> needs no account: callook and HamDB between them
+    cover US and Canadian callsigns for free. Anywhere else needs an account —
+    a <a href="https://www.hamqth.com/register.php" target="_blank" rel="noopener">free
+    HamQTH one</a> is enough. QRZ's
+    <a href="https://www.qrz.com/page/xml_data.html" target="_blank" rel="noopener">XML
+    interface</a> is a paid add-on; without it QRZ refuses the session and
+    hamdash shows you exactly what it said.
+    <a href="https://lotw.arrl.org/" target="_blank" rel="noopener">LoTW</a> is
+    a QSL confirmation service, not a callsign directory — it has no public
+    lookup, so it can't fill your grid in.
+  </p>
   <h2>Radio</h2>
   <label class="row"><input type="checkbox" id="s-mock"> Use a simulated rig (no hardware)</label>
   <label>rigctld host <input id="s-rig-host" class="mono" spellcheck="false"></label>

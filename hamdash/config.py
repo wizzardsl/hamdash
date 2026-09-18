@@ -39,7 +39,7 @@ DEFAULTS = {
     "grid_cols": 12,
     "row_px": 80,
     "radio": {"rigctld_host": "127.0.0.1", "rigctld_port": 4532, "mock": True},
-    "callsign_lookup": {"provider": "callook", "user": "", "password": "",
+    "callsign_lookup": {"provider": "auto", "user": "", "password": "",
                         "cache_days": 30},
     "units": "km",
 }

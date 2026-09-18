@@ -299,3 +299,9 @@ html, body {
   color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
 }
 .toast-action:hover { border-color: var(--accent); }
+
+/* Buttons that act on the field above them, inside a settings sheet. */
+.row-btns { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 8px; }
+.row-btns .btn { font-size: 12px; padding: 3px 8px; }
+.sheet-note.warn { color: var(--alert); }
+.sheet-note.good { color: var(--signal); }

@@ -2,9 +2,21 @@
 the floor so the map card still has something to draw when you are offline.
 
 Providers:
+  auto     the free ones first, then whatever has credentials  (default)
   callook  free, no account, US callsigns only
+  hamdb    free, no account, US and Canadian callsigns
   hamqth   free account needed (session id, re-auth on expiry)
+  qrz      QRZ.com XML interface - account plus an XML subscription
   offline  prefix table only
+
+Nothing here needs to be paid for to be useful: callook and hamdb want no
+account at all, and HamQTH only a free registration. QRZ is the one that
+charges, and only for its XML interface.
+
+A provider that refuses for a reason the operator can act on (bad password, no
+subscription) raises Refused, and that text reaches the UI. Falling back to the
+prefix table silently would turn "your QRZ subscription lapsed" into a station
+sitting in the middle of its own country, which is worse than an error.
 """
 from __future__ import annotations
 
@@ -16,6 +28,11 @@ import xml.etree.ElementTree as ET
 import requests
 
 HAMQTH_NS = "{https://www.hamqth.com}"
+QRZ_NS = "{http://xmldata.qrz.com}"
+
+
+class Refused(Exception):
+    """The provider answered, and the answer was no. Says why."""
 
 # Short on purpose: replace with a cty.dat parser when you want real DXCC.
 PREFIX = {
@@ -53,6 +70,9 @@ class Lookup:
         self.provider = provider
         self.user = user
         self.password = password
+        # Which account provider `auto` should reach for. QRZ only pays off
+        # with a subscription, so it is opt-in by naming it explicitly.
+        self.qrz_first = provider == "qrz"
         self.cache_path = cache_path
         self.ttl = cache_days * 86400
         self._session_id: str | None = None
@@ -109,6 +129,85 @@ class Lookup:
             "approximate": False,
         }
 
+    def _hamdb(self, call: str) -> dict | None:
+        """hamdb.org - free, no account needed.
+
+        Worth having beside callook rather than instead of it: it answers for
+        Canadian callsigns as well as US ones (VE7CC resolves here and not at
+        callook), and the two rate limit separately.
+        """
+        r = requests.get(f"https://api.hamdb.org/v1/{call}/json/hamdash",
+                         timeout=8)
+        r.raise_for_status()
+        d = (r.json() or {}).get("hamdb", {})
+        c = d.get("callsign") or {}
+        if (d.get("messages", {}).get("status") or "").upper() != "OK":
+            return None
+        if not c.get("call"):
+            return None
+        name = " ".join(x for x in (c.get("fname", ""), c.get("name", "")) if x)
+        return {
+            "ok": True, "callsign": c["call"].upper(), "name": name.strip(),
+            "qth": ", ".join(x for x in (c.get("addr2", ""),
+                                         c.get("state", "")) if x),
+            "country": c.get("country", "United States"),
+            "locator": (c.get("grid") or "").upper(),
+            "lat": _f(c.get("lat")), "lon": _f(c.get("lon")),
+            "license_class": c.get("class", ""), "source": "hamdb",
+            "approximate": False,
+        }
+
+    def _qrz(self, call: str) -> dict | None:
+        """QRZ.com XML interface.
+
+        Needs a QRZ account *and* an XML subscription; without one QRZ answers
+        the session request with an error rather than a key, and that text is
+        passed straight through because it is the only thing that tells the
+        operator what to buy or fix.
+        """
+        if not (self.user and self.password):
+            raise Refused("QRZ needs a username and password "
+                          "(Settings -> callsign lookup)")
+        if not self._session_id or time.time() - self._session_at > 3000:
+            r = requests.get("https://xmldata.qrz.com/xml/current/",
+                             params={"username": self.user,
+                                     "password": self.password,
+                                     "agent": "hamdash"}, timeout=8)
+            root = ET.fromstring(r.text)
+            err = root.find(f".//{QRZ_NS}Error")
+            key = root.find(f".//{QRZ_NS}Key")
+            if key is None or not key.text:
+                raise Refused(
+                    (err.text or "").strip() if err is not None and err.text
+                    else "QRZ did not return a session key")
+            self._session_id, self._session_at = key.text, time.time()
+
+        r = requests.get("https://xmldata.qrz.com/xml/current/",
+                         params={"s": self._session_id, "callsign": call},
+                         timeout=8)
+        root = ET.fromstring(r.text)
+        err = root.find(f".//{QRZ_NS}Error")
+        node = root.find(f".//{QRZ_NS}Callsign")
+        if node is None:
+            text = (err.text or "").strip() if err is not None and err.text else ""
+            if "session" in text.lower() or "timeout" in text.lower():
+                self._session_id = None        # expired: next call re-auths
+                return None
+            if text and "not found" not in text.lower():
+                raise Refused(f"QRZ: {text}")
+            return None
+        g = {c.tag.replace(QRZ_NS, ""): (c.text or "") for c in node}
+        name = " ".join(x for x in (g.get("fname", ""), g.get("name", "")) if x)
+        return {
+            "ok": True, "callsign": (g.get("call") or call).upper(),
+            "name": name.strip(), "qth": g.get("addr2", ""),
+            "country": g.get("country", ""),
+            "locator": (g.get("grid") or "").upper(),
+            "lat": _f(g.get("lat")), "lon": _f(g.get("lon")),
+            "county": g.get("county", ""), "license_class": g.get("class", ""),
+            "source": "qrz", "approximate": False,
+        }
+
     def _hamqth(self, call: str) -> dict | None:
         if not (self.user and self.password):
             return None
@@ -153,6 +252,45 @@ class Lookup:
                 "source": "unknown", "approximate": True,
                 "error": f"no provider or prefix match for {c}"}
 
+    def _chain(self) -> list[str]:
+        """Which providers to try, in order.
+
+        `auto` means: the ones that cost nothing and need no account first,
+        then whichever account provider has credentials. So a fresh install
+        looks things up properly without anyone signing up for anything.
+        """
+        if self.provider != "auto":
+            return [self.provider]
+        chain = ["callook", "hamdb"]
+        if self.user and self.password:
+            chain.append("qrz" if self.qrz_first else "hamqth")
+        return chain
+
+    def _run(self, call: str):
+        """Try the chain; return (result, note). The note is what to tell the
+        operator when nothing answered."""
+        methods = {"callook": self._callook, "hamdb": self._hamdb,
+                   "hamqth": self._hamqth, "qrz": self._qrz}
+        note = None
+        for name in self._chain():
+            fn = methods.get(name)
+            if fn is None:                      # "offline", or a typo
+                continue
+            try:
+                hit = fn(call)
+            except Refused as exc:
+                note = str(exc)                 # actionable: stop being quiet
+                continue
+            except requests.RequestException as exc:
+                note = note or f"{name} unreachable ({exc})"
+                continue
+            except (ET.ParseError, ValueError) as exc:
+                note = note or f"{name} returned something unreadable ({exc})"
+                continue
+            if hit:
+                return hit, None
+        return None, note
+
     # ------------------------------------------------------------------ public
     def lookup(self, call: str, refresh: bool = False) -> dict:
         call = (call or "").strip().upper()
@@ -163,27 +301,36 @@ class Lookup:
             if hit:
                 return hit
 
-        result, note = None, None
-        try:
-            if self.provider == "callook":
-                result = self._callook(call)
-            elif self.provider == "hamqth":
-                result = self._hamqth(call)
-        except requests.RequestException as exc:
-            note = f"{self.provider} unreachable ({exc}); using prefix table"
-        except ET.ParseError as exc:
-            note = f"{self.provider} returned unparseable XML ({exc})"
+        result, note = self._run(call)
 
         if result is None:
             result = self._prefix(call)
             if note:
                 result["note"] = note
             elif self.provider != "offline":
-                result["note"] = f"{self.provider} had no record for {call}"
+                tried = ", ".join(self._chain())
+                result["note"] = f"no record for {call} from {tried}"
 
         result["cached"] = False
+        result["links"] = links_for(result.get("callsign") or call)
         self._store(call, result)
         return result
+
+
+def links_for(call: str) -> dict:
+    """Public pages for a callsign, for the UI to offer.
+
+    LoTW is deliberately absent: it has no public per-callsign page, only a
+    login and a public list of who has uploaded recently. Linking to
+    lotw.arrl.org for a specific callsign would be a link that goes nowhere
+    useful.
+    """
+    c = (call or "").strip().upper()
+    if not c:
+        return {}
+    return {"qrz": f"https://www.qrz.com/db/{c}",
+            "hamqth": f"https://www.hamqth.com/{c}",
+            "callook": f"https://callook.info/{c}"}
 
 
 def _f(v) -> float | None:
