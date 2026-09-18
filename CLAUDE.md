@@ -257,6 +257,12 @@ shape it settled on is worth reusing:
   settles for the grid-less answer if nothing better turns up. Anything that
   plots must handle "answered, no grid" without leaving the previous station
   on screen.
+- **`setPointerCapture` on `pointerdown` makes every child unclickable**: the
+  following `click` goes to the captured element, not to what is under the
+  cursor. Capture once a drag has actually started (a few pixels of movement),
+  and suppress the click that ends a drag.
+- Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per
+  wheel notch is the difference between a map and a slideshow.
 - `path_map` carries its own coastlines instead of fetching tiles: no network,
   no third-party dependency, no tile-usage policy. SVG y is `-lat`, so
   anything computing a viewBox has to work in projected space — framing on

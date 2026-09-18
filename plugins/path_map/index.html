@@ -9,12 +9,46 @@
   .bar { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
   .who { font-family: var(--mono); color: var(--accent); font-size: 14px; }
   .muted { color: var(--muted); }
-  .wrap { flex: 1; min-height: 60px; }
-  svg { width: 100%; height: 100%; display: block; }
+  .wrap { flex: 1; min-height: 60px; position: relative; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab;
+        touch-action: none; }             /* or the browser pans instead of us */
+  svg.dragging { cursor: grabbing; }
   .land { fill: var(--panel-2); stroke: var(--grip); stroke-width: .4; vector-effect: non-scaling-stroke; }
   .grat { stroke: var(--rule); stroke-width: .3; fill: none; vector-effect: non-scaling-stroke; }
   .path { stroke: var(--accent); stroke-width: 1.6; fill: none;
           vector-effect: non-scaling-stroke; stroke-linecap: round; }
+  .hit { fill: transparent; cursor: pointer; }
+
+  .zoom { position: absolute; top: 6px; right: 6px; display: flex;
+          flex-direction: column; gap: 3px; }
+  .zoom button {
+    width: 24px; height: 24px; padding: 0; line-height: 1;
+    font: inherit; font-size: 14px;
+    color: var(--ink); background: var(--panel); cursor: pointer;
+    border: 1px solid var(--rule); border-radius: var(--radius);
+  }
+  .zoom button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .card-info {
+    position: absolute; left: 6px; bottom: 6px; max-width: min(260px, 70%);
+    background: var(--panel); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent); border-radius: var(--radius);
+    padding: 7px 9px; font-size: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.4);
+  }
+  .card-info[hidden] { display: none; }
+  .card-info h3 { margin: 0 0 3px; font-family: var(--mono); font-size: 14px;
+                  color: var(--accent); font-weight: 500; }
+  .card-info dl { margin: 0; display: grid; grid-template-columns: auto 1fr;
+                  gap: 1px 8px; }
+  .card-info dt { color: var(--muted); }
+  .card-info dd { margin: 0; font-family: var(--mono); }
+  .card-info .links { margin-top: 5px; display: flex; gap: 8px; }
+  .card-info .links a { color: var(--signal); font-size: 11px; }
+  .card-info .x { position: absolute; top: 3px; right: 5px; border: 0;
+                  background: none; color: var(--muted); cursor: pointer;
+                  font-size: 13px; line-height: 1; }
+  .card-info .x:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
 </style>
 </head>
@@ -24,7 +58,21 @@
   <span class="who" id="who">—</span>
   <span class="muted" id="detail"></span>
 </div>
-<div class="wrap"><svg id="map" role="img" aria-labelledby="t"><title id="t">Map</title></svg></div>
+
+<div class="wrap">
+  <svg id="map" role="img" aria-labelledby="t"><title id="t">Map</title></svg>
+  <div class="zoom">
+    <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+    <button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    <button id="zfit" title="Back to the default view" aria-label="Reset view">&#8962;</button>
+  </div>
+  <div class="card-info" id="info" hidden>
+    <button class="x" id="info-x" title="Close" aria-label="Close">&times;</button>
+    <h3 id="i-call"></h3>
+    <dl id="i-rows"></dl>
+    <div class="links" id="i-links"></div>
+  </div>
+</div>
 <p class="err" id="err"></p>
 
 <script src="/static/js/hamdash.js"></script>
@@ -34,14 +82,19 @@ HD.cardId = 'path_map';
 const $ = (s) => document.querySelector(s);
 const SVGNS = 'http://www.w3.org/2000/svg';
 const D2R = Math.PI / 180;
+const WORLD = { cx: 0, cy: 0, w: 360 };
+const MIN_W = 1.5, MAX_W = 360;          // degrees across the view
 
 let conf = {};
-let me = null;        // {lat, lon, grid, call}
-let them = null;      // {lat, lon, grid, call, path}
+let me = null;          // {lat, lon, grid, call}
+let them = null;        // {lat, lon, grid, call}
+let lastInfo = null;    // the lookup.result payload behind `them`
+let view = { ...WORLD };
+let touched = false;    // has the operator moved the view themselves?
+let suppressClick = false;   // the click that ends a drag is not a choice
+const layers = {};
 
 // --- Maidenhead, client side ------------------------------------------------
-// The host has the same maths, but a locator is cheap to decode and the map
-// should not need a round trip to move a pin.
 function toLatLon(loc) {
   const s = (loc || '').trim().toUpperCase();
   if (!/^[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?$/.test(s)) return null;
@@ -56,10 +109,10 @@ function toLatLon(loc) {
 }
 
 // --- great circle -----------------------------------------------------------
-// A straight line on an equirectangular map is not the path a signal takes.
-// Sample the real great circle and split it where it crosses the antimeridian,
-// or it draws a stripe back across the whole world.
-function greatCircle(a, b, steps = 128) {
+// A straight line on this projection is not the path a signal takes. Sample
+// the real great circle and split it at the antimeridian, or it draws a stripe
+// back across the whole world.
+function greatCircle(a, b, steps = 160) {
   const toVec = (p) => {
     const la = p.lat * D2R, lo = p.lon * D2R;
     return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
@@ -67,107 +120,287 @@ function greatCircle(a, b, steps = 128) {
   const [v1, v2] = [toVec(a), toVec(b)];
   const dot = Math.max(-1, Math.min(1, v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]));
   const om = Math.acos(dot);
-  const segs = [];
-  let run = [];
-  let prevLon = null;
+  const segs = []; let run = []; let prev = null;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    let p;
-    if (om < 1e-9) { p = v1; } else {
+    let p = v1;
+    if (om >= 1e-9) {
       const s1 = Math.sin((1 - t) * om) / Math.sin(om);
       const s2 = Math.sin(t * om) / Math.sin(om);
       p = [v1[0] * s1 + v2[0] * s2, v1[1] * s1 + v2[1] * s2, v1[2] * s1 + v2[2] * s2];
     }
     const lat = Math.atan2(p[2], Math.hypot(p[0], p[1])) / D2R;
     const lon = Math.atan2(p[1], p[0]) / D2R;
-    if (prevLon !== null && Math.abs(lon - prevLon) > 180) {
-      segs.push(run); run = [];
-    }
-    run.push([lon, lat]);
-    prevLon = lon;
+    if (prev !== null && Math.abs(lon - prev) > 180) { segs.push(run); run = []; }
+    run.push([lon, -lat]);
+    prev = lon;
   }
   if (run.length) segs.push(run);
   return segs.filter((s) => s.length > 1);
 }
 
-// --- drawing ----------------------------------------------------------------
 function el(name, attrs) {
   const n = document.createElementNS(SVGNS, name);
   for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
   return n;
 }
 
-function viewBox() {
-  if ((conf.zoom || 'fit the path') === 'whole world' || !me || !them) {
-    return [-180, -90, 360, 180];
-  }
-  // Work in projected coordinates, where y is -lat. Framing on latitude and
-  // then using it as an SVG y centres the view on the mirror of the path in
-  // the other hemisphere, which looks like an empty ocean.
-  const pad = 18;
-  const xs = [me.lon, them.lon];
-  const ys = [-me.lat, -them.lat];
-  const x1 = Math.min(...xs) - pad, x2 = Math.max(...xs) + pad;
-  const y1 = Math.min(...ys) - pad, y2 = Math.max(...ys) + pad;
-  // A path the long way round the planet is not usefully "framed"; show it all.
-  if (x2 - x1 > 300) return [-180, -90, 360, 180];
-  const w = Math.max(x2 - x1, 30), h = Math.max(y2 - y1, 18);
-  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-  return [cx - w / 2, cy - h / 2, w, h];
+// --- the view ---------------------------------------------------------------
+// Pan and zoom change `view` and the viewBox, nothing else. The coastline is
+// 56 paths; rebuilding them on every wheel notch would make the map crawl, so
+// the static layers are built once and left alone.
+function aspect() {
+  const r = $('#map').getBoundingClientRect();
+  return r.height > 0 ? r.width / r.height : 2;
 }
 
-function pin(p, colour, label, k) {
-  // `k` scales the marker with the view. Sizes here are in degrees, so a pin
-  // fixed at r=2.2 is a reasonable dot on a whole-world view and a blob the
-  // size of Spain once the view zooms to a short path. Scaling by the view
-  // width keeps it the same size on screen at any framing.
+function clampView(v) {
+  const w = Math.min(MAX_W, Math.max(MIN_W, v.w));
+  const h = w / Math.max(0.2, aspect());
+  // Somewhere with map still in it, rather than off in empty space.
+  const cx = Math.min(180, Math.max(-180, v.cx));
+  const cy = h >= 180 ? 0 : Math.min(90 - h / 2, Math.max(-90 + h / 2, v.cy));
+  return { cx, cy, w };
+}
+
+function applyView() {
+  view = clampView(view);
+  const h = view.w / Math.max(0.2, aspect());
+  $('#map').setAttribute('viewBox',
+    `${view.cx - view.w / 2} ${view.cy - h / 2} ${view.w} ${h}`);
+  rescalePins();
+}
+
+function defaultView() {
+  if ((conf.zoom || 'fit the path') === 'whole world' || !me || !them) {
+    return { ...WORLD };
+  }
+  const pad = 18;
+  const xs = [me.lon, them.lon], ys = [-me.lat, -them.lat];
+  const x1 = Math.min(...xs) - pad, x2 = Math.max(...xs) + pad;
+  const y1 = Math.min(...ys) - pad, y2 = Math.max(...ys) + pad;
+  if (x2 - x1 > 300) return { ...WORLD };
+  const a = Math.max(0.2, aspect());
+  // Widen to whichever dimension does not fit, so both stations stay in view
+  // whatever shape the tile has been dragged into.
+  const w = Math.max(x2 - x1, (y2 - y1) * a, 20);
+  return { cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, w };
+}
+
+function resetView() { touched = false; view = defaultView(); applyView(); }
+
+function zoomBy(factor, at) {
+  const anchor = at || { x: view.cx, y: view.cy };
+  const w = Math.min(MAX_W, Math.max(MIN_W, view.w * factor));
+  const k = w / view.w;             // keep what is under the cursor under it
+  view = { w, cx: anchor.x + (view.cx - anchor.x) * k,
+           cy: anchor.y + (view.cy - anchor.y) * k };
+  touched = true;
+  applyView();
+}
+
+function atPointer(ev) {
+  const r = $('#map').getBoundingClientRect();
+  const h = view.w / Math.max(0.2, aspect());
+  return {
+    x: view.cx - view.w / 2 + ((ev.clientX - r.left) / r.width) * view.w,
+    y: view.cy - h / 2 + ((ev.clientY - r.top) / r.height) * h,
+  };
+}
+
+// --- pins -------------------------------------------------------------------
+function rescalePins() {
+  const k = view.w / 360;           // sizes below are degrees, so scale by view
+  layers.pins?.querySelectorAll('[data-pin]').forEach((g) => {
+    const dot = g.querySelector('.dot');
+    dot.setAttribute('r', 2.2 * k);
+    dot.setAttribute('stroke-width', 0.7 * k);
+    g.querySelector('.hit').setAttribute('r', 7 * k);
+    const t = g.querySelector('text');
+    t.setAttribute('x', 3.4 * k);
+    t.setAttribute('y', 1.6 * k);
+    t.setAttribute('font-size', 5.5 * k);
+  });
+}
+
+function pin(p, colour, label, onClick) {
   const g = el('g', { transform: `translate(${p.lon} ${-p.lat})` });
-  g.appendChild(el('circle', { r: 2.2 * k, fill: colour, stroke: 'var(--bg)',
-                               'stroke-width': 0.7 * k }));
-  const t = el('text', { x: 3.4 * k, y: 1.6 * k, 'font-size': 5.5 * k,
-                         fill: colour, 'font-family': 'var(--mono)' });
+  g.dataset.pin = '1';
+  g.appendChild(el('circle', { class: 'dot', r: 2.2, fill: colour,
+                               stroke: 'var(--bg)', 'stroke-width': .7 }));
+  const t = el('text', { x: 3.4, y: 1.6, 'font-size': 5.5, fill: colour,
+                         'font-family': 'var(--mono)' });
   t.textContent = label;
   g.appendChild(t);
+  // A transparent disc on top: the pin stays clickable without having to hit
+  // a two-pixel dot, at any zoom.
+  const hit = el('circle', { class: 'hit', r: 7 });
+  hit.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    e.stopPropagation();
+    onClick();
+  });
+  g.appendChild(hit);
   return g;
 }
 
-function draw() {
-  const svg = $('#map');
-  svg.innerHTML = '';
-  const [vx, vy, vw, vh] = viewBox();
-  svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+// --- the details panel ------------------------------------------------------
+function rows(pairs) {
+  const dl = $('#i-rows');
+  dl.innerHTML = '';
+  pairs.filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .forEach(([k, v]) => {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      dl.append(dt, dd);
+    });
+}
 
-  // Land is stored as raw lon/lat, so the whole layer is flipped once here
-  // rather than negating every coordinate at build time.
+function links(map) {
+  const box = $('#i-links');
+  box.innerHTML = '';
+  Object.entries(map || {}).forEach(([name, href]) => {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = name;
+    // Plain anchors on purpose: hamdash.js intercepts target=_blank in the
+    // desktop shell and routes it to the real browser, because an unhandled
+    // new-window request inside a webview escapes to the OS.
+    box.appendChild(a);
+  });
+}
+
+function showInfo(which) {
+  const i = lastInfo || {};
+  if (which === 'me') {
+    if (!me) return;
+    $('#i-call').textContent = me.call || 'My station';
+    rows([['Grid', me.grid], ['Latitude', me.lat.toFixed(3)],
+          ['Longitude', me.lon.toFixed(3)]]);
+    links({});
+  } else {
+    if (!them) return;
+    $('#i-call').textContent = them.call || them.grid;
+    rows([
+      ['Grid', them.grid],
+      ['Name', i.name],
+      ['Country', i.country],
+      ['Distance', i.path ? `${i.path.km.toLocaleString()} km` : ''],
+      ['Bearing', i.path ? `${Math.round(i.path.bearing)}° ${HD.bearingName(i.path.bearing)}` : ''],
+      ['Long path', i.path ? `${Math.round((i.path.bearing + 180) % 360)}°` : ''],
+      ['Worked', (i.worked_before || []).length
+        ? `${i.worked_before.length}× before` : ''],
+      ['Source', i.approximate ? `${i.source} (approximate)` : i.source],
+    ]);
+    links(i.links);
+  }
+  $('#info').hidden = false;
+}
+
+// --- drawing ----------------------------------------------------------------
+function build() {
+  const svg = $('#map');
   const land = el('g', { transform: 'scale(1 -1)' });
   (window.WORLD_LAND || []).forEach((d) => land.appendChild(el('path', { d, class: 'land' })));
   svg.appendChild(land);
 
-  if (conf.graticule !== false) {
-    const g = el('g', { class: 'grat' });
-    for (let lon = -180; lon <= 180; lon += 30) {
-      g.appendChild(el('line', { x1: lon, y1: -90, x2: lon, y2: 90 }));
-    }
-    for (let lat = -60; lat <= 60; lat += 30) {   // poles carry no information
-      g.appendChild(el('line', { x1: -180, y1: -lat, x2: 180, y2: -lat }));
-    }
-    g.appendChild(el('line', { x1: -180, y1: 0, x2: 180, y2: 0,
-                               'stroke-width': .6 }));
-    svg.appendChild(g);
+  layers.grat = el('g', { class: 'grat' });
+  for (let lon = -180; lon <= 180; lon += 30) {
+    layers.grat.appendChild(el('line', { x1: lon, y1: -90, x2: lon, y2: 90 }));
   }
+  for (let lat = -60; lat <= 60; lat += 30) {   // poles carry no information
+    layers.grat.appendChild(el('line', { x1: -180, y1: -lat, x2: 180, y2: -lat }));
+  }
+  layers.grat.appendChild(el('line', { x1: -180, y1: 0, x2: 180, y2: 0,
+                                       'stroke-width': .6 }));
+  svg.appendChild(layers.grat);
 
+  layers.path = el('g');
+  layers.pins = el('g');
+  svg.append(layers.path, layers.pins);
+}
+
+function drawStation() {
+  layers.grat.style.display = conf.graticule === false ? 'none' : '';
+  layers.path.innerHTML = '';
+  layers.pins.innerHTML = '';
   if (me && them && conf.great_circle !== false) {
     greatCircle(me, them).forEach((seg) => {
-      svg.appendChild(el('polyline', {
-        class: 'path',
-        points: seg.map(([lo, la]) => `${lo},${-la}`).join(' '),
+      layers.path.appendChild(el('polyline', {
+        class: 'path', points: seg.map(([x, y]) => `${x},${y}`).join(' '),
       }));
     });
   }
-  const k = vw / 360;                       // 1 at whole-world, smaller zoomed in
-  if (me) svg.appendChild(pin(me, 'var(--signal)', me.call || 'home', k));
-  if (them) svg.appendChild(pin(them, 'var(--accent)', them.call || '', k));
+  if (me) layers.pins.appendChild(pin(me, 'var(--signal)', me.call || 'home',
+                                      () => showInfo('me')));
+  if (them) layers.pins.appendChild(pin(them, 'var(--accent)', them.call || '',
+                                        () => showInfo('them')));
+  rescalePins();
+}
+
+// --- interaction ------------------------------------------------------------
+function wireInteraction() {
+  const svg = $('#map');
+
+  // passive:false because this has to preventDefault, or the wheel scrolls the
+  // card's page instead of zooming the map.
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomBy(Math.exp(e.deltaY * 0.0012), atPointer(e));
+  }, { passive: false });
+
+  let drag = null;
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    drag = { p: atPointer(e), cx: view.cx, cy: view.cy,
+             sx: e.clientX, sy: e.clientY, moved: false };
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!drag.moved) {
+      // Capture only once this is really a drag. Capturing on pointerdown
+      // sends the following click to the svg instead of to whatever is under
+      // the cursor, which silently makes every pin unclickable.
+      if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) return;
+      drag.moved = true;
+      svg.setPointerCapture(e.pointerId);
+      svg.classList.add('dragging');
+    }
+    // atPointer is relative to the current view, so measure against where the
+    // grab started in the unmoved view rather than accumulating deltas, which
+    // would drift as the view moves under the cursor.
+    const now = atPointer(e);
+    view.cx = drag.cx - (now.x - drag.p.x);
+    view.cy = drag.cy - (now.y - drag.p.y);
+    touched = true;
+    applyView();
+  });
+  const end = (e) => {
+    if (!drag) return;
+    const wasDrag = drag.moved;
+    drag = null;
+    svg.classList.remove('dragging');
+    if (wasDrag) {
+      try { svg.releasePointerCapture(e.pointerId); } catch { /* gone */ }
+      // The click that follows a drag is the end of the drag, not a choice.
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+  svg.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    if (e.target === svg || e.target.classList.contains('land')) {
+      $('#info').hidden = true;          // clicking the map closes the panel
+    }
+  });
+
+  $('#zin').onclick = () => zoomBy(1 / 1.6);
+  $('#zout').onclick = () => zoomBy(1.6);
+  $('#zfit').onclick = resetView;
+  $('#info-x').onclick = () => { $('#info').hidden = true; };
+  window.addEventListener('resize', applyView);
 }
 
 // --- state ------------------------------------------------------------------
@@ -184,39 +417,45 @@ async function loadMe() {
 function show(info) {
   const at = toLatLon(info.locator);
   if (!at) {
-    // Saying nothing would leave the previous station on the map while the
-    // operator is looking at a different callsign, which is worse than an
-    // empty map: it is a confident wrong answer.
-    them = null;
+    // Leaving the previous station up while the operator is looking at a
+    // different callsign is worse than an empty map: a confident wrong answer.
+    them = null; lastInfo = null;
+    $('#info').hidden = true;
     $('#who').textContent = info.callsign || '—';
     $('#detail').textContent = 'no grid known'
       + (info.source ? ` (via ${info.source})` : '');
-    draw();
+    drawStation();
     return;
   }
+  lastInfo = info;
   them = { ...at, grid: info.locator, call: info.callsign || '' };
   $('#who').textContent = info.callsign || info.locator;
-  const bits = [];
-  if (info.locator) bits.push(info.locator);
-  if (info.country) bits.push(info.country);
+  const bits = [info.locator, info.country].filter(Boolean);
   if (info.path) {
-    bits.push(`${info.path.km.toLocaleString()} km`);
-    bits.push(`${Math.round(info.path.bearing)}° ${HD.bearingName(info.path.bearing)}`);
+    bits.push(`${info.path.km.toLocaleString()} km`,
+              `${Math.round(info.path.bearing)}° ${HD.bearingName(info.path.bearing)}`);
   }
   if (info.approximate) bits.push('approximate');
   $('#detail').textContent = bits.join(' · ');
-  draw();
+  $('#info').hidden = true;
+  drawStation();
+  // A new station reframes the map - unless the operator has taken the view
+  // over themselves, in which case moving it back under them would be rude.
+  if (!touched) view = defaultView();
+  applyView();
 }
 
-HD.on('lookup.result', (p) => { if (p.locator) show(p); });
-HD.on('config.changed', () => loadMe().then(draw));
-HD.onSettings((v) => { conf = v; draw(); });
-window.addEventListener('resize', draw);
+HD.on('lookup.result', (p) => { if (p.callsign || p.locator) show(p); });
+HD.on('config.changed', () => loadMe().then(() => { drawStation(); applyView(); }));
+HD.onSettings((v) => { conf = v; drawStation(); resetView(); });
 
 (async function boot() {
   conf = await HD.settings();
+  build();
+  wireInteraction();
   await loadMe();
-  draw();
+  drawStation();
+  resetView();
 })();
 </script>
 </body>

@@ -291,7 +291,12 @@ and the path card draw from it:
   overrides the locator for that one answer — because a portable activation or
   an operator who has since moved would otherwise plot in the wrong place.
 
-The `path_map` card draws both stations and the short-path great circle. It
+The `path_map` card draws both stations and the short-path great circle.
+Scroll to zoom, drag to pan, **+ − ⌂** in the corner, and click either pin for
+that station's grid, country, distance, bearing, long path, whether you have
+worked them before, and links to their public pages. A new station reframes
+the map — unless you have moved the view yourself, in which case it is left
+where you put it until you press ⌂. It
 carries its own coastlines (Natural Earth 1:110m, public domain, simplified to
 about 14 kB) rather than fetching map tiles, so it works with no network and
 adds no third-party dependency. The path is sampled along the real great
