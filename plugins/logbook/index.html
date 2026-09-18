@@ -332,6 +332,12 @@ $('#peek-notes-view').onclick = () =>
 async function select(qso, tr) {
   document.querySelectorAll('#rows tr.on').forEach((n) => n.classList.remove('on'));
   if (tr) tr.classList.add('on');
+  // Put the callsign where you would have typed it. Clicking a contact and
+  // then wanting to work them again is the common case, and it is the same
+  // panel either way - so there is no reason for the click to show less than
+  // typing the callsign would.
+  $('#f-call').value = qso.call;
+  lookedUp = qso.call;                 // already looked up below; don't re-ask
   try {
     // Prefer the grid that was logged: it is what was actually worked.
     const info = await HD.get(`/api/lookup/${encodeURIComponent(qso.call)}`,
@@ -342,6 +348,8 @@ async function select(qso, tr) {
                              + `${Math.round(info.path.bearing)}°`);
     $('#found').innerHTML = HD.flag(info.iso, info.country)
       + `<b>${qso.call}</b> · ${bits.slice(1).join(' · ')}`;
+    // One request serves both: the summary line and the station panel.
+    showPeek(qso.call, info);
     $('#err').textContent = '';
   } catch (e) { $('#err').textContent = e.message; }
 }

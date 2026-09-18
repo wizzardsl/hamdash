@@ -20,6 +20,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - Under **Automatic**, a field saying which service the username and password
   belong to. It used to guess HamQTH, which posted a QRZ password to a company
   that never asked for it and spent a failed login doing it.
+- **Clicking a logged contact fills the callsign box and opens the station
+  panel**, the same one typing the callsign gives you - so a click shows what
+  is known about the station rather than a single summary line, and leaves you
+  ready to work them again. It reuses the lookup the click already made, so it
+  costs no extra request.
 - A **station panel** above the log table, filled as you type a callsign:
   name, country and state with a flag, distance, bearing, how many times you
   have worked them, and the notes from those contacts.
