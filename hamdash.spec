@@ -26,6 +26,11 @@ hiddenimports = [
     # Imported inside functions in run.py; named here so a refactor that moves
     # the import doesn't silently drop the server from the build.
     "waitress",
+    # The spectrum card needs these, and a card is a data file the analyser
+    # never follows. Without them the card is dead in every downloadable
+    # build while working perfectly from source.
+    "numpy",
+    "sounddevice",
 ]
 
 a = Analysis(

@@ -164,17 +164,35 @@ class Card:
         """
         uid = uid or self.tile_uid()
         if not uid:
-            return dict(self.manifest.get("settings_defaults") or {})
+            return self.defaults()
         hit = self._settings.get(uid)
         if hit and time.time() - hit[0] < self._settings_ttl:
             return dict(hit[1])
         try:
             values = self.host.tile_settings(uid).get("values", {})
         except requests.RequestException as exc:
-            print(f"settings for {uid} unavailable ({exc}); using last known")
-            return dict(hit[1]) if hit else {}
+            print(f"settings for {uid} unavailable ({exc}); using "
+                  f"{'last known' if hit else 'manifest defaults'}")
+            return dict(hit[1]) if hit else self.defaults()
         self._settings[uid] = (time.time(), values)
         return dict(values)
+
+    def defaults(self) -> dict:
+        """This card's manifest defaults.
+
+        The same shape the host merges under a tile's saved values, so a card
+        asked about a tile that isn't on the board - or asked with no tile at
+        all, which is how a card's own startup code sees it - gets usable
+        settings rather than an empty dict and a pile of `or` fallbacks.
+        """
+        out = {}
+        for name, spec in (self.manifest.get("settings") or {}).items():
+            if isinstance(spec, dict):
+                out[name] = spec.get(
+                    "default", False if spec.get("type") == "bool" else "")
+            else:
+                out[name] = spec
+        return out
 
     def save_settings(self, values: dict, uid: str | None = None) -> dict:
         uid = uid or self.tile_uid()

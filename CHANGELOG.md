@@ -6,7 +6,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- `spectrum` card: live spectrum trace and waterfall of the receiver's audio,
+  with automatic contrast, per-tile input selection and a synthesised `mock`
+  signal so it works with no radio attached. Needs numpy and sounddevice,
+  both now bundled in the frozen build.
+
 ### Fixed
+- `card.settings()` fell back to `manifest["settings_defaults"]`, a key no
+  card.json has ever had, so a card asking about a tile that isn't on the
+  board got `{}` instead of its manifest defaults.
+- A `layout.json` that was valid JSON of the wrong shape got as far as an
+  unrelated 500 (`'str' object has no attribute 'get'`). It is now rejected
+  where it is read, and a hand-written `{"tiles": [...]}` wrapper is accepted.
 - The release workflow built the per-platform zips and then published without
   attaching them, so 0.3.4 shipped with no downloads. The publish step now
   verifies at least one asset landed and fails if not, and is idempotent so a

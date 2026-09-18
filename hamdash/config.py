@@ -103,10 +103,22 @@ class Config:
     def load_layout(self) -> list[dict]:
         if self.layout_path.exists():
             try:
-                return json.loads(self.layout_path.read_text())
+                tiles = json.loads(self.layout_path.read_text())
             except json.JSONDecodeError:
                 print(f"{self.layout_path}: bad JSON; starting with a blank board")
                 return []
+            # Valid JSON of the wrong shape used to get this far and then fail
+            # somewhere unrelated - a hand-edited {"tiles": [...]} produced a
+            # 500 on /api/tiles/<uid>/settings reading 'str' has no attribute
+            # 'get'. Say what is wrong where it is wrong.
+            if isinstance(tiles, dict) and isinstance(tiles.get("tiles"), list):
+                tiles = tiles["tiles"]          # a forgivable hand-edit
+            if not isinstance(tiles, list) or not all(
+                    isinstance(t, dict) for t in tiles):
+                print(f"{self.layout_path}: expected a list of tiles, got "
+                      f"{type(tiles).__name__}; starting with a blank board")
+                return []
+            return tiles
         return [  # first run: the three cards most people want
             {"uid": "t1", "card": "rig_control", "x": 0, "y": 0, "w": 4, "h": 3},
             {"uid": "t2", "card": "logbook", "x": 4, "y": 0, "w": 5, "h": 5},

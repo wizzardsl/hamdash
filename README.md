@@ -42,7 +42,7 @@ run.py ──> hamdash/app.py            Flask: static shell, REST API, SSE bus,
              ├── services/           radio (rigctld), callsign, logbook, grid math
              ├── sdk/                what a card author imports
              └── static/             board, drag/resize, themes, card palette
-plugins/     rig_control, logbook, beacon_map, web_embed, hello_card
+plugins/     rig_control, logbook, beacon_map, spectrum, web_embed, hello_card
 ```
 
 Why processes and not imports: a card someone wrote at 1am shouldn't be able to
@@ -193,6 +193,32 @@ is the worked example — copy that folder to start your own.
 `card.settings()` caches for a few seconds and invalidates on the
 `card.settings_changed` bus event, so calling it per request is fine and an
 edit shows up immediately.
+
+## Spectrum and waterfall
+
+The `spectrum` card draws what is in the receiver's passband. Feed the radio's
+audio into a sound card input and pick it in the tile's settings; the card page
+lists the inputs it can see. It defaults to `mock`, a synthesised test signal,
+so the card is usable with no radio attached for the same reason the rig is.
+
+Two things about it are worth knowing if you write something similar:
+
+- **It polls; it does not stream.** A waterfall wants about 20 rows a second,
+  and an SSE stream through the card proxy holds a *host* server thread for
+  its whole life. The card keeps a ring of recent rows and hands over
+  everything since the caller's sequence number in one request, so the page
+  polls four times a second and still draws every row. Rows are bytes, base64,
+  sliced to the bins the tile actually shows — about 12 kB a poll instead of
+  82 kB.
+- **Contrast is automatic by default.** Sound card levels vary by tens of dB
+  between a USB codec, a line input and whatever the mixer was left at. A
+  fixed noise floor is wrong on most machines: on this one the mock signal
+  sits at −72 dB and a real microphone at −118 dB. The card reports a floor
+  and ceiling tracked from recent history and the page uses them unless you
+  turn auto contrast off.
+
+It needs `numpy` and `sounddevice`, both in `requirements.txt` and both in the
+frozen build.
 
 ## The bus, and who may say what
 

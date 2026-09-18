@@ -1,0 +1,65 @@
+{
+  "id": "spectrum",
+  "name": "Spectrum",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Live spectrum and waterfall of the receiver's audio",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 6,
+  "h": 4,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": [
+    "radio"
+  ],
+  "publishes": [
+    "spectrum.peak"
+  ],
+  "subscribes": [
+    "radio.state"
+  ],
+  "settings": {
+    "device": {
+      "type": "string",
+      "label": "Audio input",
+      "default": "mock",
+      "help": "Part of the input's name, e.g. 'USB Audio CODEC'. Blank uses the system default. 'mock' synthesises a test signal so the card works with no radio attached; the card page lists the inputs it can see."
+    },
+    "max_hz": {
+      "type": "number",
+      "label": "Show up to (Hz)",
+      "default": 3500,
+      "help": "An SSB passband is about 300-2700 Hz, so there is rarely anything above 3500."
+    },
+    "auto_scale": {
+      "type": "bool",
+      "label": "Auto contrast",
+      "default": true,
+      "help": "Track the noise floor automatically. Sound card levels vary by tens of dB, so a fixed floor is wrong on most machines. Turn off to use the two values below."
+    },
+    "floor_db": {
+      "type": "number",
+      "label": "Noise floor (dB)",
+      "default": -75,
+      "help": "Only used when auto contrast is off. Anything at or below this is background."
+    },
+    "ceil_db": {
+      "type": "number",
+      "label": "Full scale (dB)",
+      "default": -25,
+      "help": "Only used when auto contrast is off. Anything at or above this is full brightness."
+    },
+    "palette": {
+      "type": "select",
+      "label": "Palette",
+      "options": [
+        "classic",
+        "ice",
+        "mono"
+      ],
+      "default": "classic"
+    }
+  }
+}

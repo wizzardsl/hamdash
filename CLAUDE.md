@@ -47,7 +47,8 @@ hamdash/config.py   config.json, layout.json, tile settings, search paths
 hamdash/services/   radio (rigctld), callsign, logbook, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
-plugins/            rig_control, logbook, beacon_map, web_embed, hello_card
+plugins/            rig_control, logbook, beacon_map, spectrum, web_embed,
+                    hello_card
 tests/              regression guards — js_api shape, bus namespace,
                     packaging/spec drift, release notes
 tools/              release_notes.py (release notes), smoke_frozen.py (build check)
@@ -163,6 +164,27 @@ missing or empty — a tag can't be edited after the fact, so those fail the job
 rather than shipping wrong notes. Write the changelog entry when the fix
 lands, not at release time; the 0.3.3 entry had to be reconstructed from the
 README and is guesswork as a result.
+
+## Audio cards
+
+`plugins/spectrum` is the first card that owns a hardware resource, and the
+shape it settled on is worth reusing:
+
+- **Poll, don't stream.** A card's own SSE works through the proxy, but it
+  holds a host thread for its life (invariant 4). The card rings recent frames
+  and serves everything since a sequence number; the page polls. Send bytes,
+  and only the bins the tile shows.
+- **Nothing tells a card that a tile was deleted.** So a card holding a device
+  must reap it: every request marks its device wanted, and a thread closes
+  anything unwanted for 30s. Without that, changing the input in tile settings
+  leaks the old one and the radio's audio stays locked against other software.
+- **Don't respin a failed resource on every request.** Doing so means the
+  caller only ever sees a brand new object in its "starting" state and never
+  the error saying what is wrong. Retry on a timer instead.
+- **PortAudio is not thread-safe across enumerate/open.** Both go through one
+  lock, or Windows blocks for a long time or forever.
+- **Mock by default**, like the rig. A card that needs hardware to show
+  anything can't be developed or demonstrated.
 
 ## Open threads
 

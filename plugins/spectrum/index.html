@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  html, body { height: 100%; }
+  body { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .bar { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+  .vfo { font-family: var(--mono); font-size: 15px; }
+  .peak { color: var(--accent); font-family: var(--mono); }
+  .muted { color: var(--muted); }
+  .stack { position: relative; flex: 1; min-height: 80px; display: flex; flex-direction: column; }
+  canvas { width: 100%; display: block; image-rendering: auto; }
+  #trace { height: 34%; min-height: 28px; background: var(--bg); border-bottom: 1px solid var(--rule); }
+  #fall  { flex: 1; min-height: 40px; }
+  .axis { display: flex; justify-content: space-between; font-family: var(--mono);
+          font-size: 10px; color: var(--muted); padding-top: 2px; }
+  select { font: inherit; font-size: 12px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--rule); border-radius: var(--radius); padding: 2px 5px; max-width: 16em; }
+  .err { color: var(--alert); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="vfo" id="vfo">--.------</span>
+  <span class="peak" id="peak"></span>
+  <span class="muted" id="status"></span>
+  <select id="device" title="Audio input for this tile"></select>
+</div>
+
+<div class="stack">
+  <canvas id="trace"></canvas>
+  <canvas id="fall"></canvas>
+</div>
+<div class="axis"><span id="ax0">0</span><span id="ax1"></span><span id="ax2"></span></div>
+<p class="err" id="err"></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'spectrum';
+const $ = (s) => document.querySelector(s);
+
+const PALETTES = {
+  // stops as [position, r, g, b]; interpolated into a 256-entry lookup table
+  classic: [[0,0,0,0],[.22,10,20,90],[.42,0,150,160],[.6,40,190,60],
+            [.78,240,210,40],[.92,230,70,30],[1,255,255,255]],
+  ice:     [[0,0,0,0],[.35,10,30,80],[.7,60,170,220],[1,255,255,255]],
+  mono:    [[0,0,0,0],[1,255,255,255]],
+};
+
+function lut(name) {
+  const stops = PALETTES[name] || PALETTES.classic;
+  const out = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    let a = stops[0], b = stops[stops.length - 1];
+    for (let s = 0; s < stops.length - 1; s++) {
+      if (t >= stops[s][0] && t <= stops[s + 1][0]) { a = stops[s]; b = stops[s + 1]; break; }
+    }
+    const span = (b[0] - a[0]) || 1, f = (t - a[0]) / span;
+    out[i * 3] = a[1] + (b[1] - a[1]) * f;
+    out[i * 3 + 1] = a[2] + (b[2] - a[2]) * f;
+    out[i * 3 + 2] = a[3] + (b[3] - a[3]) * f;
+  }
+  return out;
+}
+
+const state = {
+  conf: {}, palette: lut('classic'), meta: null,
+  seq: 0, bins: 0, off: null, octx: null, started: false,
+};
+
+// The card encodes a row as bytes on a fixed dB scale; floor/ceiling are
+// applied here so two tiles can have different contrast without the card
+// computing the same row twice.
+function normalise(byte) {
+  const m = state.meta;
+  const db = m.db_floor + (byte / 255) * m.db_range;
+  const auto = state.conf.auto_scale !== false;
+  const lo = auto ? m.auto_floor : Number(state.conf.floor_db ?? -75);
+  const hi = auto ? m.auto_ceil : Number(state.conf.ceil_db ?? -25);
+  return Math.max(0, Math.min(1, (db - lo) / Math.max(1, hi - lo)));
+}
+
+function ensureBuffer(bins) {
+  if (state.off && state.bins === bins) return;
+  state.bins = bins;
+  state.off = document.createElement('canvas');
+  state.off.width = bins;
+  state.off.height = 256;                 // scrolled, then scaled to the tile
+  state.octx = state.off.getContext('2d', { willReadFrequently: true });
+  state.octx.fillStyle = '#000';
+  state.octx.fillRect(0, 0, bins, 256);
+}
+
+function drawRows(rows) {
+  const bins = state.bins, o = state.octx, k = rows.length;
+  if (!k) return;
+  // One shift for the whole batch rather than one per row: at ~23 rows a
+  // second and a 4 Hz poll this is four canvas copies a second, not ninety.
+  o.drawImage(state.off, 0, Math.min(k, 256));
+  const img = o.createImageData(bins, 1);
+  rows.forEach((row, j) => {
+    for (let x = 0; x < bins; x++) {
+      const v = Math.round(normalise(row[x]) * 255);
+      img.data[x * 4] = state.palette[v * 3];
+      img.data[x * 4 + 1] = state.palette[v * 3 + 1];
+      img.data[x * 4 + 2] = state.palette[v * 3 + 2];
+      img.data[x * 4 + 3] = 255;
+    }
+    o.putImageData(img, 0, k - 1 - j);
+  });
+}
+
+function present(latest) {
+  const fall = $('#fall'), trace = $('#trace');
+  for (const c of [fall, trace]) {
+    const r = c.getBoundingClientRect();
+    if (c.width !== Math.max(1, r.width | 0)) c.width = Math.max(1, r.width | 0);
+    if (c.height !== Math.max(1, r.height | 0)) c.height = Math.max(1, r.height | 0);
+  }
+  fall.getContext('2d').drawImage(state.off, 0, 0, state.bins, 256,
+                                  0, 0, fall.width, fall.height);
+  if (!latest) return;
+
+  const ctx = trace.getContext('2d');
+  ctx.clearRect(0, 0, trace.width, trace.height);
+  ctx.beginPath();
+  for (let x = 0; x < state.bins; x++) {
+    const px = (x / (state.bins - 1)) * trace.width;
+    const py = trace.height - normalise(latest[x]) * trace.height;
+    x ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--accent') || '#6cf';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+async function tick() {
+  try {
+    const want = state.bins || 0;
+    const d = await HD.card('spectrum',
+      `/api/frames?since=${state.seq}&bins=${want}`);
+    state.meta = d;
+    $('#status').textContent = d.status === 'running'
+      ? `${d.device || 'default input'} · ${(d.samplerate / 1000).toFixed(1)} kHz`
+      : d.status;
+    $('#err').textContent = d.error || '';
+    if (d.peak_db > -900) {
+      $('#peak').textContent = `peak ${Math.round(d.peak_hz)} Hz  ${d.peak_db.toFixed(0)} dB`;
+    }
+
+    const maxHz = Number(state.conf.max_hz ?? 3500);
+    const shown = Math.max(8, Math.min(d.bins, Math.round(maxHz / d.bin_hz)));
+    ensureBuffer(shown);
+    $('#ax1').textContent = `${Math.round(maxHz / 2)} Hz`;
+    $('#ax2').textContent = `${Math.round(shown * d.bin_hz)} Hz`;
+
+    let latest = null;
+    if (d.rows.length) {
+      const decoded = d.rows.map((b64) => {
+        const raw = atob(b64);
+        const arr = new Uint8Array(shown);
+        for (let i = 0; i < shown; i++) arr[i] = raw.charCodeAt(i);
+        return arr;
+      });
+      drawRows(decoded);
+      latest = decoded[decoded.length - 1];
+      state.seq = d.first + d.rows.length - 1;
+    } else if (d.seq < state.seq) {
+      state.seq = 0;                       // card restarted; resync
+    }
+    present(latest);
+  } catch (e) {
+    $('#err').textContent = e.message;
+  }
+}
+
+async function loadDevices() {
+  const sel = $('#device');
+  try {
+    const { devices, error } = await HD.card('spectrum', '/api/devices');
+    sel.innerHTML = '<option value="">system default</option>'
+      + devices.map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+    sel.value = state.conf.device ?? 'mock';
+    if (error) $('#err').textContent = error;
+  } catch (e) {
+    sel.innerHTML = '<option>could not list inputs</option>';
+  }
+  sel.onchange = async () => {
+    state.conf = { ...state.conf, device: sel.value };
+    await HD.saveSettings(state.conf);     // travels with the tile, per invariant 5
+    state.seq = 0;
+  };
+}
+
+async function boot() {
+  state.conf = await HD.settings();
+  state.palette = lut(state.conf.palette || 'classic');
+  await loadDevices();
+
+  HD.onSettings((values) => {
+    state.conf = values;
+    state.palette = lut(values.palette || 'classic');
+    $('#device').value = values.device ?? '';
+    state.off = null;                      // span may have changed
+    state.bins = 0;
+  });
+
+  const showVfo = (s) => { if (s && s.ok) $('#vfo').textContent = HD.fmtHz(s.freq); };
+  HD.radio.state().then(showVfo).catch(() => { $('#vfo').textContent = ''; });
+  HD.on('radio.state', showVfo);
+
+  tick();
+  setInterval(tick, 250);                  // ~6 rows per poll at 23 rows/s
+}
+
+boot().catch((e) => { $('#err').textContent = e.message; });
+</script>
+</body>
+</html>
