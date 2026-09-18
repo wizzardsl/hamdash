@@ -40,6 +40,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- A QRZ pull returned nothing: QRZ HTML-escapes the ADIF in its reply, so
+  splitting the response on `&` cut the payload off at its first `&lt;` and
+  left the ADIF field present but empty.
 - The QRZ logbook client did not match QRZ's published API: it sent no
   `User-Agent` (which QRZ rate limits), read `STATUS` fields from the top
   level instead of the nested `DATA` list, and fetched the whole book in one

@@ -23,6 +23,7 @@ from inside a request handler that is holding a server thread open.
 """
 from __future__ import annotations
 
+import html
 import os
 import re
 import shutil
@@ -45,6 +46,33 @@ USER_AGENT = f"hamdash/{_v} (+https://github.com/wizzardsl/hamdash)"
 
 _LOGID = re.compile(r"<app_qrzlog_logid:\d+>(\d+)", re.I)
 _EOR = re.compile(r"<eor>", re.I)
+
+
+def _response(text: str) -> dict:
+    """QRZ's `name=value&name=value` reply, with the ADIF payload kept whole.
+
+    The catch: QRZ HTML-escapes the ADIF, so it arrives full of `&lt;` and
+    `&gt;`. Splitting the whole body on `&` therefore cuts the payload off at
+    its very first tag and leaves `ADIF=` holding an empty string - present in
+    the response, and empty, which is a confusing way to fail.
+
+    So the bulk field is taken as everything after the first `ADIF=` (it comes
+    last, and anything trailing lands after the final `<eor>` where the ADIF
+    parser ignores it), and unescaped. The small fields in front are parsed
+    normally.
+    """
+    m = re.search(r"ADIF=", text, re.I)
+    head = text[:m.start()] if m else text
+    adif = text[m.end():] if m else ""
+    out = {}
+    for part in head.split("&"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            out[k.strip().upper()] = urllib.parse.unquote_plus(v)
+    if m:
+        # Not unquote_plus: a '+' in a comment or name is a plus, not a space.
+        out["ADIF"] = html.unescape(adif)
+    return out
 
 
 def _pairs(text: str) -> dict:
@@ -229,13 +257,8 @@ class QrzLogbook:
             raise SyncError(f"could not reach QRZ: {exc}") from exc
         if r.status_code != 200:
             raise SyncError(f"QRZ answered {r.status_code}")
-        # Response is url-encoded key=value pairs joined by &.
         self.last_body = r.text
-        out = {}
-        for part in r.text.split("&"):
-            if "=" in part:
-                k, v = part.split("=", 1)
-                out[k.strip().upper()] = urllib.parse.unquote_plus(v)
+        out = _response(r.text)
         if out.get("RESULT") == "AUTH":
             raise SyncError("QRZ rejected the API key. QRZ's logbook API "
                             "needs a subscription as well as a key.")

@@ -329,3 +329,51 @@ class TestQrzAgainstTheSpec(unittest.TestCase):
 def _eor_count(adif):
     import re
     return re.findall(r"<EOR>", adif, re.I)
+
+
+class TestQrzHtmlEscapedAdif(unittest.TestCase):
+    """QRZ HTML-escapes the ADIF payload, so it arrives full of &lt; and &gt;.
+
+    Splitting the whole response on '&' therefore truncated the payload at its
+    very first tag and left ADIF holding an empty string: present in the
+    response, and empty. Captured from a real QRZ reply.
+    """
+
+    REAL = ("COUNT=40&RESULT=OK&ADIF=&lt;lat:11&gt;N042 51.366 "
+            "&lt;qth:9&gt;Pocatello &lt;my_cq_zone:1&gt;3 &lt;cqz:1&gt;3 "
+            "&lt;operator:6&gt;VA7SLL &lt;freq:5&gt;7.192 "
+            "&lt;gridsquare:6&gt;DN32su &lt;band:3&gt;40m "
+            "&lt;call:6&gt;VA7SLL &lt;eor&gt;")
+
+    def test_the_payload_survives_whole(self):
+        from hamdash.services.qsl import _response
+        d = _response(self.REAL)
+        self.assertEqual(d["RESULT"], "OK")
+        self.assertEqual(d["COUNT"], "40")
+        self.assertIn("<call:6>VA7SLL", d["ADIF"])
+        self.assertNotIn("&lt;", d["ADIF"])
+
+    def test_it_parses_into_a_qso(self):
+        from hamdash.services.qsl import _response
+        recs = Logbook.parse_adif("<EOH>" + _response(self.REAL)["ADIF"])
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["call"], "VA7SLL")
+        self.assertEqual(recs[0]["gridsquare"], "DN32su")
+        self.assertEqual(recs[0]["qth"], "Pocatello")
+
+    def test_a_pull_of_it_reaches_the_log(self):
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response(self.REAL)):
+            adif = QrzLogbook("k").pull()
+        log = a_log()
+        self.assertEqual(log.import_adif(adif)["added"], 1)
+        self.assertEqual(log.recent()[0]["call"], "VA7SLL")
+
+    def test_a_plus_in_the_payload_is_not_turned_into_a_space(self):
+        from hamdash.services.qsl import _response
+        d = _response("RESULT=OK&ADIF=&lt;comment:6&gt;a+b+c &lt;eor&gt;")
+        self.assertIn("a+b+c", d["ADIF"])
+
+    def test_absent_adif_is_absent_not_empty(self):
+        from hamdash.services.qsl import _response
+        self.assertNotIn("ADIF", _response("RESULT=OK&COUNT=0"))

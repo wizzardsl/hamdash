@@ -221,6 +221,12 @@ shape it settled on is worth reusing:
   minute (invariant 4).
 - `sqlite3.connect` as a context manager commits but does **not** close. Use
   `Logbook._conn`, which does both; the old code leaked a connection per read.
+- **QRZ HTML-escapes the ADIF payload in its reply.** Splitting the response
+  on `&` truncates it at the first `&lt;` and leaves `ADIF` present and empty,
+  which reads as "no ADIF" and sends you looking in the wrong place. Take
+  everything after the first `ADIF=` whole and `html.unescape` it; parse only
+  the small fields in front. Do not `unquote_plus` the payload - a `+` in a
+  comment is a plus.
 - **QRZ's logbook API has three traps**, all of which were hit first time:
   a real `User-Agent` is mandatory (QRZ names `python-requests` as the kind it
   rate limits), `STATUS` answers in a nested `DATA` list rather than top-level
