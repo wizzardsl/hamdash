@@ -7,6 +7,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- The app can be packaged as a desktop build. `hamdash.spec` (onedir),
+  `--run-card` so the frozen binary is its own card runner, `build.yml` for
+  Windows and macOS, and `tools/smoke_frozen.py`, which starts a build and
+  makes it run a card — the only check that exercises the frozen path at all.
+  Releases now carry a zip per platform.
 - Bus namespace policy. The host owns the reserved namespaces
   (`card. config. log. lookup. radio. rig. ui.`); a card may publish only
   `<card_id>.*` and is refused elsewhere with a message naming the fix.
@@ -19,6 +24,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and silently never reacts.
 
 ### Fixed
+- Cards could not be started from a frozen build at all: they were spawned as
+  `[sys.executable, entry]`, which under PyInstaller means the hamdash binary
+  with a stray argument rather than an interpreter.
+- A windowed build has no `sys.stdout`, so every `print()` raised on NoneType
+  — including the one relaying a card's output, which would have killed the
+  drain thread and lost the diagnostics the log exists for.
 - A card could publish `radio.state` and make every tile on the board believe
   the rig had moved. It can't now.
 - `/api/publish` took `source` from the request body, so a card could label

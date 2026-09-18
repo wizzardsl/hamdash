@@ -5,15 +5,19 @@ __pycache__/
 .eggs/
 build/
 dist/
+# PyInstaller writes a .spec when you run it without one; ours is hand-written
+# and is the build definition, so it is tracked.
 *.spec
+!hamdash.spec
 
 # Virtualenvs
 .venv/
 venv/
 env/
 
-# hamdash runtime state — config dir created by `python run.py --home ./dev`
+# hamdash runtime state — config dirs created by --home / HAMDASH_HOME
 dev/
+frozen-home/
 *.log
 hamdash.log
 

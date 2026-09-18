@@ -11,8 +11,27 @@ import sys
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent
-BUNDLED_PLUGINS = PKG.parent / "plugins"
-BUNDLED_THEMES = PKG / "static" / "themes"
+
+# True when running from a PyInstaller build rather than a source checkout.
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def bundle_root() -> Path:
+    """Where the app's own files live: the repo root, or the unpacked bundle.
+
+    PyInstaller sets sys._MEIPASS and rewrites __file__ to point inside it, so
+    the plain relative paths would happen to keep working - but only while the
+    spec lays the tree out exactly like the repo does. Deriving it from
+    _MEIPASS says that out loud, so a spec change breaks here rather than as a
+    card that mysteriously isn't found.
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    return Path(meipass) if meipass else PKG.parent
+
+
+BUNDLED_PLUGINS = bundle_root() / "plugins"
+BUNDLED_STATIC = bundle_root() / "hamdash" / "static"
+BUNDLED_THEMES = BUNDLED_STATIC / "themes"
 
 DEFAULTS = {
     "station": {"callsign": "", "grid": "", "name": "", "qth": ""},

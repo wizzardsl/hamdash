@@ -14,7 +14,14 @@ python run.py                      # native window
 python run.py --browser            # http://127.0.0.1:8765, no webview
 python run.py --home ./dev         # throwaway config dir
 python -m unittest discover -s tests
+
+pyinstaller hamdash.spec           # -> dist/hamdash/  (needs pip install pyinstaller)
+python tools/smoke_frozen.py       # starts that build and makes it run a card
 ```
+
+The smoke test is the only thing that exercises the frozen path: from source
+`sys.executable` is an interpreter and the re-exec never happens, so a broken
+spec looks perfectly healthy in development.
 
 Diagnostics, all cheap to poll while reproducing something:
 
@@ -30,7 +37,7 @@ Real radio needs Hamlib's `rigctld` running and `radio.mock: false` in config.
 ## Layout
 
 ```
-run.py              launcher, logging, waitress, pywebview window
+run.py              launcher, logging, waitress, pywebview window, --run-card
 hamdash/app.py      Flask: static shell, REST API, SSE bus, card proxy
 hamdash/bus.py      pub/sub + bounded SSE streams
 hamdash/proc.py     one OS process per python card, health, restart, reap
@@ -41,9 +48,11 @@ hamdash/services/   radio (rigctld), callsign, logbook, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, web_embed, hello_card
-tests/              regression guards — js_api shape, bus namespace, release notes
-tools/              release_notes.py — what the release workflow publishes
-.github/workflows/  ci.yml (matrix, reusable), release.yml (on tag)
+tests/              regression guards — js_api shape, bus namespace,
+                    packaging/spec drift, release notes
+tools/              release_notes.py (release notes), smoke_frozen.py (build check)
+hamdash.spec        PyInstaller build definition — onedir, see invariant 7
+.github/workflows/  ci.yml (tests), build.yml (frozen apps), release.yml (on tag)
 ```
 
 ## Invariants — break these and it breaks in ways that are hard to trace
@@ -87,10 +96,24 @@ arrives as `?uid=` and `X-Hamdash-Tile`. Server side: `card.tile_uid()` and
 `HD.onSettings()`. Tile settings live on the tile in `layout.json`, not in
 `config.json`, so they travel with the tile.
 
-**6. Card subprocesses are spawned as `[sys.executable, entry]`.** That breaks
-under PyInstaller, where `sys.executable` is the app binary, not an
-interpreter. If packaging comes up, the app has to become its own card runner
-(a `--run-card` re-exec) — see the "Not done yet" section of the README.
+**6. Cards are spawned through `proc.card_command()`, never `sys.executable`
+directly.** From source that is the interpreter; frozen, `sys.executable` is
+the hamdash binary, so the app is its own card runner and re-execs itself as
+`hamdash --run-card card.py`. `run.py:main()` handles that flag *before*
+argparse and before any host setup — a card process must not build a Config,
+take the log file or start a server. The two halves live in different files
+and `tests/test_packaging.py` checks they still agree on the flag.
+
+**7. The build is onedir, not onefile.** Every card is a re-exec of the
+binary, and onefile unpacks its whole bundle on every launch: five cards would
+mean five unpacks of the same tens of megabytes before the board painted.
+
+**8. `console=False` means `sys.stdout` is None.** In a windowed PyInstaller
+build every `print()` raises `AttributeError` on NoneType — including the one
+in `proc._drain` that relays a card's output, which would kill the drain
+thread and lose exactly the diagnostics the log exists for.
+`run.ensure_streams()` runs first and points them at devnull. A real stream (a
+pipe from the supervisor) is left alone.
 
 ## Conventions
 
@@ -154,8 +177,15 @@ README and is guesswork as a result.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
-- Packaging: PyInstaller + GitHub Actions matrix, code signing, bundling
-  Hamlib, and whether third-party cards work in a frozen build.
+- Linux builds. `build.yml` is Windows + macOS only: both have a
+  pip-installable pywebview backend, Linux needs system GTK/WebKit packages
+  and a build without them is silently browser-only. The `tests` matrix still
+  covers Linux.
+- Code signing. Builds are unsigned, so Windows shows SmartScreen and macOS
+  needs right-click → Open. Needs a certificate and an Apple developer
+  account; nothing in the repo is blocking it.
+- An icon. `hamdash.spec` sets none, so the binary carries PyInstaller's.
+- Bundling Hamlib (`rigctld`) rather than asking the operator to install it.
 
 ## Keeping this file true
 

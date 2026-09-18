@@ -4,6 +4,11 @@
     python run.py              native desktop window (needs pywebview)
     python run.py --browser    serve only, open it yourself
     python run.py --port 8765  pin the port
+    python run.py --run-card <entry>   run one card in this process
+
+--run-card exists for the frozen build, where sys.executable is this binary
+rather than an interpreter, so the app has to be its own card runner. See
+proc.card_command().
 
 The HTTP server is an implementation detail: bound to loopback, started in a
 background thread, and shut down with the window. No terminal, no URL to
@@ -14,6 +19,7 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.handlers
+import os
 import signal
 import socket
 import sys
@@ -21,11 +27,45 @@ import threading
 import time
 import traceback
 import urllib.request
+from pathlib import Path
 
 from hamdash import __version__
 from hamdash.app import create_app
 from hamdash.config import Config
 from hamdash import windows as native_windows
+
+
+def ensure_streams() -> None:
+    """Give print() somewhere to go in a windowed build.
+
+    A PyInstaller --windowed app has no console, and sys.stdout/stderr are
+    None. Every print() in the host then raises AttributeError on NoneType -
+    including the one in proc._drain that relays a card's output, which would
+    kill the drain thread and lose exactly the diagnostics the log exists for.
+    A real stream (a pipe from the supervisor, or a console) is left alone.
+    """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name, None) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
+def run_card(entry: str) -> int:
+    """Be the interpreter for one card, then exit with it.
+
+    A card is a plain script that expects to be __main__ with its own
+    directory as cwd (the supervisor sets that). Nothing else from the host
+    may start here: this process is the card, and it binds the card's port.
+    """
+    import runpy
+
+    path = Path(entry)
+    if not path.exists():
+        print(f"--run-card: {path} does not exist (cwd {Path.cwd()})",
+              file=sys.stderr)
+        return 2
+    sys.argv = [str(path)]
+    runpy.run_path(str(path), run_name="__main__")
+    return 0
 
 
 def free_port() -> int:
@@ -125,6 +165,13 @@ def setup_logging(cfg) -> None:
 
 
 def main() -> int:
+    # Before argparse and before any host setup: when frozen, this binary is
+    # also the card runner, and a card process must not build a Config, take
+    # the log file or start a server. proc.card_command() is the other half.
+    ensure_streams()
+    if len(sys.argv) >= 3 and sys.argv[1] == "--run-card":
+        return run_card(sys.argv[2])
+
     ap = argparse.ArgumentParser(description="ham radio dashboard")
     ap.add_argument("--browser", action="store_true",
                     help="serve only, don't open a native window")

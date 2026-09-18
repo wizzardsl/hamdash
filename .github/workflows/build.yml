@@ -1,0 +1,56 @@
+name: build
+
+# Frozen desktop builds. Runs on demand, and as the middle stage of a release
+# (release.yml calls this, then attaches what it produces).
+#
+# Windows and macOS only for now: both have a pip-installable pywebview
+# backend, so the binary this produces really does open a native window. A
+# Linux build needs system GTK/WebKit packages, and one built without them
+# would silently be browser-only - see "Not done yet" in the README.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: macos-latest
+            label: macos-arm64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: pyinstaller --noconfirm --clean hamdash.spec
+
+      # A spec can build cleanly and still produce an app that cannot start a
+      # single card: frozen, sys.executable is the binary rather than an
+      # interpreter, so the re-exec path only ever runs in a real build. This
+      # starts the app, proxies to a python card, and fails if it doesn't come
+      # up - the one check that running from source can never make.
+      - name: Smoke test the binary
+        run: python tools/smoke_frozen.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hamdash-${{ matrix.label }}
+          path: dist/hamdash
+          if-no-files-found: error
+          retention-days: 14

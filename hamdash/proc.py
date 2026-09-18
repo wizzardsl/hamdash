@@ -18,12 +18,31 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import FROZEN
 from .registry import Card
 
 START_TIMEOUT = 12.0
 MAX_RESTARTS = 5
 HEALTH_EVERY = 10.0        # seconds between /_health polls
 HEALTH_FAILS = 3           # consecutive failures before a card is 'wedged'
+
+
+def card_command(entry: str) -> list[str]:
+    """Argv that runs a card's entry file.
+
+    From source that is just the interpreter. Frozen, sys.executable is the
+    hamdash binary and not an interpreter at all, so the app has to be its own
+    card runner: it re-execs itself with --run-card and run.py hands the file
+    to runpy before anything else starts.
+
+    This is also why the build is onedir and not onefile. A onefile binary
+    unpacks its whole bundle to a temp directory on every launch, and every
+    card is a launch - five cards would mean five unpacks of the same tens of
+    megabytes before the board finished painting.
+    """
+    if FROZEN:
+        return [sys.executable, "--run-card", entry]
+    return [sys.executable, entry]
 
 
 def free_port() -> int:
@@ -73,7 +92,7 @@ class Worker:
             # window on Windows, which looks exactly like the app misbehaving.
             extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen(
-            [sys.executable, self.card.entry],
+            card_command(self.card.entry),
             cwd=str(self.card.path), env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             # Windows defaults to cp1252 here, so one accented character in a

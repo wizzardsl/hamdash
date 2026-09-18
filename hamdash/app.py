@@ -13,7 +13,7 @@ from flask import (Flask, Response, abort, jsonify, request,
 
 from . import registry
 from .bus import BUS, MAX_SUBSCRIBERS
-from .config import Config
+from .config import BUNDLED_STATIC, Config
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import grid as gridlib
 from .services.callsign import Lookup
@@ -27,7 +27,7 @@ HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
 
 def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                native: bool = False):
-    static = Path(__file__).resolve().parent / "static"
+    static = BUNDLED_STATIC
     app = Flask(__name__, static_folder=None)
     host_url = f"http://{host}:{port}"
 
