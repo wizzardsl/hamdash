@@ -24,6 +24,7 @@ from inside a request handler that is holding a server thread open.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,28 @@ import urllib.parse
 from pathlib import Path
 
 import requests
+
+# QRZ requires an identifying User-Agent and names python-requests as the
+# kind it rate limits.
+try:
+    from .. import __version__ as _v
+except Exception:                                       # noqa: BLE001
+    _v = "0"
+USER_AGENT = f"hamdash/{_v} (+https://github.com/wizzardsl/hamdash)"
+
+_LOGID = re.compile(r"<app_qrzlog_logid:\d+>(\d+)", re.I)
+_EOR = re.compile(r"<eor>", re.I)
+
+
+def _pairs(text: str) -> dict:
+    """QRZ nests name=value lists inside a field, & separated."""
+    out = {}
+    for part in (text or "").replace(";", "&").split("&"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            out[k.strip().upper()] = v.strip()
+    return out
+
 
 LOTW_REPORT = "https://lotw.arrl.org/lotwuser/lotwreport.adi"
 QRZ_API = "https://logbook.qrz.com/api"
@@ -166,12 +189,31 @@ class Lotw:
 
 
 class QrzLogbook:
-    """QRZ.com logbook API. One key per logbook, from its settings page."""
+    """QRZ.com logbook API.
+
+    Written against QRZ's published guide. Three things in it are easy to get
+    wrong and all three were:
+
+    * **A real User-Agent is mandatory.** QRZ names `python-requests` as the
+      sort of generic agent that gets rate limited, so every call identifies
+      the app and version.
+    * **STATUS answers in `DATA`**, a nested `&`-separated list of name=value
+      pairs, not as top-level fields.
+    * **FETCH pages.** QRZ warns that fetching a large book in one go times
+      out, and asks for `MAX:n,AFTERLOGID:n` walked by the
+      `app_qrzlog_logid` of the last record seen.
+
+    DELETE is deliberately not implemented. It is permanent and QRZ says so
+    twice; nothing in hamdash should be able to remove somebody's QSOs.
+    """
 
     name = "qrz"
+    PAGE = 250              # what QRZ's own paging advice suggests
 
     def __init__(self, api_key: str = "") -> None:
         self.api_key = (api_key or "").strip()
+
+    last_body: str = ""          # raw text of the last response, for diagnosis
 
     def _call(self, action: str, **extra) -> dict:
         if not self.api_key:
@@ -181,12 +223,14 @@ class QrzLogbook:
                             "account password.")
         data = {"KEY": self.api_key, "ACTION": action, **extra}
         try:
-            r = requests.post(QRZ_API, data=data, timeout=TIMEOUT)
+            r = requests.post(QRZ_API, data=data, timeout=TIMEOUT,
+                              headers={"User-Agent": USER_AGENT})
         except requests.RequestException as exc:
             raise SyncError(f"could not reach QRZ: {exc}") from exc
         if r.status_code != 200:
             raise SyncError(f"QRZ answered {r.status_code}")
         # Response is url-encoded key=value pairs joined by &.
+        self.last_body = r.text
         out = {}
         for part in r.text.split("&"):
             if "=" in part:
@@ -201,21 +245,58 @@ class QrzLogbook:
 
     def status(self) -> dict:
         d = self._call("STATUS")
-        return {"ok": True, "book_name": d.get("BOOKNAME", ""),
-                "count": d.get("COUNT", ""), "owner": d.get("OWNER", ""),
-                "confirmed": d.get("CONFIRMED", "")}
+        # The interesting values arrive nested in DATA as their own
+        # &-separated name=value list, not as top-level fields.
+        inner = _pairs(d.get("DATA", ""))
+        get = lambda *names: next(                       # noqa: E731
+            (inner.get(n) or d.get(n) for n in names
+             if inner.get(n) or d.get(n)), "")
+        return {"ok": True,
+                "book_name": get("BOOKNAME", "NAME"),
+                "count": get("COUNT", "QSOCOUNT"),
+                "confirmed": get("CONFIRMED"),
+                "owner": get("OWNER", "CALLSIGN"),
+                "bookid": get("BOOKID"),
+                "start": get("START_DATE", "STARTDATE"),
+                "end": get("END_DATE", "ENDDATE")}
 
     def test(self) -> dict:
         s = self.status()
         return {"ok": True, "message": (f"{s['book_name'] or 'logbook'}: "
                                         f"{s['count']} QSOs on QRZ"), **s}
 
-    def pull(self) -> str:
-        d = self._call("FETCH", OPTION="ALL")
-        adif = d.get("ADIF", "")
-        if not adif:
-            raise SyncError("QRZ returned no ADIF")
-        return adif
+    def pull(self, max_pages: int = 200) -> str:
+        """The whole logbook as ADIF, a page at a time.
+
+        QRZ asks for this: a big book fetched in one request times out. Walk
+        `AFTERLOGID` by the highest `app_qrzlog_logid` seen so far until a
+        short page arrives.
+        """
+        chunks, after, seen = [], 0, 0
+        for _ in range(max_pages):
+            d = self._call("FETCH",
+                           OPTION=f"MAX:{self.PAGE},AFTERLOGID:{after}")
+            adif = d.get("ADIF", "")
+            if not adif:
+                if seen or str(d.get("COUNT", "")).strip() in ("0", ""):
+                    break                    # nothing more, or nothing at all
+                keys = ", ".join(sorted(d)) or "nothing parseable"
+                snippet = " ".join(self.last_body.split())[:300]
+                raise SyncError(
+                    f"QRZ replied to FETCH without an ADIF field. It sent: "
+                    f"{keys}. Raw: {snippet}")
+            chunks.append(adif)
+            ids = [int(x) for x in _LOGID.findall(adif) if x.isdigit()]
+            got = len(_EOR.findall(adif))
+            seen += got
+            if got < self.PAGE or not ids:
+                break
+            after = max(ids) + 1
+        if not chunks:
+            raise SyncError("QRZ's logbook for this key is empty. The key is "
+                            "per logbook, so check it is the one holding your "
+                            "contacts.")
+        return "\n".join(chunks)
 
     def push_record(self, adif_record: str, replace: bool = False) -> dict:
         kw = {"ADIF": adif_record}

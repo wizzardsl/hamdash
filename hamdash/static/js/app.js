@@ -389,8 +389,11 @@
   HD.on('log.sync', (p) => {
     const which = (p.job || '').startsWith('qrz') ? 'qrz' : 'lotw';
     if (p.running) { syncNote(which, p.message); return; }
+    // Deliberately not calling refreshSync() here: it would immediately
+    // overwrite "1,234 QSOs on QRZ" with "Ready.", which is how the most
+    // useful message in the whole panel disappeared half a second after
+    // arriving.
     syncNote(which, p.message, p.ok ? 'good' : 'warn');
-    if (p.ok) refreshSync();
   });
 
   // ---- settings -------------------------------------------------------

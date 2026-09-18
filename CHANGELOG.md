@@ -40,6 +40,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- The QRZ logbook client did not match QRZ's published API: it sent no
+  `User-Agent` (which QRZ rate limits), read `STATUS` fields from the top
+  level instead of the nested `DATA` list, and fetched the whole book in one
+  unpaged request. Now paged with `MAX`/`AFTERLOGID` as QRZ asks.
+- A sync result was overwritten by the generic status line a moment after it
+  arrived, so the QSO count from Test connection could not be read.
 - Every logbook read leaked a SQLite connection: `with sqlite3.connect(...)`
   commits but does not close. On a long-running shack PC that ends as "too
   many open files" a long way from the cause.

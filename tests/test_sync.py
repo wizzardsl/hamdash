@@ -242,3 +242,90 @@ class TestUploadScope(unittest.TestCase):
         """A stray 'YYYYMMDD' placeholder must not become 'send it all'."""
         log = self.a_log_with_dates()
         self.assertEqual(log.since("YYYYMMDD"), log.since(""))
+
+
+class TestQrzAgainstTheSpec(unittest.TestCase):
+    """Three things QRZ's guide is explicit about that were wrong first time."""
+
+    def test_every_call_identifies_the_app(self):
+        """QRZ names python-requests as the kind of generic agent it rate
+        limits, so a real User-Agent is not optional."""
+        from hamdash.services.qsl import USER_AGENT
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response("RESULT=OK&DATA=COUNT=1")) as post:
+            QrzLogbook("k").status()
+        self.assertEqual(post.call_args.kwargs["headers"]["User-Agent"],
+                         USER_AGENT)
+        self.assertIn("hamdash", USER_AGENT)
+        self.assertNotIn("python-requests", USER_AGENT)
+
+    def test_status_reads_the_nested_data_field(self):
+        """STATUS answers in DATA, its own &-separated name=value list."""
+        body = ("RESULT=OK&DATA=CONFIRMED%3D12%26COUNT%3D3456"
+                "%26BOOKNAME%3DMain%26OWNER%3DVE7ABC")
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response(body)):
+            s = QrzLogbook("k").status()
+        self.assertEqual(s["count"], "3456")
+        self.assertEqual(s["confirmed"], "12")
+        self.assertEqual(s["owner"], "VE7ABC")
+
+    def test_fetch_pages_through_a_long_book(self):
+        """QRZ warns that fetching a big book in one request times out, and
+        asks for MAX/AFTERLOGID walked by app_qrzlog_logid."""
+        def page(start, n):
+            recs = "".join(
+                f"<APP_QRZLOG_LOGID:9>{start + i:09d}<CALL:5>W1AW <EOR>"
+                for i in range(n))
+            return fake_response(f"RESULT=OK&COUNT={n}&ADIF={recs}")
+
+        book = QrzLogbook("k")
+        book.PAGE = 2
+        pages = [page(100, 2), page(200, 2), page(300, 1)]
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        side_effect=pages) as post:
+            out = book.pull()
+        self.assertEqual(len(_eor_count(out)), 5)
+        opts = [c.kwargs["data"]["OPTION"] for c in post.call_args_list]
+        self.assertEqual(opts[0], "MAX:2,AFTERLOGID:0")
+        self.assertTrue(opts[1].endswith("AFTERLOGID:102"))
+        self.assertTrue(opts[2].endswith("AFTERLOGID:202"))
+
+    def test_a_single_short_page_stops_immediately(self):
+        body = "RESULT=OK&COUNT=1&ADIF=<APP_QRZLOG_LOGID:1>7<CALL:5>W1AW <EOR>"
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response(body)) as post:
+            QrzLogbook("k").pull()
+        self.assertEqual(post.call_count, 1)
+
+    def test_an_empty_book_says_the_key_may_be_the_wrong_one(self):
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response("RESULT=OK&COUNT=0")):
+            with self.assertRaises(SyncError) as cm:
+                QrzLogbook("k").pull()
+        self.assertIn("per logbook", str(cm.exception))
+
+    def test_an_unrecognised_reply_shows_what_came_back(self):
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response("RESULT=OK&COUNT=9&SOMETHING=x")):
+            with self.assertRaises(SyncError) as cm:
+                QrzLogbook("k").pull()
+        self.assertIn("SOMETHING", str(cm.exception))
+
+    def test_nothing_here_can_delete_a_qso(self):
+        """QRZ's DELETE is permanent and its guide says so twice. hamdash
+        never sends that action, so a bug here cannot cost somebody their
+        log."""
+        self.assertFalse(hasattr(QrzLogbook, "delete"))
+        with mock.patch("hamdash.services.qsl.requests.post",
+                        return_value=fake_response("RESULT=OK&DATA=COUNT=1")) as post:
+            book = QrzLogbook("k")
+            book.status()
+            book.push_record("<EOR>")
+        actions = {c.kwargs["data"]["ACTION"] for c in post.call_args_list}
+        self.assertNotIn("DELETE", actions)
+
+
+def _eor_count(adif):
+    import re
+    return re.findall(r"<EOR>", adif, re.I)

@@ -221,6 +221,15 @@ shape it settled on is worth reusing:
   minute (invariant 4).
 - `sqlite3.connect` as a context manager commits but does **not** close. Use
   `Logbook._conn`, which does both; the old code leaked a connection per read.
+- **QRZ's logbook API has three traps**, all of which were hit first time:
+  a real `User-Agent` is mandatory (QRZ names `python-requests` as the kind it
+  rate limits), `STATUS` answers in a nested `DATA` list rather than top-level
+  fields, and `FETCH` must be paged with `MAX:n,AFTERLOGID:n` walked by
+  `app_qrzlog_logid` or a big book times out. Spec:
+  qrz.com/docs/logbook/QRZLogbookAPI.html
+- **QRZ `DELETE` is never sent.** It is permanent, and nothing in hamdash
+  should be able to remove somebody's QSOs. A test asserts the action never
+  appears.
 - **Push is dry-run by default, server side as well as in the UI** — a caller
   that omits `dry_run` counts rather than uploads. `log.since(date)` scopes
   it; a junk date selects everything, so the UI must not pass its placeholder.
