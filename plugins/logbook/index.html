@@ -23,6 +23,17 @@
   .del { border: 0; background: none; color: var(--muted); cursor: pointer; }
   .del:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
+  .sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          margin: 8px 0 2px; font-size: 12px; }
+  .sync[hidden] { display: none; }
+  .sync-label { color: var(--muted); }
+  .sync-svc { display: flex; align-items: center; gap: 5px; }
+  .sync-svc[hidden] { display: none; }
+  .sync-svc .btn { font-size: 12px; padding: 3px 7px; }
+  .sync-svc label { display: flex; align-items: center; gap: 3px; color: var(--muted); }
+  .sync-state { color: var(--muted); }
+  .sync-state.warn { color: var(--alert); }
+  .sync-state.good { color: var(--signal); }
 </style>
 </head>
 <body>
@@ -40,6 +51,7 @@
 <div class="actions">
   <button class="btn" id="save">Log it</button>
   <button class="btn btn-quiet" id="adif">Export ADIF</button>
+  <button class="btn btn-quiet" id="plot-all" title="Put every logged contact with a grid on the map">Map all</button>
   <span class="found" id="found"></span>
 </div>
 <p class="err" id="err"></p>
@@ -48,6 +60,19 @@
   <thead><tr><th>Call</th><th>Date</th><th>Band</th><th>Mode</th><th>Grid</th><th></th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
+
+<div class="sync" id="sync" hidden>
+  <span class="sync-label">Sync</span>
+  <span class="sync-svc" id="sync-lotw" hidden>
+    <button class="btn btn-quiet" data-push="lotw">Push LoTW</button>
+    <label><input type="checkbox" data-auto="lotw"> auto</label>
+  </span>
+  <span class="sync-svc" id="sync-qrz" hidden>
+    <button class="btn btn-quiet" data-push="qrz">Push QRZ</button>
+    <label><input type="checkbox" data-auto="qrz"> auto</label>
+  </span>
+  <span class="sync-state" id="sync-state"></span>
+</div>
 
 <script src="/static/js/hamdash.js"></script>
 <script>
@@ -118,6 +143,90 @@ $('#save').onclick = async () => {
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
 
 $('#adif').onclick = () => { window.location = '/api/log/adif'; };
+
+// ---- put the whole log on the map -----------------------------------------
+// Published rather than drawn: the map card owns the drawing, and this card
+// has no business knowing whether a map is even on the board.
+$('#plot-all').onclick = async () => {
+  try {
+    const rows = await HD.log.recent(5000);
+    const stations = rows
+      .filter((r) => (r.gridsquare || '').trim())
+      .map((r) => ({ call: r.call, grid: r.gridsquare, band: r.band,
+                     mode: r.mode, date: r.qso_date }));
+    await HD.publish('logbook.plot', { stations });
+    $('#err').textContent = stations.length ? ''
+      : 'No logged contact has a grid square, so there is nothing to plot.';
+  } catch (e) { $('#err').textContent = e.message; }
+};
+
+// ---- sync -----------------------------------------------------------------
+// The buttons exist only for a service that is actually set up. An auto
+// toggle uploads what has been logged since the last upload and then pulls,
+// once a minute.
+const autoTimers = {};
+
+function syncState(msg, kind) {
+  const n = $('#sync-state');
+  n.textContent = msg || '';
+  n.className = 'sync-state' + (kind ? ` ${kind}` : '');
+}
+
+async function refreshSync() {
+  try {
+    const s = await HD.get('/api/log/sync');
+    let any = false;
+    [['lotw', s.lotw], ['qrz', s.qrz]].forEach(([name, svc]) => {
+      // LoTW can be set up for pulling and still not be able to push, because
+      // only TQSL can sign an upload. Hiding the button is more honest than
+      // offering one that always fails.
+      const canPush = name === 'lotw' ? (svc.configured && svc.can_push)
+                                      : svc.configured;
+      $(`#sync-${name}`).hidden = !canPush;
+      if (canPush) {
+        any = true;
+        const b = document.querySelector(`[data-push="${name}"]`);
+        b.textContent = svc.pending
+          ? `Push ${name.toUpperCase()} (${svc.pending})`
+          : `Push ${name.toUpperCase()}`;
+        b.disabled = !svc.pending;
+      }
+    });
+    $('#sync').hidden = !any;
+  } catch { /* the panel just stays hidden */ }
+}
+
+async function pushNew(name, quiet) {
+  try {
+    if (!quiet) syncState(`pushing to ${name.toUpperCase()}…`);
+    await HD.post(`/api/log/sync/${name}/push`, { new_only: true, dry_run: false });
+  } catch (e) { syncState(e.message, 'warn'); }
+}
+
+function setAuto(name, on) {
+  clearInterval(autoTimers[name]);
+  if (!on) { syncState(''); refreshSync(); return; }
+  const round = async () => {
+    await pushNew(name, true);
+    try { await HD.post(`/api/log/sync/${name}/pull`, {}); } catch { /* reported on the bus */ }
+  };
+  round();
+  autoTimers[name] = setInterval(round, 60000);
+}
+
+document.querySelectorAll('[data-push]').forEach((b) => {
+  b.onclick = () => pushNew(b.dataset.push);
+});
+document.querySelectorAll('[data-auto]').forEach((c) => {
+  c.onchange = () => setAuto(c.dataset.auto, c.checked);
+});
+
+HD.on('log.sync', (p) => {
+  if (p.running) { syncState(p.message); return; }
+  syncState(p.message, p.ok ? 'good' : 'warn');
+  refreshSync();
+});
+refreshSync();
 
 async function refresh() {
   const rows = await HD.log.recent(30);

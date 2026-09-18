@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Map all** in the logbook plots every logged contact with a grid, as its
+  own map layer.
+- **Push and auto-sync** in the logbook, shown only for a service that is set
+  up - and for LoTW only when TQSL is actually installed, since without it a
+  push cannot work. Auto uploads what has been logged since the last upload
+  and then pulls, once a minute; the marker is per service so a restart does
+  not re-send the log.
+- Local time beside UTC in the top bar, with the zone name.
 - A **map card** (`path_map`): your station, the one you are looking at, and
   the short-path great circle between them. Leaflet, bundled rather than from
   a CDN, with a choice of base map — the built-in offline one (Natural Earth,
@@ -51,6 +59,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **Adding a seventh card broke the board.** Every card page opened its own
+  event stream, and browsers allow about six connections per origin over
+  HTTP/1.1, so the whole budget went on streams and the next request queued
+  for ever. One stream per page now, relayed to the cards on it.
+- Cards kept the dark theme when the board went light: a card is an iframe
+  with its own document, which never saw the board's variables.
+- The board could not scroll to cards below the fold — `min-height` on the
+  scroll container overrode its `height`, so it grew past the viewport and
+  `body { overflow: hidden }` clipped the rest away.
+- Arrange mode removed; dragging and resizing never needed it.
 - `HD.get(path, params)` sent its parameters in the request body, where no
   server reads them. `HD.distance()` had therefore never worked, the Rescan
   folders button never rescanned, and `HD.log.recent(30)` quietly returned 25.

@@ -17,10 +17,12 @@
     "lookup"
   ],
   "publishes": [
-    "logbook.saved"
+    "logbook.saved",
+    "logbook.plot"
   ],
   "subscribes": [
     "log.qso_added",
-    "radio.state"
+    "radio.state",
+    "log.sync"
   ]
 }

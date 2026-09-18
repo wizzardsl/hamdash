@@ -321,9 +321,11 @@ function build() {
   L_.station = L.layerGroup().addTo(map);
   L_.auroraCanvas = L.canvas({ padding: 0.5 });
   L_.greyline = L.layerGroup();
+  L_.logged = L.layerGroup();
   L_.aurora = L.layerGroup();
 
   L.control.layers(null, {
+    'Logged contacts': L_.logged,
     'Greyline': L_.greyline,
     'Aurora (NOAA)': L_.aurora,
   }, { collapsed: true }).addTo(map);
@@ -377,6 +379,44 @@ function applyConf() {
   syncOverlays();
 }
 
+// --- the whole log ----------------------------------------------------------
+// The logbook card publishes what it wants plotted; this card decides how it
+// looks. Neither has to know the other is on the board.
+function plotLogged(stations) {
+  L_.logged.clearLayers();
+  const esc = (v) => String(v).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let shown = 0;
+  const bounds = [];
+  stations.forEach((st) => {
+    const at = toLatLon(st.grid);
+    if (!at) return;
+    shown += 1;
+    bounds.push([at.lat, at.lon]);
+    const when = (st.date || '').length === 8
+      ? `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}` : '';
+    L.circleMarker([at.lat, at.lon], {
+      renderer: L_.auroraCanvas,      // canvas: a big log is thousands of dots
+      radius: 3.5, weight: 1, color: THEME.bg,
+      fillColor: THEME.signal, fillOpacity: 0.9,
+    }).bindPopup(`<h3>${esc(st.call)}</h3><dl>`
+      + `<dt>Grid</dt><dd>${esc(st.grid)}</dd>`
+      + (st.band ? `<dt>Band</dt><dd>${esc(st.band)}</dd>` : '')
+      + (st.mode ? `<dt>Mode</dt><dd>${esc(st.mode)}</dd>` : '')
+      + (when ? `<dt>Date</dt><dd>${esc(when)}</dd>` : '')
+      + '</dl>').addTo(L_.logged);
+  });
+  if (!map.hasLayer(L_.logged)) map.addLayer(L_.logged);
+  if (bounds.length) {
+    touched = true;               // the operator asked for this framing
+    map.fitBounds(L.latLngBounds(bounds), { padding: [25, 25], maxZoom: 6 });
+  }
+  $('#detail').textContent = `${shown} logged contact${shown === 1 ? '' : 's'} plotted`
+    + (shown < stations.length ? ` (${stations.length - shown} had no grid)` : '');
+}
+
+HD.on('logbook.plot', (p) => plotLogged(p.stations || []));
+
 // --- state -------------------------------------------------------------------
 async function loadMe() {
   try {
@@ -415,7 +455,20 @@ function show(info) {
 }
 
 HD.on('lookup.result', (p) => { if (p.callsign || p.locator) show(p); });
-HD.on('config.changed', () => loadMe().then(() => { drawStation(); if (!touched) fit(); }));
+// hamdash.js applies the theme asynchronously, so the values read at boot can
+// be the stylesheet's defaults. Rebuild when it says it has landed.
+document.addEventListener('hamdash:theme', () => {
+  readTheme();
+  if (map) applyConf();
+});
+
+HD.on('config.changed', () => {
+  // Leaflet baked the old colours into SVG attributes when the layers were
+  // made, so a theme change means re-reading the variables and rebuilding
+  // them - restyling the document is not enough here.
+  readTheme();
+  loadMe().then(() => { applyConf(); if (!touched) fit(); });
+});
 HD.onSettings((v) => { conf = v; applyConf(); resetView(); });
 
 // The greyline moves about a degree every four minutes; once a minute is

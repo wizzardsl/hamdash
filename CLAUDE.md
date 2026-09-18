@@ -80,6 +80,18 @@ load is a race that's lost about half the time on Windows. Wait for the
 boot on it — detection runs after the board paints, or you get an empty window
 for several seconds.
 
+**3a. One event stream per browser page, shared by every card on it.**
+A card page is an iframe on the same origin as the board, and browsers allow
+only about six concurrent connections per origin over HTTP/1.1. Each card
+opening its own EventSource spent one for the life of the tile: at seven tiles
+the budget was gone and the *next request the board made* - any request -
+queued for ever. It presents as a card that will not load, or a theme that
+will not apply, never as a connection limit. So the top page owns the stream
+and relays events to its frames by postMessage; `hamdash.js` detects a
+same-origin parent and does not open a socket. Because events then arrive
+through the parent, a card page's declared `subscribes` is filtered by the
+board (`window.__hamdashRelayFilter` in `app.js`), not by the server.
+
 **4. Every SSE stream holds one server thread for its life.** Waitress is a
 blocking server. The board, each card page, and each card process each keep a
 stream. So: streams are capped at 55s and clients reconnect (that's the only
@@ -166,6 +178,22 @@ lands, not at release time; the 0.3.3 entry had to be reconstructed from the
 README and is guesswork as a result.
 
 ## The board UI
+
+- **Cards are iframes: their own document.** Setting theme variables on the
+  board's `documentElement` never reached them. `hamdash.js` themes whatever
+  page loads it and re-themes on `config.changed`, which is in `bus.ALWAYS`
+  for that reason.
+- Applying a theme is async, so anything that *copies* the variables rather
+  than reading them live - canvas, or Leaflet writing colours into SVG
+  attributes - must listen for the `hamdash:theme` event. Reading them at boot
+  gets the stylesheet's defaults.
+- **`min-height` on a scroll container beats its `height`.** Sizing `.grid`
+  that way made the board grow past the viewport, and since `body` is
+  `overflow:hidden` everything below the fold was clipped away unreachable. A
+  spacer child carries the extent instead.
+- Arrange mode is gone. Tiles always dragged by their header and resized from
+  the corner, and the grid guides already appear while dragging, so it was a
+  mode you entered to do what already worked.
 
 - The **Cards menu** (`renderCardsMenu` in `app.js`) is rendered from
   `board.tiles` every time it opens and on every `saveLayout`, so it has no

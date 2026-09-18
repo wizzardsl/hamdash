@@ -31,8 +31,21 @@
   }
 
   // ---- clock ----------------------------------------------------------
+  // Both clocks. A log is kept in UTC and a life is lived in local time, so
+  // showing one and making the operator do the arithmetic is a way to mislog
+  // a QSO by hours.
+  const zone = (() => {
+    try {
+      const n = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+        .formatToParts(new Date()).find((x) => x.type === 'timeZoneName');
+      return (n && n.value) || 'local';
+    } catch { return 'local'; }
+  })();
+  $('#clock-zone').textContent = zone.toLowerCase();
   setInterval(() => {
-    $('#clock').textContent = new Date().toISOString().slice(11, 19);
+    const now = new Date();
+    $('#clock').textContent = now.toISOString().slice(11, 19);
+    $('#clock-local').textContent = now.toTimeString().slice(0, 8);
   }, 1000);
 
   // ---- themes ---------------------------------------------------------
@@ -330,13 +343,10 @@
     $('#palette').showModal();
   };
 
-  // ---- arrange mode ---------------------------------------------------
-  $('#edit-toggle').onclick = (e) => {
-    const on = e.target.getAttribute('aria-pressed') !== 'true';
-    e.target.setAttribute('aria-pressed', String(on));
-    e.target.textContent = on ? 'Done arranging' : 'Arrange';
-    board.setArranging(on);
-  };
+  // Arrange mode is gone: tiles drag by their header and resize from the
+  // corner at any time, and the grid guides already appear while dragging.
+  // A mode you had to enter first to do what already worked was just a step
+  // in the way.
 
   // ---- logbook sync ---------------------------------------------------
   // The endpoint starts a job and returns; the result arrives on the bus,
@@ -558,6 +568,23 @@
   const layout = await HD.get('/api/layout');
   board.cols = layout.cols || 12;
   board.rowPx = layout.row_px || 80;
+  // With one shared stream, events reach a card page through its parent
+  // rather than through its own filtered connection, so the filtering has to
+  // happen here. The board already has every manifest.
+  window.__hamdashRelayFilter = (frame, topic) => {
+    const uid = new URL(frame.src, location.href).searchParams.get('uid');
+    const tile = (board.tiles || []).find((t) => t.uid === uid);
+    const card = tile && cards.find((c) => c.id === tile.card);
+    if (!card) return true;                       // not a card frame
+    const want = card.subscribes || [];
+    if (!want.length) return true;                // undeclared means everything
+    const ALWAYS = ['card.settings_changed', 'config.changed'];
+    if (ALWAYS.includes(topic)) return true;
+    if (topic === card.id || topic.startsWith(card.id + '.')) return true;
+    return want.some((w) => topic === w
+      || topic.startsWith(w.replace(/\*$/, '').replace(/\.$/, '') + '.'));
+  };
+
   board.setTiles(layout.tiles || []);
   renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';

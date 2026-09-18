@@ -85,6 +85,7 @@ html, body {
   overflow: auto;
   padding: var(--gap);
 }
+.grid-extent { width: 1px; pointer-events: none; }
 .grid.arranging {
   background-image:
     linear-gradient(to right, var(--rule) 1px, transparent 1px),

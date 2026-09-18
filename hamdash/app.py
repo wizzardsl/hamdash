@@ -498,16 +498,23 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def sync_state():
         c = cfg.data.get("logbook_sync", {})
         lotw = _lotw()
+        newest = log.max_id()
+        pending = lambda k: max(0, len(log.after_id(int(c.get(k) or 0))))  # noqa: E731
         return jsonify({
             "state": syncer.state,
+            "newest_id": newest,
             "lotw": {
                 "configured": bool(c.get("lotw_user") and c.get("lotw_password")),
                 # Push is a separate capability, not a separate credential:
                 # LoTW only takes signed uploads and TQSL is what signs them.
                 "can_push": bool(lotw.tqsl()),
                 "tqsl": lotw.tqsl() or "",
+                "pushed_id": int(c.get("lotw_pushed_id") or 0),
+                "pending": pending("lotw_pushed_id"),
             },
-            "qrz": {"configured": bool(c.get("qrz_api_key"))},
+            "qrz": {"configured": bool(c.get("qrz_api_key")),
+                    "pushed_id": int(c.get("qrz_pushed_id") or 0),
+                    "pending": pending("qrz_pushed_id")},
         })
 
     @app.post("/api/log/sync/<service>/<direction>")
@@ -519,7 +526,22 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         # undo, and "push my log" to a logbook with ten years in it is not
         # something to find out you meant differently afterwards.
         dry_run = bool(body.get("dry_run", True))
+        # An automatic upload sends only what has been logged since the last
+        # one. The marker is per service and lives in config, so a restart
+        # does not re-send the whole log.
+        new_only = bool(body.get("new_only"))
         mine = cfg.data["station"].get("callsign", "")
+
+        def to_send(service):
+            if new_only:
+                mark = int(cfg.data.get("logbook_sync", {})
+                           .get(f"{service}_pushed_id") or 0)
+                return log.after_id(mark)
+            return log.since(since)
+
+        def mark_sent(service):
+            cfg.data.setdefault("logbook_sync", {})[f"{service}_pushed_id"] =                 log.max_id()
+            cfg.save()
 
         def pull_lotw():
             text = _lotw().pull(since=since, owncall=mine)
@@ -535,7 +557,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return res
 
         def push_lotw():
-            rows = log.since(since)
+            rows = to_send("lotw")
             if dry_run:
                 return {"would_send": len(rows), "dry_run": True,
                         "message": f"{len(rows)} QSOs would go to TQSL"
@@ -550,7 +572,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return out
 
         def push_qrz():
-            rows = log.since(since)
+            rows = to_send("qrz")
             if dry_run:
                 return {"would_send": len(rows), "dry_run": True,
                         "message": f"{len(rows)} QSOs would be sent to QRZ"
@@ -570,6 +592,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     failed.append(f"{rec.get('call')}: {exc}")
                     if len(failed) > 20:
                         break
+            if new_only and not failed:
+                mark_sent("qrz")
             return {"sent": sent, "failed": failed,
                     "message": f"{sent} sent"
                                + (f", {len(failed)} refused" if failed else "")}

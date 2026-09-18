@@ -23,12 +23,17 @@ from typing import Iterator
 # the confusing case worth preventing.
 RESERVED = ("card.", "config.", "log.", "lookup.", "radio.", "rig.", "ui.")
 
-# Delivered to every card whatever its `subscribes` says. The SDK subscribes
-# to card.settings_changed on the card's behalf so card.settings() drops its
-# cache when the operator edits a tile; a card that declared a narrow list
-# would otherwise quietly stop noticing settings edits and look like it had a
-# caching bug. Infrastructure, not an opt-in subscription.
-ALWAYS = ("card.settings_changed",)
+# Delivered to every card whatever its `subscribes` says. Both are
+# infrastructure the SDK and hamdash.js rely on, not opt-in subscriptions:
+#   card.settings_changed  drops card.settings()'s cache when a tile is
+#                          edited; a card with a narrow list would otherwise
+#                          quietly stop noticing edits and look like it had a
+#                          caching bug.
+#   config.changed         is how a card page learns the theme changed. A card
+#                          is an iframe with its own document, so it themes
+#                          itself; without this the board would go light and
+#                          every card would stay dark.
+ALWAYS = ("card.settings_changed", "config.changed")
 
 MAX_HISTORY = 300
 QUEUE_DEPTH = 256

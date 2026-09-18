@@ -15,6 +15,37 @@
   let nativeShell = false;
 
   // One fetch per page: tells us whether we are inside the desktop webview.
+  // Cards are iframes: their own document, which only ever saw app.css's
+  // built-in defaults. The board setting custom properties on its own
+  // documentElement could not reach them, so every page that loads this file
+  // themes itself and re-themes when the operator changes it.
+  async function applyTheme() {
+    try {
+      const [themes, cfg] = await Promise.all([
+        fetch('/api/themes').then((r) => r.json()),
+        fetch('/api/config').then((r) => r.json()),
+      ]);
+      const t = (themes || []).find((x) => x.id === cfg.theme) || (themes || [])[0];
+      if (!t) return;
+      document.documentElement.dataset.theme = t.id;
+      Object.entries(t.vars || {}).forEach(([k, v]) => {
+        document.documentElement.style.setProperty(k, v);
+      });
+      // Anything that copies the variables rather than reading them live -
+      // canvas, or a library that writes colours into SVG attributes - needs
+      // telling, because applying a theme is async and lands after boot.
+      document.dispatchEvent(new CustomEvent('hamdash:theme', { detail: t }));
+    } catch (e) {
+      // Not silent: a card sitting in last week's colours with no clue why is
+      // exactly the sort of thing an empty catch block hides for months.
+      console.warn('hamdash: could not apply theme', e);
+    }
+  }
+  applyTheme();
+  document.addEventListener('DOMContentLoaded', () => {
+    HD.on('config.changed', applyTheme);
+  });
+
   fetch('/api/shell').then((r) => r.json()).then((info) => {
     nativeShell = !!info.native;
     if (nativeShell) installLinkGuard();
@@ -46,16 +77,71 @@
     };
   }
 
+  // One event stream per browser page, shared by every card on it.
+  //
+  // A card page is an iframe on the same origin as the board, and browsers
+  // allow only about six concurrent connections per origin over HTTP/1.1. A
+  // card opening its own EventSource therefore spent one of them for as long
+  // as the tile existed: with seven tiles the whole budget was gone, and the
+  // next request the board made - any request - queued for ever behind them.
+  // It looked like a card that would not load rather than like a connection
+  // limit, which is the worst way for this to present.
+  //
+  // So the top page owns the single stream and hands events down to its
+  // frames; a framed page asks its parent instead of opening a socket.
+  const framed = (() => {
+    try { return window.parent !== window && !!window.parent.document; }
+    catch { return false; }          // cross-origin parent: we are on our own
+  })();
+
   function connect() {
-    if (es) return;
+    if (es || framed) return;
     es = new EventSource('/api/events');
-    es.onmessage = (e) => dispatch(e);
+    es.onmessage = (e) => {
+      let evt;
+      try { evt = JSON.parse(e.data); } catch { return; }
+      deliver(evt);
+      relay(evt);
+    };
     es.onerror = () => { /* EventSource retries on its own */ };
   }
 
-  function dispatch(e) {
-    let evt;
-    try { evt = JSON.parse(e.data); } catch { return; }
+  // Hand an event to every same-origin frame below this page. The board may
+  // install a filter so a card still only sees what its manifest declares.
+  function relay(evt) {
+    const allow = window.__hamdashRelayFilter;
+    document.querySelectorAll('iframe').forEach((f) => {
+      try {
+        if (!f.contentWindow) return;
+        if (allow && !allow(f, evt.topic)) return;
+        f.contentWindow.postMessage({ __hamdash: 'event', evt }, window.origin);
+      } catch { /* cross-origin frame, not ours to talk to */ }
+    });
+  }
+
+  if (framed) {
+    // The server sends a snapshot of the last value per topic when a stream
+    // opens. A framed page has no stream of its own, so it asks for recent
+    // history once instead - otherwise a card that renders from the last
+    // lookup.result comes up blank until something new happens.
+    let primed = false;
+    window.__hamdashPrime = () => {
+      if (primed) return;
+      primed = true;
+      setTimeout(() => {
+        req('GET', '/api/events/recent', { limit: 60 })
+          .then((evts) => (evts || []).forEach(deliver))
+          .catch(() => { /* live events still arrive */ });
+      }, 120);
+    };
+    window.addEventListener('message', (e) => {
+      if (e.source !== window.parent) return;
+      const d = e.data;
+      if (d && d.__hamdash === 'event' && d.evt) deliver(d.evt);
+    });
+  }
+
+  function deliver(evt) {
     for (const [pattern, fns] of listeners) {
       if (match(pattern, evt.topic)) fns.forEach((f) => {
         try { f(evt.payload, evt); } catch (err) { console.error(pattern, err); }
@@ -109,6 +195,7 @@
     tileUid: new URLSearchParams(location.search).get('uid') || '',
 
     on(pattern, fn) {
+      if (framed && window.__hamdashPrime) window.__hamdashPrime();
       connect();
       if (!listeners.has(pattern)) listeners.set(pattern, new Set());
       listeners.get(pattern).add(fn);

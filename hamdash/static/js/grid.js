@@ -308,8 +308,18 @@
         const node = this._nodes.get(t.uid);
         if (node) this._place(t, node);
       });
+      // A spacer, not min-height on the scroll container. min-height beats
+      // height, so setting it here made the grid itself grow past the
+      // viewport - and because body is overflow:hidden, everything below the
+      // fold was clipped away with no way to reach it.
       const rows = this._nextRow();
-      this.el.style.minHeight = `${this.gap * 2 + rows * (this.rowPx + this.gap)}px`;
+      if (!this._spacer) {
+        this._spacer = document.createElement('div');
+        this._spacer.className = 'grid-extent';
+        this.el.appendChild(this._spacer);
+      }
+      this._spacer.style.height =
+        `${this.gap * 2 + rows * (this.rowPx + this.gap)}px`;
     }
 
     status(cardId, state) {

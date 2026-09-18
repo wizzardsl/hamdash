@@ -196,6 +196,23 @@ class Logbook:
                                   (int(limit),))
             return [dict(r) for r in rows]
 
+    def after_id(self, qso_id: int = 0, limit: int = 10 ** 7) -> list[dict]:
+        """QSOs logged after a given row id, oldest first.
+
+        What an automatic upload sends. Re-sending the whole log every minute
+        would work - the far end rejects duplicates - but it is rude and slow,
+        and a marker is one integer.
+        """
+        with self._conn() as db:
+            return [dict(r) for r in db.execute(
+                "SELECT * FROM qso WHERE id > ? ORDER BY id LIMIT ?",
+                (int(qso_id or 0), int(limit)))]
+
+    def max_id(self) -> int:
+        with self._conn() as db:
+            return int(db.execute("SELECT COALESCE(MAX(id), 0) FROM qso")
+                       .fetchone()[0])
+
     def worked_before(self, call: str) -> list[dict]:
         with self._conn() as db:
             return [dict(r) for r in db.execute(
