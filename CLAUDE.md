@@ -386,6 +386,18 @@ shape it settled on is worth reusing:
   says which one the credentials are for. It used to assume HamQTH, which
   posted a QRZ password to a company that never asked for it and spent a
   failed login doing it.
+- **A provider failing is not a fact about the callsign, so it is not
+  cached.** It used to be: the prefix fallback was stored with its note for
+  `cache_days`, so whatever was being typed during an outage went on reporting
+  that outage for a month - which reads as "this callsign is broken" and sends
+  you looking in the wrong place entirely. A genuine miss is cached, marked
+  `miss`, for `MISS_TTL` (an hour) rather than the full term. `Lookup._repair`
+  drops rows from before the distinction, once, at construction.
+- **The logbook must not look up every prefix of a callsign.** It did, and
+  with the typos that is five or six provider calls per contact - which is
+  what rate limits and account locks are for. `CALLSIGN` in the card gates on
+  the shape of a whole callsign, the debounce is 700 ms, and blur looks up at
+  once so the wait is never felt.
 - **A refused login is remembered, not retried.** The logbook looks a callsign
   up every few characters you type, so a wrong password used to cost a failed
   login per keystroke - and QRZ and HamQTH both lock an account after a

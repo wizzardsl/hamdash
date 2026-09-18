@@ -48,6 +48,11 @@ BLOCKED_UNTIL = re.compile(
 # enough that a wrong password costs one attempt rather than one per keystroke,
 # short enough that fixing it is not punished for the rest of the afternoon.
 AUTH_COOLDOWN = 900.0
+# How long "the provider has no record of this callsign" is believed. It is a
+# real answer, so re-asking on every keystroke is rude, but it is the kind of
+# answer that changes - a new licensee, or a record that had not propagated -
+# so it must not sit in the cache for the month a real hit gets.
+MISS_TTL = 3600.0
 
 
 def _blocked_until(message: str) -> float:
@@ -117,6 +122,7 @@ class Lookup:
         self._auth = threading.Lock()
         if cache_path:
             self._db().close()
+            self._repair()
 
     # ---------------------------------------------------------------- session
     def _key(self, name: str) -> str | None:
@@ -153,6 +159,24 @@ class Lookup:
         db.commit()
         return db
 
+    def _repair(self) -> None:
+        """Drop rows written before a failure stopped counting as an answer.
+
+        Left alone they keep reporting a provider outage that ended weeks ago,
+        against whichever callsigns happened to be typed during it. A cached
+        miss says so with `miss`; anything else carrying a note predates the
+        distinction and is cheap to look up again.
+        """
+        db = self._db()
+        db.execute("DELETE FROM lookup_cache "
+                   "WHERE data LIKE '%\"note\":%' AND data NOT LIKE '%\"miss\": true%'")
+        db.commit()
+        db.close()
+
+    def _ttl_for(self, data: dict) -> float:
+        """How long this answer is good for."""
+        return MISS_TTL if data.get("source") == "prefix" else self.ttl
+
     def _cached(self, call: str) -> dict | None:
         if not self.cache_path:
             return None
@@ -160,11 +184,13 @@ class Lookup:
         row = db.execute("SELECT data, fetched FROM lookup_cache WHERE call=?",
                          (call,)).fetchone()
         db.close()
-        if row and time.time() - row[1] < self.ttl:
-            out = json.loads(row[0])
-            out["cached"] = True
-            return out
-        return None
+        if not row:
+            return None
+        out = json.loads(row[0])
+        if time.time() - row[1] >= self._ttl_for(out):
+            return None
+        out["cached"] = True
+        return out
 
     def _store(self, call: str, data: dict) -> None:
         if not self.cache_path:
@@ -402,17 +428,28 @@ class Lookup:
 
         result, note = self._run(call)
 
+        failed = False
         if result is None:
             result = self._prefix(call)
             if note:
+                # The provider refused, was unreachable or is blocked.
+                failed = True
                 result["note"] = note
             elif self.provider != "offline":
+                # It answered, and the answer was that it has no such record.
                 tried = ", ".join(self._chain())
+                result["miss"] = True
                 result["note"] = f"no record for {call} from {tried}"
 
         result["cached"] = False
         result["links"] = links_for(result.get("callsign") or call)
-        self._store(call, result)
+        # A provider refusing is a fact about us, not about the callsign.
+        # Storing it used to pin the failure to that callsign for a month, so
+        # the callsign went on reporting an outage that had ended - and the
+        # operator, quite reasonably, blamed the callsign. "No such record" is
+        # a real answer and is cached, but only briefly (MISS_TTL).
+        if not failed:
+            self._store(call, result)
         return result
 
 

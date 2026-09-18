@@ -203,12 +203,31 @@ const $ = (s) => document.querySelector(s);
 let lookupTimer;
 let conf = {};
 
+// Something shaped like a callsign: an optional portable prefix, a prefix, a
+// digit, a suffix. Typing VE7STV used to look up VE7, VE7S, VE7ST and VE7STV
+// - four provider calls for one contact, plus one for every typo on the way -
+// and the services rate-limit and then lock an account for exactly that.
+const CALLSIGN = /^(?:[A-Z0-9]{1,4}\/)?[A-Z0-9]{1,3}[0-9][A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/;
+let lookedUp = '';
+
+function maybeLookup(call, now) {
+  clearTimeout(lookupTimer);
+  if (!CALLSIGN.test(call)) { $('#found').textContent = ''; hidePeek(); return; }
+  if (call === lookedUp) return;
+  // Long enough that an ordinary typist finishes the callsign first, so only
+  // the whole thing is looked up rather than every prefix of it.
+  lookupTimer = setTimeout(() => { lookedUp = call; prefill(call); },
+                           now ? 0 : 700);
+}
+
 $('#f-call').addEventListener('input', (e) => {
   const call = e.target.value.trim().toUpperCase();
   e.target.value = call;
-  clearTimeout(lookupTimer);
-  if (call.length < 3) { $('#found').textContent = ''; hidePeek(); return; }
-  lookupTimer = setTimeout(() => prefill(call), 450);
+  maybeLookup(call, false);
+});
+// Leaving the field says you have finished typing, so don't sit on the timer.
+$('#f-call').addEventListener('blur', (e) => {
+  maybeLookup(e.target.value.trim().toUpperCase(), true);
 });
 
 async function prefill(call) {

@@ -109,6 +109,17 @@ versions follow [SemVer](https://semver.org/). The version of record is
   open one session between them instead of one each.
 - HamQTH and QRZ no longer share one session id, which logged you out of
   whichever you used second.
+- **A provider failing was cached against the callsign, for a month.** Whatever
+  you happened to be typing during an outage kept reporting that outage long
+  after it ended, so one callsign looked broken while others were fine. A
+  refusal is no longer stored at all. "No such record" still is - it is a real
+  answer - but for an hour rather than thirty days, so a new licensee appears.
+  Rows written by the old behaviour are dropped the first time the cache opens.
+- **A lookup no longer fires for every prefix of what you type.** Typing
+  VE7STV asked the provider about VE7, VE7S, VE7ST and VE7STV, plus every typo
+  on the way; the services rate-limit and then lock an account for exactly
+  that. The field now waits for something shaped like a whole callsign, gives
+  you 700 ms to finish it, and looks up at once when you tab away.
 - **Pressing Clear on a password and then typing a new one wiped it instead.**
   Nothing reset the pending clear, so the value you typed was discarded and
   the save stored nothing - which then read as "needs a username and

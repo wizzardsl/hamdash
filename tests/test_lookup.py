@@ -9,8 +9,13 @@ wrong and make every distance it ever reports wrong with it.
 Run with:  python -m unittest discover -s tests
 """
 import datetime as dt
+import json
+import shutil
+import sqlite3
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import requests
@@ -120,6 +125,93 @@ class TestRefusedLogins(unittest.TestCase):
         lk = offline_lookup(provider="qrz", user="me", password="pw")
         lk._session["qrz"] = ("OLD", time.time() - 4000)
         self.assertIsNone(lk._key("qrz"))
+
+
+class TestTheCache(unittest.TestCase):
+    """What gets remembered, and for how long."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix="hamdash-lookup-"))
+        self.db = self.home / "cache.sqlite3"
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def rows(self):
+        db = sqlite3.connect(self.db)
+        got = db.execute("SELECT call, data, fetched FROM lookup_cache").fetchall()
+        db.close()
+        return got
+
+    def test_a_refusal_is_not_cached(self):
+        """The bug: an auth failure while typing VE7STV pinned that failure to
+        VE7STV for a month, so the callsign went on reporting an outage that
+        had ended - and it looked like the callsign was the problem."""
+        lk = Lookup(provider="qrz", user="me", password="wrong",
+                    cache_path=self.db)
+        with mock.patch.object(lk, "_qrz",
+                               side_effect=Refused("Username/password incorrect")):
+            res = lk.lookup("VE7STV")
+        self.assertIn("incorrect", res["note"])
+        self.assertEqual(self.rows(), [], "a failure was stored as an answer")
+
+    def test_the_next_try_is_a_real_try(self):
+        lk = Lookup(provider="qrz", user="me", password="pw", cache_path=self.db)
+        with mock.patch.object(lk, "_qrz", side_effect=Refused("down")):
+            lk.lookup("VE7STV")
+        good = {"ok": True, "callsign": "VE7STV", "locator": "CN89",
+                "source": "qrz", "approximate": False}
+        with mock.patch.object(lk, "_qrz", return_value=good):
+            res = lk.lookup("VE7STV")
+        self.assertEqual(res["locator"], "CN89")
+        self.assertFalse(res["cached"])
+
+    def test_a_real_answer_is_cached(self):
+        lk = Lookup(provider="qrz", user="me", password="pw", cache_path=self.db)
+        good = {"ok": True, "callsign": "VA7SLL", "locator": "CN89",
+                "source": "qrz", "approximate": False}
+        with mock.patch.object(lk, "_qrz", return_value=good) as qrz:
+            lk.lookup("VA7SLL")
+            again = lk.lookup("VA7SLL")
+        self.assertTrue(again["cached"])
+        self.assertEqual(qrz.call_count, 1)
+
+    def test_a_miss_is_cached_but_expires_far_sooner_than_a_hit(self):
+        """"No record" is a real answer, so it should not be re-asked on every
+        keystroke - but a new licensee must not wait a month to appear."""
+        lk = Lookup(provider="qrz", user="me", password="pw", cache_path=self.db,
+                    cache_days=30)
+        with mock.patch.object(lk, "_qrz", return_value=None):
+            lk.lookup("VE7NEW")
+        self.assertEqual(len(self.rows()), 1)
+        self.assertTrue(lk.lookup("VE7NEW")["cached"])
+
+        # An hour on, it is asked again rather than answered from the table.
+        db = sqlite3.connect(self.db)
+        db.execute("UPDATE lookup_cache SET fetched=?", (time.time() - 3601,))
+        db.commit()
+        db.close()
+        with mock.patch.object(lk, "_qrz", return_value=None) as qrz:
+            self.assertFalse(lk.lookup("VE7NEW")["cached"])
+        self.assertEqual(qrz.call_count, 1)
+
+    def test_rows_poisoned_by_the_old_behaviour_are_dropped(self):
+        db = sqlite3.connect(self.db)
+        db.execute("""CREATE TABLE lookup_cache
+                      (call TEXT PRIMARY KEY, data TEXT, fetched REAL)""")
+        db.executemany("INSERT INTO lookup_cache VALUES (?,?,?)", [
+            ("VE7STV", json.dumps({"ok": True, "source": "prefix",
+                                   "note": "Username/password incorrect"}),
+             time.time()),
+            ("VA7SLL", json.dumps({"ok": True, "source": "qrz",
+                                   "locator": "CN89"}), time.time()),
+        ])
+        db.commit()
+        db.close()
+
+        Lookup(provider="qrz", user="me", password="pw", cache_path=self.db)
+        left = {r[0] for r in self.rows()}
+        self.assertEqual(left, {"VA7SLL"}, "the good row went too, or the bad one stayed")
 
 
 class TestFallback(unittest.TestCase):
