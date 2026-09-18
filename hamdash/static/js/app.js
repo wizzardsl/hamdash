@@ -8,12 +8,26 @@
 
   // ---- toast ----------------------------------------------------------
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, action) {
     const t = $('#toast');
-    t.textContent = msg;
+    t.textContent = '';
+    t.classList.toggle('has-action', !!action);
+    t.appendChild(document.createTextNode(msg));
+    if (action) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'toast-action';
+      b.textContent = action.label;
+      b.onclick = () => {
+        t.classList.remove('show', 'has-action');
+        action.fn();
+      };
+      t.appendChild(b);
+    }
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+    toastTimer = setTimeout(() => t.classList.remove('show', 'has-action'),
+                            action ? 7000 : 3200);
   }
 
   // ---- clock ----------------------------------------------------------
@@ -69,6 +83,7 @@
   let saveTimer;
   function saveLayout(tiles) {
     $('#empty').style.display = tiles.length ? 'none' : '';
+    renderCardsMenu();      // a tile closed with its own x unticks it here
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       HD.put('/api/layout', {
@@ -200,12 +215,119 @@
     });
   }
 
-  $('#add-card').onclick = () => { renderPalette(); $('#palette').showModal(); };
   $('#palette-close').onclick = () => $('#palette').close();
-  $('#rescan').onclick = async () => {
+  $('#rescan').onclick = rescan;
+
+  async function rescan() {
     cards = await HD.get('/api/cards', { rescan: 1 });
     renderPalette();
+    renderCardsMenu();
     toast(`${cards.length} cards found`);
+  }
+
+  // ---- cards menu -----------------------------------------------------
+  // Ticking a card puts one tile on the board; unticking takes its tiles off.
+  // A card can legitimately have several tiles (two web_embed tiles are two
+  // pages), so the row shows the count and unticking several asks first -
+  // each tile carries its own settings and they go with it.
+  const menuEl = () => $('#cards-menu');
+
+  function tilesOf(cardId) {
+    return board.tiles.filter((t) => t.card === cardId);
+  }
+
+  function renderCardsMenu() {
+    const ul = $('#cards-menu-list');
+    if (!ul) return;
+    ul.innerHTML = '';
+    cards.forEach((c) => {
+      const mine = tilesOf(c.id);
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.className = 'menu-item';
+      b.type = 'button';
+      b.setAttribute('role', 'menuitemcheckbox');
+      b.setAttribute('aria-checked', String(mine.length > 0));
+      // The name has to be explicit: the visible label is wrapped in spans
+      // alongside a decorative tick, and the computed name came out empty -
+      // a screen reader announced six unnamed checkboxes.
+      b.setAttribute('aria-label', mine.length > 1
+        ? `${c.name} (${mine.length} tiles)` : c.name);
+      if (c.error) b.disabled = true;
+
+      const tick = document.createElement('span');
+      tick.className = 'menu-tick';
+      tick.setAttribute('aria-hidden', 'true');
+
+      const text = document.createElement('span');
+      text.className = 'menu-text';
+      text.textContent = c.name;
+      const sub = document.createElement('small');
+      sub.textContent = c.error ? c.error : (c.description || c.kind);
+      text.appendChild(sub);
+
+      b.append(tick, text);
+      if (mine.length > 1) {
+        const n = document.createElement('span');
+        n.className = 'menu-count';
+        n.textContent = `×${mine.length}`;
+        b.appendChild(n);
+      }
+      b.onclick = () => toggleCard(c);
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+  }
+
+  function toggleCard(c) {
+    const mine = tilesOf(c.id);
+    if (!mine.length) {
+      board.add({ card: c.id, title: c.name, w: c.w, h: c.h,
+                  min_w: c.min_w, min_h: c.min_h, url: c.url });
+      toast(`${c.name} added`);
+    } else {
+      // Undo rather than a confirm dialog. A card can have several tiles and
+      // each carries its own settings, so taking them off is worth being able
+      // to take back - and a browser confirm() is the one bit of chrome this
+      // app has never used, for the same reason it never uses window.open.
+      const restore = mine.map((t) => ({ ...t, popped: false }));
+      mine.forEach((t) => board.remove(t.uid));
+      toast(`${c.name} removed${mine.length > 1 ? ` (${mine.length} tiles)` : ''}`,
+            { label: 'Undo',
+              fn: () => {
+                restore.forEach((t) => board.add(t));   // add() keeps the uid,
+                renderCardsMenu();                      // so settings come back
+                toast(`${c.name} restored`);
+              } });
+    }
+    renderCardsMenu();
+  }
+
+  function openMenu(open) {
+    const m = menuEl();
+    if (!m) return;
+    if (open) renderCardsMenu();
+    m.hidden = !open;
+    $('#cards-menu-btn').setAttribute('aria-expanded', String(open));
+  }
+
+  $('#cards-menu-btn').onclick = (e) => {
+    e.stopPropagation();
+    openMenu(menuEl().hidden);
+  };
+  menuEl().addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => openMenu(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menuEl().hidden) {
+      openMenu(false);
+      $('#cards-menu-btn').focus();
+    }
+  });
+  $('#menu-rescan').onclick = rescan;
+  $('#menu-browse').onclick = () => {
+    openMenu(false);
+    renderPalette();
+    $('#palette').showModal();
   };
 
   // ---- arrange mode ---------------------------------------------------
@@ -290,6 +412,7 @@
   board.cols = layout.cols || 12;
   board.rowPx = layout.row_px || 80;
   board.setTiles(layout.tiles || []);
+  renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';
 
   // Backend detection waits for the native bridge, which can take a moment.

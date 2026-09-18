@@ -7,6 +7,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- A **Cards menu** in the rail: everything installed, with a tick beside what
+  is on the board. Tick to add, untick to remove, and closing a tile with its
+  ✕ unticks it there. Unticking a card with several tiles takes them all off
+  and offers Undo, which restores them with their per-tile settings.
 - `spectrum` card: live spectrum trace and waterfall of the receiver's audio,
   with automatic contrast, per-tile input selection and a synthesised `mock`
   signal so it works with no radio attached. Needs numpy and sounddevice,

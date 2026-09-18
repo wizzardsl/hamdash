@@ -165,6 +165,24 @@ rather than shipping wrong notes. Write the changelog entry when the fix
 lands, not at release time; the 0.3.3 entry had to be reconstructed from the
 README and is guesswork as a result.
 
+## The board UI
+
+- The **Cards menu** (`renderCardsMenu` in `app.js`) is rendered from
+  `board.tiles` every time it opens and on every `saveLayout`, so it has no
+  state of its own to drift — closing a tile with ✕ unticks it for free.
+- Ticking adds one tile; unticking removes *all* tiles of that card, because a
+  tick is per card and a card can have many tiles. That discards per-tile
+  settings, so the toast offers Undo: `board.add()` honours a `uid` you pass
+  it, which is what makes restoring them exact.
+- **`.toast` is `pointer-events: none`** so a status message never swallows a
+  click on the board. A toast with a button has to add `.has-action` or the
+  button is unclickable and silently does nothing.
+- **No `confirm()`/`alert()`.** Nothing in the app used them before the menu
+  briefly did; they are browser chrome inside a webview, and the app already
+  has toasts and `<dialog class="sheet">`.
+- Buttons built from nested spans need an explicit `aria-label`. The menu's
+  six checkboxes computed an empty accessible name until they got one.
+
 ## Audio cards
 
 `plugins/spectrum` is the first card that owns a hardware resource, and the

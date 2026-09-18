@@ -193,6 +193,9 @@ html, body {
   max-width: 70vw;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* The toast is click-through by default so a status message never swallows a
+   click on the board. One carrying an action has to take them, though. */
+.toast.has-action { pointer-events: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
@@ -234,3 +237,65 @@ html, body {
   background-size: var(--cell-w) 100%;
   background-position: var(--gap, 10px) 0;
 }
+
+
+/* ---- cards menu ---------------------------------------------------------
+   A dropdown, not a dialog: ticking cards on and off is something you do a
+   few times in a row, and a modal makes you reopen it after each one. */
+.menu-wrap { position: relative; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.menu[hidden] { display: none; }
+.menu-note {
+  margin: 0; padding: 9px 11px;
+  font-size: 12px; color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+}
+.menu-list { list-style: none; margin: 0; padding: 4px; max-height: 52vh; overflow: auto; }
+.menu-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 7px 8px;
+  background: none; border: 0; border-radius: var(--radius);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+}
+.menu-item:hover:not([disabled]), .menu-item:focus-visible { background: var(--panel-2); }
+.menu-item[disabled] { cursor: default; opacity: .65; }
+/* A real box, so the state is legible without relying on colour alone. */
+.menu-tick {
+  flex: none; width: 15px; height: 15px; border-radius: 2px;
+  border: 1px solid var(--grip); display: grid; place-items: center;
+  font-size: 11px; line-height: 1; color: var(--bg);
+}
+.menu-item[aria-checked="true"] .menu-tick {
+  background: var(--accent); border-color: var(--accent);
+}
+.menu-item[aria-checked="true"] .menu-tick::after { content: "¹3"; }
+.menu-text { flex: 1; min-width: 0; }
+.menu-text small { display: block; color: var(--muted); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item[disabled] .menu-text small { color: var(--alert); white-space: normal; }
+.menu-count {
+  flex: none; font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.menu-foot {
+  display: flex; gap: 6px; justify-content: flex-end;
+  padding: 7px 8px; border-top: 1px solid var(--rule);
+}
+
+.toast-action {
+  margin-left: 10px; padding: 2px 8px;
+  background: none; border: 1px solid var(--grip); border-radius: var(--radius);
+  color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+}
+.toast-action:hover { border-color: var(--accent); }

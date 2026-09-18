@@ -107,8 +107,22 @@ enter first. **Arrange** just turns on the grid guides and keeps the resize
 handles visible. Overlaps are resolved by pushing tiles *down*, never sideways:
 horizontal position is what people place deliberately, vertical order isn't.
 
-Adding a card: open **Add card** and either hit Add, or drag the row out of the
-sheet and drop it where you want it on the board.
+Adding and removing a card: the **Cards** menu lists everything installed with
+a tick beside whatever is on the board. Tick to put a card on, untick to take
+it off — and closing a tile with its own **✕** unticks it there, so the menu is
+always a true picture of the board rather than a separate thing to keep in
+sync.
+
+It is a dropdown rather than a dialog, because ticking a few cards on and off
+is something you do in a run and a modal makes you reopen it each time.
+
+A card can have several tiles (two `web_embed` tiles are two different pages),
+so a row with more than one shows a count and unticking takes all of them off
+at once. That would throw away per-tile settings, so instead of asking first
+the toast offers **Undo**, which puts them back with their settings intact.
+
+**Browse & drag…** in that menu opens the older sheet, where a row can be
+dragged out and dropped exactly where you want it on the board.
 
 ## Popping a card out
 

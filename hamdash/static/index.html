@@ -17,7 +17,19 @@
     <span class="clock mono" id="clock">--:--:--</span>
     <span class="clock-z">utc</span>
     <select id="theme-pick" class="pick" aria-label="Theme"></select>
-    <button id="add-card" class="btn">Add card</button>
+    <div class="menu-wrap">
+      <button id="cards-menu-btn" class="btn" aria-haspopup="true"
+              aria-expanded="false" aria-controls="cards-menu">Cards</button>
+      <div id="cards-menu" class="menu" role="menu" hidden>
+        <p class="menu-note">Tick a card to put it on the board, untick to take
+          it off. Closing a tile with &times; unticks it here.</p>
+        <ul id="cards-menu-list" class="menu-list"></ul>
+        <div class="menu-foot">
+          <button class="btn btn-quiet" id="menu-rescan" role="menuitem">Rescan folders</button>
+          <button class="btn btn-quiet" id="menu-browse" role="menuitem">Browse &amp; drag&hellip;</button>
+        </div>
+      </div>
+    </div>
     <button id="edit-toggle" class="btn btn-quiet" aria-pressed="false">Arrange</button>
     <button id="settings" class="btn btn-quiet">Settings</button>
   </div>
