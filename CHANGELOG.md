@@ -7,6 +7,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- Logbook sync with **LoTW** (pull with your username and password; push via
+  TQSL, which is the only thing that can sign a LoTW upload) and the **QRZ
+  logbook** (pull and push with a logbook API key). Syncs run off the request
+  thread and report on the `log.sync` bus topic.
+- ADIF import now dedupes and merges instead of appending. A QSO is matched on
+  callsign, date, band, mode and start time within 30 minutes; a match is
+  updated with what the other log knows, so confirmations land on the right
+  contact. `import_adif` returns `{added, updated, skipped}`.
+- Confirmation fields on a QSO (`qsl_rcvd`, `lotw_qsl_rcvd`, `qslrdate`,
+  `dxcc`, `state`, `cnty`, …), added to existing logs by migration.
 - Two ways to fill in your grid, in Settings: **Use my location** (browser
   geolocation, converted by the host; coordinates go in a POST body, never a
   URL) and **From my callsign**. The second refuses to write anything when the
@@ -27,6 +37,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- Every logbook read leaked a SQLite connection: `with sqlite3.connect(...)`
+  commits but does not close. On a long-running shack PC that ends as "too
+  many open files" a long way from the cause.
 - `callsign_lookup` was not in the list of settings `/api/config` would accept,
   so lookup settings could never be saved. Changing it now also rebuilds the
   lookup instead of quietly using the old provider until restart.

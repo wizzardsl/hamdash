@@ -204,6 +204,26 @@ shape it settled on is worth reusing:
 - **Mock by default**, like the rig. A card that needs hardware to show
   anything can't be developed or demonstrated.
 
+## Logbook sync
+
+- **LoTW push has no API.** ARRL takes signed `.tq8` only, and the certificate
+  is inside TQSL. `Lotw.push` shells out to TQSL or refuses with what to do.
+  Don't "simplify" this into an HTTP POST; there isn't one.
+- LoTW answers a bad password with an HTML page and a 200, so the pull checks
+  the body looks like ADIF rather than trusting the status code.
+- **Dedupe is the whole game on pull.** `Logbook.find_match` is callsign +
+  date + band + mode + start time within `DUPE_MINUTES` (30, which is what
+  LoTW itself uses). `import_adif` merges onto a match instead of inserting,
+  and returns `{added, updated, skipped}` — "nothing was added" and "nothing
+  happened" are different answers.
+- A sync runs in `qsl.Runner`, one at a time, off the request thread, and
+  reports on `log.sync`. Doing it inline would hold a server thread for a
+  minute (invariant 4).
+- `sqlite3.connect` as a context manager commits but does **not** close. Use
+  `Logbook._conn`, which does both; the old code leaked a connection per read.
+- Untested against the live services — there is no LoTW or QRZ account here.
+  The HTTP shapes come from their docs and the tests mock them.
+
 ## Callsign lookup
 
 - Default provider is `auto`: callook then hamdb (both free, no account), then

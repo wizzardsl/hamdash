@@ -18,6 +18,7 @@ from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import grid as gridlib
 from .services.callsign import Lookup
 from .services.logbook import Logbook
+from .services.qsl import Lotw, QrzLogbook, Runner, SyncError
 from .services.radio import MODES, Rig
 
 HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
@@ -38,6 +39,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     rig.start_polling(hz=2)
     log = Logbook(cfg.db_path)
     look = _make_lookup(cfg)
+    syncer = Runner(lambda t, p: BUS.publish(t, p, source='host'))
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -303,7 +305,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         nonlocal look
         body = request.get_json(silent=True) or {}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
-                    "callsign_lookup", "units"):
+                    "callsign_lookup", "logbook_sync", "units"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -452,8 +454,91 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.post("/api/log/adif")
     @guard("log")
     def log_adif_import():
-        n = log.import_adif(request.get_data(as_text=True))
-        return jsonify(imported=n)
+        # Counts, not one number: importing the same file twice should say
+        # "nothing new" rather than looking like it did the work again.
+        res = log.import_adif(request.get_data(as_text=True))
+        return jsonify(imported=res["added"], **res)
+
+    # ---------------- logbook sync -------------------------------------
+    def _lotw() -> Lotw:
+        c = cfg.data.get("logbook_sync", {})
+        return Lotw(c.get("lotw_user", ""), c.get("lotw_password", ""),
+                    c.get("tqsl_path", ""), c.get("station_location", ""))
+
+    def _qrz() -> QrzLogbook:
+        return QrzLogbook(cfg.data.get("logbook_sync", {}).get("qrz_api_key", ""))
+
+    @app.get("/api/log/sync")
+    @guard("log")
+    def sync_state():
+        c = cfg.data.get("logbook_sync", {})
+        lotw = _lotw()
+        return jsonify({
+            "state": syncer.state,
+            "lotw": {
+                "configured": bool(c.get("lotw_user") and c.get("lotw_password")),
+                # Push is a separate capability, not a separate credential:
+                # LoTW only takes signed uploads and TQSL is what signs them.
+                "can_push": bool(lotw.tqsl()),
+                "tqsl": lotw.tqsl() or "",
+            },
+            "qrz": {"configured": bool(c.get("qrz_api_key"))},
+        })
+
+    @app.post("/api/log/sync/<service>/<direction>")
+    @guard("log")
+    def sync_run(service, direction):
+        body = request.get_json(silent=True) or {}
+        since = str(body.get("since") or "").strip()
+        mine = cfg.data["station"].get("callsign", "")
+
+        def pull_lotw():
+            text = _lotw().pull(since=since, owncall=mine)
+            res = log.import_adif(text)
+            res["message"] = (f"{res['added']} new, {res['updated']} updated, "
+                              f"{res['skipped']} already had")
+            return res
+
+        def pull_qrz():
+            res = log.import_adif(_qrz().pull())
+            res["message"] = (f"{res['added']} new, {res['updated']} updated, "
+                              f"{res['skipped']} already had")
+            return res
+
+        def push_lotw():
+            adif = log.export_adif(my_callsign=mine)
+            out = _lotw().push(adif)
+            out["message"] = "TQSL accepted the upload"
+            return out
+
+        def push_qrz():
+            book, sent, failed = _qrz(), 0, []
+            for rec in log.recent(limit=10 ** 7):
+                one = log.export_adif_record(rec, my_callsign=mine)
+                try:
+                    book.push_record(one)
+                    sent += 1
+                except SyncError as exc:
+                    # QRZ rejects a QSO it already has. That is the normal
+                    # case on a re-run, not a failure worth stopping for.
+                    if "duplicate" in str(exc).lower():
+                        continue
+                    failed.append(f"{rec.get('call')}: {exc}")
+                    if len(failed) > 20:
+                        break
+            return {"sent": sent, "failed": failed,
+                    "message": f"{sent} sent"
+                               + (f", {len(failed)} refused" if failed else "")}
+
+        jobs = {("lotw", "pull"): pull_lotw, ("qrz", "pull"): pull_qrz,
+                ("lotw", "push"): push_lotw, ("qrz", "push"): push_qrz}
+        fn = jobs.get((service, direction))
+        if fn is None:
+            return jsonify(error=f"no {direction} for {service}"), 404
+        try:
+            return jsonify(syncer.start(f"{service} {direction}", fn))
+        except SyncError as exc:
+            return jsonify(error=str(exc)), 409
 
     @app.get("/api/bus/stats")
     def bus_stats():

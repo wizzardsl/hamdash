@@ -338,6 +338,51 @@
     board.setArranging(on);
   };
 
+  // ---- logbook sync ---------------------------------------------------
+  // The endpoint starts a job and returns; the result arrives on the bus,
+  // because a LoTW pull is a minute of waiting on someone else's server and
+  // a request handler holding a thread for that is what invariant 4 is about.
+  function syncNote(which, msg, kind) {
+    const n = $(`#s-${which}-note`);
+    if (!n) return;
+    n.textContent = msg;
+    n.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
+  async function refreshSync() {
+    try {
+      const s = await HD.get('/api/log/sync');
+      if (!s.lotw.configured) {
+        syncNote('lotw', 'Enter your LoTW username and password, then save.');
+      } else if (!s.lotw.can_push) {
+        syncNote('lotw', 'Ready to pull. Push needs TQSL, which is not '
+                 + 'installed here — pulling works either way.');
+      } else {
+        syncNote('lotw', `Ready. TQSL found at ${s.lotw.tqsl}`, 'good');
+      }
+      syncNote('qrz', s.qrz.configured
+        ? 'Ready.' : 'Paste the logbook API key, then save.',
+        s.qrz.configured ? 'good' : '');
+    } catch (e) { /* settings can open before the host is warm */ }
+  }
+
+  function wireSync(service, direction) {
+    $(`#s-${service}-${direction}`).onclick = async () => {
+      syncNote(service, `${direction === 'pull' ? 'Pulling' : 'Pushing'}…`);
+      try {
+        await HD.post(`/api/log/sync/${service}/${direction}`, {});
+      } catch (e) { syncNote(service, e.message, 'warn'); }
+    };
+  }
+  ['lotw', 'qrz'].forEach((s) => ['pull', 'push'].forEach((d) => wireSync(s, d)));
+
+  HD.on('log.sync', (p) => {
+    const which = (p.job || '').startsWith('qrz') ? 'qrz' : 'lotw';
+    if (p.running) { syncNote(which, p.message); return; }
+    syncNote(which, p.message, p.ok ? 'good' : 'warn');
+    if (p.ok) refreshSync();
+  });
+
   // ---- settings -------------------------------------------------------
   function fillSettings() {
     $('#s-call').value = config.station.callsign || '';
@@ -346,6 +391,11 @@
     $('#s-mock').checked = !!config.radio.mock;
     $('#s-rig-host').value = config.radio.rigctld_host || '';
     $('#s-rig-port').value = config.radio.rigctld_port || 4532;
+    const sy = config.logbook_sync || {};
+    $('#s-lotw-user').value = sy.lotw_user || '';
+    $('#s-lotw-pass').value = sy.lotw_password || '';
+    $('#s-qrz-key').value = sy.qrz_api_key || '';
+    refreshSync();
     const lk = config.callsign_lookup || {};
     $('#s-lk-provider').value = lk.provider || 'callook';
     $('#s-lk-user').value = lk.user || '';
@@ -440,6 +490,11 @@
           provider: $('#s-lk-provider').value,
           user: $('#s-lk-user').value.trim(),
           password: $('#s-lk-pass').value,
+        },
+        logbook_sync: {
+          lotw_user: $('#s-lotw-user').value.trim(),
+          lotw_password: $('#s-lotw-pass').value,
+          qrz_api_key: $('#s-qrz-key').value.trim(),
         },
       });
       config = await HD.get('/api/config');

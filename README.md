@@ -278,6 +278,39 @@ calls carry its token and are checked properly. A card's *page* is identified
 by `Referer`, which the page itself controls. Treat this as a namespace policy
 that stops honest cards colliding, not as protection from a hostile one.
 
+## Logbook sync
+
+Settings → Logbook sync. Credentials there, then Pull or Push.
+
+| | pull | push |
+|---|---|---|
+| **LoTW** | username + password | **only through TQSL** |
+| **QRZ logbook** | API key | API key |
+
+**Pulling never duplicates what you already have.** An incoming QSO is matched
+against the log on callsign, date, band, mode and a start time within 30
+minutes — two logs almost never agree to the second, and matching on callsign
+alone would merge every contact you have ever had with a regular. A match is
+updated with whatever the other log knows and you don't, so a confirmation
+lands on the QSO it belongs to rather than beside it. Run the same pull twice
+and the second says "nothing new".
+
+**LoTW uploads cannot be done with a password.** ARRL only accepts QSOs signed
+with your station certificate, and that certificate lives inside
+[TQSL](https://www.arrl.org/tqsl-download) and does not leave it. So "Push to
+LoTW" hands your log to TQSL to sign and upload if it is installed, and
+otherwise tells you to export ADIF and drop it on TQSL yourself. Anything
+claiming to upload to LoTW with a username and password would be lying about
+what it was doing.
+
+**The QRZ logbook API key is not your QRZ password.** It is per logbook, from
+that logbook's own settings page at logbook.qrz.com, and QRZ gates the API
+behind a subscription.
+
+A sync runs off the request thread and reports on the `log.sync` bus topic:
+a year of QSOs is a slow download, and a request handler blocking on it would
+hold one of the server's threads for the duration.
+
 ## Filling in your grid
 
 Settings has two buttons under the grid field.

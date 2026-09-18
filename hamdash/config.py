@@ -41,6 +41,9 @@ DEFAULTS = {
     "radio": {"rigctld_host": "127.0.0.1", "rigctld_port": 4532, "mock": True},
     "callsign_lookup": {"provider": "auto", "user": "", "password": "",
                         "cache_days": 30},
+    "logbook_sync": {"lotw_user": "", "lotw_password": "",
+                     "qrz_api_key": "", "tqsl_path": "",
+                     "station_location": ""},
     "units": "km",
 }
 
