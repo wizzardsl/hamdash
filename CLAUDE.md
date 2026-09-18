@@ -157,6 +157,15 @@ README and is guesswork as a result.
 - Packaging: PyInstaller + GitHub Actions matrix, code signing, bundling
   Hamlib, and whether third-party cards work in a frozen build.
 
+## Keeping this file true
+
+This file is the recovery point for a new session: it is checked in, so a
+fresh clone plus `CLAUDE.md` is enough to pick the work back up. Update it in
+the same commit as the change it describes — an invariant that isn't written
+down here has to be rediscovered by breaking it. The things that belong here
+are the ones that cost a day: invariants, non-obvious failure modes, and what
+was deliberately *not* done. Routine code changes go in `CHANGELOG.md`.
+
 ## House style
 
 Terse commit messages and terse explanations. Lead with the answer. Flag
