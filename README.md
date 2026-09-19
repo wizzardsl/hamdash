@@ -384,6 +384,7 @@ Settings → Integrations → Logbook sync. Credentials there, then Pull or Push
 |---|---|---|
 | **LoTW** | username + password | **only through TQSL** |
 | **QRZ logbook** | API key | API key |
+| **World Radio League** | API key | API key, one contact at a time |
 
 Each service has its own **Pull** and **Push**, and there is an **Import
 ADIF** button for a file from anywhere else — another logger, a contest, a

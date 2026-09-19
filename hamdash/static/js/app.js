@@ -383,6 +383,9 @@
       syncNote('qrz', s.qrz.configured
         ? 'Ready.' : 'Paste the logbook API key, then save.',
         s.qrz.configured ? 'good' : '');
+      syncNote('wrl', s.wrl && s.wrl.configured
+        ? 'Ready.' : 'Paste the developer API key, then save.',
+        s.wrl && s.wrl.configured ? 'good' : '');
     } catch (e) { /* settings can open before the host is warm */ }
   }
 
@@ -403,11 +406,12 @@
       } catch (e) { syncNote(service, e.message, 'warn'); }
     };
   }
-  ['lotw', 'qrz'].forEach((s) =>
+  ['lotw', 'qrz', 'wrl'].forEach((s) =>
     ['test', 'pull', 'push'].forEach((d) => wireSync(s, d)));
 
   HD.on('log.sync', (p) => {
-    const which = (p.job || '').startsWith('qrz') ? 'qrz' : 'lotw';
+    // The job is "<service> <direction>", so its first word names the panel.
+    const which = (p.job || '').split(' ')[0] || 'lotw';
     if (p.running) { syncNote(which, p.message); return; }
     // Deliberately not calling refreshSync() here: it would immediately
     // overwrite "1,234 QSOs on QRZ" with "Ready.", which is how the most
@@ -468,7 +472,7 @@
   // silently on save: pasting a key with a trailing newline used to store the
   // newline, and the service then said the password was wrong.
   document.querySelectorAll('#s-lk-user, #s-lk-pass, #s-lotw-user, '
-    + '#s-lotw-pass, #s-qrz-key, #s-call').forEach((el) => {
+    + '#s-lotw-pass, #s-qrz-key, #s-wrl-key, #s-call').forEach((el) => {
     const tidy = () => {
       const v = cleanCred(el.value);
       if (v !== el.value) el.value = v;
@@ -515,6 +519,7 @@
     $('#s-lotw-user').value = sy.lotw_user || '';
     secretBox('#s-lotw-pass', 'logbook_sync.lotw_password');
     secretBox('#s-qrz-key', 'logbook_sync.qrz_api_key');
+    secretBox('#s-wrl-key', 'logbook_sync.wrl_api_key');
     refreshSync();
     const lk = config.callsign_lookup || {};
     $('#s-lk-provider').value = lk.provider || 'callook';
@@ -681,16 +686,18 @@
         account: $('#s-lk-account').value,
         user: $('#s-lk-user').value.trim(),
       }, 'password', '#s-lk-pass'),
-      logbook_sync: withSecret(withSecret({
+      logbook_sync: withSecret(withSecret(withSecret({
         lotw_user: $('#s-lotw-user').value.trim(),
       }, 'lotw_password', '#s-lotw-pass'),
         'qrz_api_key', '#s-qrz-key'),
+        'wrl_api_key', '#s-wrl-key'),
     });
     config = await HD.get('/api/config');
     // The boxes now hold a stored secret again, not the text just typed.
     secretBox('#s-lk-pass', 'callsign_lookup.password');
     secretBox('#s-lotw-pass', 'logbook_sync.lotw_password');
     secretBox('#s-qrz-key', 'logbook_sync.qrz_api_key');
+    secretBox('#s-wrl-key', 'logbook_sync.wrl_api_key');
     applyTheme(config.theme);
     paintStation();
     if (!quiet) {

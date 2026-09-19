@@ -160,6 +160,23 @@
       <button class="btn btn-quiet" id="s-qrz-push" type="button">Push to QRZ</button>
     </div>
     <p class="sheet-note" id="s-qrz-note"></p>
+
+    <label>World Radio League API key <input id="s-wrl-key" class="mono" spellcheck="false"
+           autocomplete="off" placeholder="wrl_live_..."><button type="button" class="btn btn-quiet clear-secret" title="Forget the stored value when you save" hidden>Clear</button></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="s-wrl-test" type="button">Test connection</button>
+      <button class="btn btn-quiet" id="s-wrl-pull" type="button">Pull from WRL</button>
+      <button class="btn btn-quiet" id="s-wrl-push" type="button">Push to WRL</button>
+    </div>
+    <p class="sheet-note" id="s-wrl-note"></p>
+    <p class="sheet-note">Generate the key at
+      <a href="https://app.worldradioleague.com/" target="_blank" rel="noopener">World
+      Radio League</a> under Integrations &rarr; Developer API. It is shown
+      once and stored hashed there, so it cannot be read back — keep a copy.
+      One key covers the whole account. Their API takes one contact per
+      request and allows sixty a minute, so hamdash paces a push; a decade of
+      contacts is better handed to their own ADIF import.</p>
+
     <div class="row-btns">
       <label class="inline"><input type="checkbox" id="s-sync-dry" checked>
         Dry run — count what would be sent, send nothing</label>

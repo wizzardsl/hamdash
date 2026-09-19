@@ -36,6 +36,8 @@ from pathlib import Path
 
 import requests
 
+from .logbook import BANDS, band_for
+
 # QRZ requires an identifying User-Agent and names python-requests as the
 # kind it rate limits.
 try:
@@ -87,6 +89,7 @@ def _pairs(text: str) -> dict:
 
 LOTW_REPORT = "https://lotw.arrl.org/lotwuser/lotwreport.adi"
 QRZ_API = "https://logbook.qrz.com/api"
+WRL_API = "https://api.worldradioleague.com"
 TIMEOUT = 60          # a year of QSOs is a slow download, not a hung one
 
 
@@ -328,6 +331,239 @@ class QrzLogbook:
         d = self._call("INSERT", **kw)
         return {"ok": True, "logid": d.get("LOGID", ""),
                 "count": d.get("COUNT", "")}
+
+
+class WrlLogbook:
+    """World Radio League's developer API.
+
+    One API key, sent as a bearer token. Every reply - success or failure -
+    arrives in the same `{data, meta, error}` envelope, so one unwrapper
+    handles both, and `error.code` is stable where the message text is not.
+
+    Three things in the API shape how it is used here:
+
+    * **One contact per request.** `POST /v1/contacts` takes exactly one, and
+      the budget is 60 writes a minute. So a push paces itself, and a decade
+      of contacts belongs in World Radio League's own ADIF import instead.
+    * **Paging is by opaque cursor**, ordered newest first. A pull walks
+      `meta.nextCursor` until it comes back null.
+    * **Enrichment is asynchronous.** A contact just written comes back
+      without its DXCC or distance; they appear a moment later. Nothing waits
+      for that - hamdash works both out locally anyway - and anything sent is
+      never overwritten by it.
+
+    DELETE exists in the API and is deliberately not implemented, the same as
+    QRZ: nothing here should be able to remove somebody's contacts.
+    """
+
+    name = "wrl"
+    PAGE = 100
+    # 60 writes a minute is one a second. Leave a little room: the minute the
+    # server is counting is not the minute this clock is.
+    WRITE_PAUSE = 1.1
+    # Identifies the logger to WRL, and is required on every contact.
+    PROGRAM_ID = "hamdash"
+
+    def __init__(self, api_key: str = "", logbook_id: str = "") -> None:
+        self.api_key = (api_key or "").strip()
+        self.logbook_id = (logbook_id or "").strip()
+
+    def _call(self, method: str, path: str, params=None, body=None) -> dict:
+        if not self.api_key:
+            raise SyncError("World Radio League needs its API key (Settings "
+                            "-> Integrations -> logbook sync). Generate one "
+                            "under Integrations -> Developer API on the site; "
+                            "it is shown once and cannot be read back.")
+        try:
+            r = requests.request(
+                method, f"{WRL_API}{path}", params=params, json=body,
+                timeout=TIMEOUT,
+                headers={"Authorization": f"Bearer {self.api_key}",
+                         "Accept": "application/json",
+                         "User-Agent": USER_AGENT})
+        except requests.RequestException as exc:
+            raise SyncError(f"could not reach World Radio League: {exc}") from exc
+
+        if r.status_code == 429:
+            # They say how long, computed from whichever window blocked us.
+            wait = r.headers.get("Retry-After", "")
+            raise SyncError(
+                "World Radio League is rate limiting this key"
+                + (f"; it asks for {wait}s" if wait else "")
+                + ". Nothing was lost - run it again after that.")
+        try:
+            env = r.json()
+        except ValueError:
+            raise SyncError(f"World Radio League replied with "
+                            f"{r.status_code} and no JSON: "
+                            f"{' '.join(r.text.split())[:200]}") from None
+        err = env.get("error")
+        if err:
+            code = err.get("code", "")
+            msg = err.get("message") or code or "refused"
+            if code in ("INVALID_KEY", "KEY_REVOKED", "MISSING_CREDENTIALS"):
+                msg = f"{msg} - check the API key in Settings."
+            elif code == "MEMBERSHIP_REQUIRED":
+                msg = f"{msg} - this endpoint needs a World Radio League membership."
+            raise SyncError(f"World Radio League: {msg}")
+        if r.status_code >= 400:
+            raise SyncError(f"World Radio League returned {r.status_code}")
+        return env
+
+    # ------------------------------------------------------------- reading
+    def me(self) -> dict:
+        return self._call("GET", "/v1/me").get("data") or {}
+
+    def test(self) -> dict:
+        who = self.me()
+        book = (who.get("defaultLogbook") or {})
+        quota = who.get("quota") or {}
+        where = book.get("name") or "no default logbook"
+        left = quota.get("writesRemaining")
+        return {"ok": True, "uid": who.get("uid", ""),
+                "logbook": book.get("name", ""),
+                "logbook_id": book.get("id", ""),
+                "message": f"{who.get('uid', 'key')} \u00b7 {where}"
+                           + (f" \u00b7 {left} writes left today"
+                              if left is not None else "")}
+
+    def contacts(self, since: str = "", max_pages: int = 400):
+        """Every contact, newest first, walking the cursor."""
+        cursor, pages = "", 0
+        while pages < max_pages:
+            pages += 1
+            params = {"limit": self.PAGE}
+            if cursor:
+                params["cursor"] = cursor
+            if since:
+                params["since"] = since
+            env = self._call("GET", "/v1/contacts", params=params)
+            rows = env.get("data") or []
+            for row in rows:
+                yield row
+            cursor = (env.get("meta") or {}).get("nextCursor")
+            if not cursor or not rows:
+                return
+
+    def pull(self, since: str = "") -> str:
+        """Their contacts as ADIF, so the one importer dedupes them.
+
+        Converting here rather than inventing a second way in means a pull
+        from World Radio League merges exactly like one from LoTW or QRZ.
+        """
+        records = [adif_record(as_qso(c)) for c in self.contacts(since=since)]
+        if not records:
+            raise SyncError("World Radio League has no contacts for this key"
+                            + (f" since {since}" if since else "") + ".")
+        return "<EOH>\n" + "\n".join(records) + "\n"
+
+    # ------------------------------------------------------------- writing
+    def push_record(self, row: dict, my_callsign: str = "") -> dict:
+        body = as_contact(row, my_callsign=my_callsign,
+                          program_id=self.PROGRAM_ID)
+        if self.logbook_id:
+            body["logbookId"] = self.logbook_id
+        env = self._call("POST", "/v1/contacts", body=body)
+        d = env.get("data") or {}
+        return {"ok": True, "id": d.get("id", ""),
+                "duplicate": bool(d.get("isDuplicate"))}
+
+
+# ---- translating between a hamdash QSO and a WRL contact -------------------
+# WRL is the one logbook here that does not speak ADIF over the wire. It keeps
+# one instant rather than ADIF's separate date and time, and camelCases the
+# rest; these two functions are the whole of the difference.
+
+_TO_WRL = {
+    "rst_sent": "rstSent", "rst_rcvd": "rstRcvd", "gridsquare": "gridsquare",
+    "name": "name", "qth": "qth", "state": "state", "comment": "notes",
+    "tx_pwr": "txPwr", "my_gridsquare": "myGridsquare",
+}
+_FROM_WRL = {v: k for k, v in _TO_WRL.items()}
+
+
+def as_contact(row: dict, my_callsign: str = "", program_id: str = "hamdash") -> dict:
+    """A logged QSO as the JSON WRL wants."""
+    call = str(row.get("call") or "a QSO").strip().upper()
+    date = str(row.get("qso_date") or "").strip()
+    tm = str(row.get("time_on") or "").strip().ljust(6, "0")[:6]
+    if len(date) != 8:
+        raise SyncError(f"{call} has no usable date, so World Radio League "
+                        f"cannot place it in time.")
+    freq = str(row.get("freq") or "").strip()
+    band = str(row.get("band") or "").strip()
+    if not freq and not band:
+        raise SyncError(f"{call} has neither frequency nor band; World Radio "
+                        f"League requires both.")
+    out = {
+        "programId": program_id,
+        "call": call,
+        "timestamp": f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+                     f"T{tm[:2]}:{tm[2:4]}:{tm[4:6]}Z",
+        "mode": str(row.get("mode") or "SSB").strip().upper(),
+    }
+    if freq:
+        out["freq"] = float(freq)
+        out["band"] = band or band_for(float(freq))
+    else:
+        out["band"] = band
+        out["freq"] = mid_of(band)
+    for ours, theirs in _TO_WRL.items():
+        v = str(row.get(ours) or "").strip()
+        if v:
+            out[theirs] = v
+    station = str(row.get("my_callsign") or my_callsign or "").strip().upper()
+    if station:
+        out["stationCallsign"] = station
+    return out
+
+
+def as_qso(contact: dict) -> dict:
+    """A WRL contact in hamdash's own field names."""
+    ts = str(contact.get("timestamp") or "")
+    digits = re.sub(r"[^0-9]", "", ts.replace("Z", ""))
+    out = {"call": str(contact.get("call") or "").strip().upper(),
+           "qso_date": digits[:8], "time_on": digits[8:14][:4]}
+    for theirs, ours in _FROM_WRL.items():
+        v = contact.get(theirs)
+        if v not in (None, ""):
+            out[ours] = str(v)
+    for key, ours in (("mode", "mode"), ("stationCallsign", "my_callsign"),
+                      ("dxcc", "dxcc")):
+        v = contact.get(key)
+        if v not in (None, ""):
+            out[ours] = str(v)
+    freq = contact.get("freq")
+    if freq not in (None, ""):
+        out["freq"] = f"{float(freq):.6f}"
+    # They send the band as a number of metres ("20") as readily as a name
+    # ("20m"), and either may be absent when the frequency is not. Anything
+    # that does not land on a band this log knows defers to the frequency,
+    # which is the thing that cannot be ambiguous.
+    band = contact.get("band")
+    known = {n for _, _, n in BANDS}
+    name = f"{band:g}m" if isinstance(band, (int, float)) else str(band or "").strip()
+    if name and name.lower() in known:
+        out["band"] = name.lower()
+    elif freq not in (None, ""):
+        out["band"] = band_for(float(freq))
+    elif name:
+        out["band"] = name
+    return out
+
+
+def adif_record(row: dict) -> str:
+    """One QSO as an ADIF record, so the ordinary importer can dedupe it."""
+    return " ".join(f"<{k.upper()}:{len(str(v))}>{v}"
+                    for k, v in row.items() if str(v or "").strip()) + " <EOR>"
+
+
+def mid_of(band: str) -> float:
+    """A frequency for a QSO logged with only a band. WRL requires one."""
+    for lo, hi, name in BANDS:
+        if name == str(band).strip().lower():
+            return round((lo + hi) / 2, 3)
+    raise SyncError(f"{band!r} is not a band hamdash knows a frequency for.")
 
 
 class Runner:

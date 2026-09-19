@@ -270,6 +270,16 @@ shape it settled on is worth reusing:
   ticking one unticks the other. Both running would upload the same contacts
   twice and then re-upload each other's confirmations on the next round.
 
+- **World Radio League is the one that does not speak ADIF over the wire.**
+  It keeps one instant rather than ADIF's date and time, camelCases its
+  fields, and takes a band as a number of metres or as a name. `as_contact`
+  and `as_qso` in `qsl.py` are the whole of the difference; a pull is rendered
+  back into ADIF so it goes through the one importer and dedupes like the
+  others. `POST /v1/contacts` takes exactly one contact and allows sixty a
+  minute, so a push sleeps `WRITE_PAUSE` between records and stops on a 429
+  rather than burning the rest of the log against a closed window. Their
+  `DELETE` is deliberately not implemented, the same as QRZ. Spec:
+  worldradioleague.com/developer
 - **LoTW push has no API.** ARRL takes signed `.tq8` only, and the certificate
   is inside TQSL. `Lotw.push` shells out to TQSL or refuses with what to do.
   Don't "simplify" this into an HTTP POST; there isn't one.

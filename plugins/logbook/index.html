@@ -193,6 +193,12 @@
     <button class="btn btn-quiet" data-push="qrz">Push</button>
     <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="qrz"> auto</label>
   </span>
+  <span class="sync-svc" id="sync-wrl" hidden>
+    <span class="sync-name">WRL</span>
+    <button class="btn btn-quiet" data-pull="wrl" title="Fetch from World Radio League. Nothing is duplicated: a contact already in the log is updated, not added again.">Pull</button>
+    <button class="btn btn-quiet" data-push="wrl">Push</button>
+    <label title="Upload new contacts and pull changes every minute. Only one service at a time."><input type="checkbox" data-auto="wrl"> auto</label>
+  </span>
   <span class="sync-state" id="sync-state"></span>
 </div>
 
@@ -453,16 +459,21 @@ async function refreshSync() {
   try {
     const s = await HD.get('/api/log/sync');
     let any = false;
-    [['lotw', s.lotw], ['qrz', s.qrz]].forEach(([name, svc]) => {
+    [['lotw', s.lotw], ['qrz', s.qrz], ['wrl', s.wrl]].forEach(([name, svc]) => {
       // LoTW can be set up for pulling and still not be able to push, because
       // only TQSL can sign an upload. Hiding the button is more honest than
       // offering one that always fails.
+      if (!svc) return;
+      // LoTW can be set up for pulling and still not be able to push, because
+      // only TQSL can sign an upload. Hide that one button rather than the
+      // whole service: the pull works perfectly well without it.
       const canPush = name === 'lotw' ? (svc.configured && svc.can_push)
                                       : svc.configured;
-      $(`#sync-${name}`).hidden = !canPush;
-      if (canPush) {
+      $(`#sync-${name}`).hidden = !svc.configured;
+      if (svc.configured) {
         any = true;
         const b = document.querySelector(`[data-push="${name}"]`);
+        b.hidden = !canPush;
         b.textContent = svc.pending
           ? `Push ${name.toUpperCase()} (${svc.pending})`
           : `Push ${name.toUpperCase()}`;

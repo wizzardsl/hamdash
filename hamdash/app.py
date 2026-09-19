@@ -20,7 +20,7 @@ from .services import dxcc
 from .services import grid as gridlib
 from .services.callsign import Lookup
 from .services.logbook import Logbook
-from .services.qsl import Lotw, QrzLogbook, Runner, SyncError
+from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
 from .services.radio import MODES, Rig
 from .services.space import Aurora, Drap, Ionosondes
 
@@ -665,6 +665,20 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def _qrz() -> QrzLogbook:
         return QrzLogbook(cfg.data.get("logbook_sync", {}).get("qrz_api_key", ""))
 
+    def _iso(yyyymmdd: str) -> str:
+        """The UI's YYYYMMDD as the ISO instant WRL asks for.
+
+        LoTW and QRZ take the ADIF form; World Radio League keeps one instant
+        rather than a date and a time, so the conversion lives here rather
+        than making the form ask twice for the same thing.
+        """
+        d = "".join(ch for ch in str(yyyymmdd or "") if ch.isdigit())
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}T00:00:00Z" if len(d) >= 8 else ""
+
+    def _wrl() -> WrlLogbook:
+        c = cfg.data.get("logbook_sync", {})
+        return WrlLogbook(c.get("wrl_api_key", ""), c.get("wrl_logbook_id", ""))
+
     @app.get("/api/log/sync")
     @guard("log")
     def sync_state():
@@ -687,6 +701,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             "qrz": {"configured": bool(c.get("qrz_api_key")),
                     "pushed_id": int(c.get("qrz_pushed_id") or 0),
                     "pending": pending("qrz_pushed_id")},
+            "wrl": {"configured": bool(c.get("wrl_api_key")),
+                    "pushed_id": int(c.get("wrl_pushed_id") or 0),
+                    "pending": pending("wrl_pushed_id")},
         })
 
     @app.post("/api/log/sync/<service>/<direction>")
@@ -770,6 +787,48 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     "message": f"{sent} sent"
                                + (f", {len(failed)} refused" if failed else "")}
 
+        def pull_wrl():
+            res = log.import_adif(_wrl().pull(since=_iso(since)))
+            res["message"] = (f"{res['added']} new, {res['updated']} updated, "
+                              f"{res['skipped']} already had")
+            return res
+
+        def push_wrl():
+            rows = to_send("wrl")
+            if dry_run:
+                return {"would_send": len(rows), "dry_run": True,
+                        "message": f"{len(rows)} QSOs would be sent to World "
+                                   f"Radio League"
+                                   f"{' from ' + since if since else ''}. "
+                                   f"Untick dry run to send them."}
+            # One contact per request, 60 a minute: their API has no bulk
+            # endpoint and says so - a whole log belongs in their own ADIF
+            # import. Pacing here keeps an ordinary push inside the budget
+            # instead of earning a 429 halfway through.
+            book, sent, dupes, failed = _wrl(), 0, 0, []
+            for i, rec in enumerate(rows):
+                if i:
+                    time.sleep(book.WRITE_PAUSE)
+                try:
+                    out = book.push_record(rec, my_callsign=mine)
+                    sent += 1
+                    dupes += 1 if out.get("duplicate") else 0
+                except SyncError as exc:
+                    failed.append(f"{rec.get('call')}: {exc}")
+                    # A rate limit will not clear by trying harder, and the
+                    # rest of the log is still here for the next run.
+                    if "rate limiting" in str(exc) or len(failed) > 20:
+                        break
+            if new_only and not failed:
+                mark_sent("wrl")
+            return {"sent": sent, "failed": failed,
+                    "message": f"{sent} sent"
+                               + (f", {dupes} already there" if dupes else "")
+                               + (f", {len(failed)} refused" if failed else "")}
+
+        def test_wrl():
+            return _wrl().test()
+
         def test_lotw():
             return _lotw().test()
 
@@ -777,8 +836,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return _qrz().test()
 
         jobs = {("lotw", "pull"): pull_lotw, ("qrz", "pull"): pull_qrz,
+                ("wrl", "pull"): pull_wrl,
                 ("lotw", "push"): push_lotw, ("qrz", "push"): push_qrz,
-                ("lotw", "test"): test_lotw, ("qrz", "test"): test_qrz}
+                ("wrl", "push"): push_wrl,
+                ("lotw", "test"): test_lotw, ("qrz", "test"): test_qrz,
+                ("wrl", "test"): test_wrl}
         fn = jobs.get((service, direction))
         if fn is None:
             return jsonify(error=f"no {direction} for {service}"), 404

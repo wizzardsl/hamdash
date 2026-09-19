@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **World Radio League as a third sync service**, beside LoTW and QRZ: pull,
+  push, per-service auto, and one API key. Their API is the one here that does
+  not speak ADIF over the wire — it keeps a single instant where ADIF keeps a
+  date and a time — so a pull is translated back into ADIF and goes through
+  the same importer, which means it dedupes exactly like the others. It takes
+  one contact per request and allows sixty a minute, so a push paces itself
+  and a rate limit stops it cleanly rather than half way. `DELETE` exists in
+  their API and is deliberately not implemented, the same as QRZ.
 - **A `blue-hour` theme** — deep navy with cyan highlights, in the manner of
   World Radio League. Links now take the theme's accent instead of the
   browser's default blue, which was hard to read on any dark panel and all but

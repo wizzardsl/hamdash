@@ -42,7 +42,8 @@ DEFAULTS = {
     "callsign_lookup": {"provider": "auto", "user": "", "password": "",
                         "account": "", "cache_days": 30},
     "logbook_sync": {"lotw_user": "", "lotw_password": "",
-                     "qrz_api_key": "", "tqsl_path": "",
+                     "qrz_api_key": "", "wrl_api_key": "",
+                     "wrl_logbook_id": "", "tqsl_path": "",
                      "station_location": ""},
     "units": "km",   # km | mi | nmi
 }
@@ -54,6 +55,7 @@ SECRETS = (
     ("callsign_lookup", "password"),
     ("logbook_sync", "lotw_password"),
     ("logbook_sync", "qrz_api_key"),
+    ("logbook_sync", "wrl_api_key"),
 )
 
 
