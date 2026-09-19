@@ -174,6 +174,12 @@ pipe from the supervisor) is left alone.
 - The topic is `radio.state`, not `rig.state`. The docs said `rig.` for a
   while; `rig.` is reserved so nothing can squat the name they point at, but
   nothing publishes it.
+- **Slow to start is not dead.** `_wait_ready` keeps looking while the process
+  is alive; it used to give up at `START_TIMEOUT` and never look again, so a
+  cold boot left a perfectly healthy card reading "no response" until the app
+  was restarted. The status stays `starting`, which is what makes the proxy
+  hand back a self-refreshing page, so the tile fills in by itself.
+  `READY_GIVE_UP` (180s) is for a card that is alive but never listens.
 - `wedged` ≠ `crashed`. A card can bind its port and hang; `/‌_health` polling
   catches that. Wedged cards are deliberately not auto-restarted — restarting
   something hung while holding a serial handle makes it worse.

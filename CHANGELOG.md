@@ -113,6 +113,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **A card that was slow to start never recovered.** `_wait_ready` gave up
+  after twelve seconds, said "no response" and stopped looking; the card would
+  bind its port a moment later and serve perfectly while the board went on
+  reporting it dead until the app was restarted. A cold boot — a fresh
+  python.exe being read off disk and scanned, several cards importing Flask at
+  once — is easily slower than that, which is why it came right after a few
+  restarts. It now keeps watching while the process is alive, and the tile
+  fills itself in when the card is up.
 - **The map drew a contact's dot but not the line to it**, for every contact
   over land — only the long path across the Pacific showed, because ocean is
   the part with nothing drawn on top of it. The built-in basemap shared the
