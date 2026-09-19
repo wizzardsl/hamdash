@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<style>
+  body { margin: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  .bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--rule);
+  }
+  .bar input, .bar select {
+    font: inherit; font-size: 12px; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--rule); border-radius: var(--radius); padding: 3px 6px;
+  }
+  .bar input.mono { font-family: var(--mono); }
+  .bar #watch { width: 88px; text-transform: uppercase; }
+  .bar .btn { font-size: 12px; padding: 3px 8px; }
+  .muted { color: var(--muted); }
+  .grow { flex: 1; }
+  .dirs { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+  .dirs button {
+    font: inherit; font-size: 12px; background: none; border: 0;
+    color: var(--muted); padding: 3px 9px; cursor: pointer;
+  }
+  .dirs button.on { background: var(--accent); color: var(--bg); }
+  #map { flex: 1; min-height: 0; background: var(--bg); }
+  .foot {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 4px 8px; font-size: 11px; color: var(--muted);
+    border-top: 1px solid var(--rule);
+  }
+  .err { color: var(--alert); }
+  .stale { color: var(--accent); }
+  .leaflet-container { background: var(--bg); font: inherit; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+  }
+  .leaflet-popup-content { margin: 8px 10px; font-size: 12px; }
+  .leaflet-popup-content h3 {
+    margin: 0 0 5px; font-size: 13px; color: var(--accent); font-weight: 600;
+  }
+  .leaflet-popup-content dl {
+    display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0;
+  }
+  .leaflet-popup-content dt { color: var(--muted); }
+  .leaflet-popup-content dd { margin: 0; font-family: var(--mono); }
+  .leaflet-bar a, .leaflet-control-layers {
+    background: var(--panel); color: var(--ink); border-color: var(--rule);
+  }
+  .leaflet-bar a { border-bottom-color: var(--rule); }
+  .leaflet-bar a:hover { background: var(--panel-2); color: var(--accent); }
+  .leaflet-control-layers-toggle { background-color: var(--panel); }
+  .leaflet-control-layers-expanded { color: var(--ink); padding: 6px 10px 6px 6px; }
+  .leaflet-control-attribution { background: var(--panel); color: var(--muted); }
+  .leaflet-control-attribution a { color: var(--muted); }
+  .leaflet-tooltip {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11px;
+  }
+  .leaflet-tooltip-top:before { border-top-color: var(--rule); }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <input id="watch" class="mono" spellcheck="false" title="A callsign, or a grid square for everything around it. Empty uses your own grid.">
+  <button class="btn btn-quiet" id="go">Watch</button>
+  <div class="dirs" role="group" aria-label="Which side of the report">
+    <button data-dir="all" class="on">Both</button>
+    <button data-dir="tx">Heard me</button>
+    <button data-dir="rx">I heard</button>
+  </div>
+  <select id="band" aria-label="Band"><option value="">Any band</option></select>
+  <select id="mode" aria-label="Mode"><option value="">Any mode</option></select>
+  <select id="country" aria-label="Country"><option value="">Anywhere</option></select>
+  <select id="snr" aria-label="Signal">
+    <option value="">Any signal</option>
+    <option value="0">0 dB and better</option>
+    <option value="-10">&minus;10 dB and better</option>
+    <option value="-20">&minus;20 dB and better</option>
+  </select>
+  <select id="since" aria-label="Seen within">
+    <option value="900">Last 15 min</option>
+    <option value="3600" selected>Last hour</option>
+    <option value="10800">Last 3 hours</option>
+    <option value="21600">Last 6 hours</option>
+    <option value="86400">Last 24 hours</option>
+  </select>
+  <span class="grow"></span>
+  <button class="btn btn-quiet" id="refresh" title="Ask PSK Reporter again. They ask for no more than one request every five minutes, so this waits its turn.">Refresh</button>
+</div>
+
+<div id="map"></div>
+
+<div class="foot">
+  <span id="count">—</span>
+  <span id="age" class="muted"></span>
+  <span class="grow"></span>
+  <span id="err" class="err"></span>
+  <span class="muted">data: <a href="https://pskreporter.info/" target="_blank" rel="noopener">pskreporter.info</a></span>
+</div>
+
+<script src="/static/js/hamdash.js"></script>
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/proj4.js"></script>
+<script src="/static/vendor/proj4leaflet.js"></script>
+<script src="/static/vendor/world.js"></script>
+<script src="/static/js/hdmap.js"></script>
+<script>
+HD.cardId = 'psk_reporter';
+const $ = (s) => document.querySelector(s);
+const THEME = HDMap.theme;
+
+let conf = {};
+let map = null, space = null, me = null;
+let all = [];              // every report the card gave us, unfiltered
+let meta = {};
+let ageTimer = null, pollTimer = null;
+let touched = false;
+const L_ = {};
+const filters = { dir: 'all', band: '', mode: '', country: '', snr: '', since: 3600 };
+
+// ---- drawing ---------------------------------------------------------------
+// One dot per station rather than one per report: a busy grid square produces
+// the same receiver a hundred times over, and a hundred dots in one place is
+// just a blob that cannot be clicked.
+function stations(rows) {
+  const out = new Map();
+  rows.forEach((r) => {
+    [['tx', r.tx, r.tx_grid, r.tx_dxcc, r.tx_region],
+     ['rx', r.rx, r.rx_grid, r.rx_dxcc, r.rx_region]].forEach(
+      ([side, call, grid, dxcc, region]) => {
+        const at = HDMap.toLatLon(grid);
+        if (!at) return;                 // no locator, nothing to draw
+        const key = `${call}|${grid}`;
+        const got = out.get(key) || {
+          call, grid, at, dxcc, region, sides: new Set(),
+          reports: [], best: null, last: 0,
+        };
+        got.sides.add(side);
+        got.reports.push(r);
+        got.last = Math.max(got.last, r.at);
+        if (r.snr !== null && (got.best === null || r.snr > got.best)) got.best = r.snr;
+        out.set(key, got);
+      });
+  });
+  return [...out.values()];
+}
+
+const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const ago = (secs) => {
+  const d = Math.max(0, Math.round(Date.now() / 1000 - secs));
+  if (d < 90) return `${d}s ago`;
+  if (d < 5400) return `${Math.round(d / 60)}m ago`;
+  return `${(d / 3600).toFixed(1)}h ago`;
+};
+
+// Colour by signal, the way the reports read: strong is good.
+function snrColour(snr) {
+  if (snr === null) return THEME.grip;
+  if (snr >= -5) return THEME.signal;
+  if (snr >= -15) return THEME.accent;
+  return THEME.alert;
+}
+
+// Above this many drawn objects, dots move from SVG to canvas. SVG has no
+// clipped edge to draw half a dot at, so it is the better surface while there
+// are few enough of them; a busy grid square on 20m is not that.
+const SVG_LIMIT = 600;
+// The most recent paths only. Two thousand great circles is six thousand
+// polylines once the world copies are counted, which drags panning to a
+// second a frame - and a map that dense says nothing a few hundred does not.
+const PATH_LIMIT = 500;
+
+function draw() {
+  if (!map) return;
+  const rows = visible();
+  L_.spots.clearLayers();
+  L_.paths.clearLayers();
+  let pathsDrawn = 0;
+
+  if (conf.paths !== false) {
+    // Lines fade with age, so what is happening now stands out from what
+    // happened an hour ago.
+    const now = Date.now() / 1000;
+    const recent = rows.length > PATH_LIMIT
+      ? rows.slice().sort((a, b) => b.at - a.at).slice(0, PATH_LIMIT)
+      : rows;
+    pathsDrawn = recent.length;
+    recent.forEach((r) => {
+      const a = HDMap.toLatLon(r.tx_grid), b = HDMap.toLatLon(r.rx_grid);
+      if (!a || !b) return;
+      const far = HDMap.endpoint(a, b);
+      const run = HDMap.greatCircle(a, far, 48);
+      const old = Math.min(1, (now - r.at) / (filters.since || 3600));
+      HDMap.each((dx) => {
+        L.polyline(HDMap.shift(run, dx), {
+          renderer: L_.canvas, color: snrColour(r.snr), weight: 1,
+          opacity: 0.45 * (1 - 0.75 * old), interactive: false,
+        }).addTo(L_.paths);
+      });
+    });
+  }
+
+  const spots = stations(rows);
+  const renderer = spots.length * HDMap.copies().length > SVG_LIMIT
+    ? L_.canvas : undefined;
+  spots.forEach((st) => {
+    const mine = me && st.grid.toUpperCase().startsWith((me.grid || '').slice(0, 4).toUpperCase());
+    HDMap.each((dx) => {
+      L.circleMarker([st.at.lat, st.at.lon + dx], {
+        renderer,
+        radius: mine ? 6 : 4,
+        weight: 1.2, color: THEME.bg,
+        fillColor: mine ? THEME.accent : snrColour(st.best),
+        fillOpacity: 1,
+      }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
+        .bindPopup(() => popupFor(st), { maxWidth: 300 })
+        .addTo(L_.spots);
+    });
+  });
+
+  const heard = rows.length;
+  $('#count').textContent = heard
+    ? `${heard} report${heard === 1 ? '' : 's'} · ${spots.length} stations`
+      + (pathsDrawn && pathsDrawn < heard
+         ? ` · newest ${pathsDrawn} paths drawn` : '')
+    : 'nothing matches these filters';
+}
+
+function popupFor(st) {
+  const recent = st.reports.slice().sort((a, b) => b.at - a.at).slice(0, 6);
+  const rows = recent.map((r) => {
+    const dir = r.tx === st.call ? `→ ${esc(r.rx)}` : `← ${esc(r.tx)}`;
+    return `<dt>${dir}</dt><dd>${esc(r.band || r.mhz)} ${esc(r.mode)}`
+         + `${r.snr === null ? '' : ` ${r.snr > 0 ? '+' : ''}${r.snr} dB`}`
+         + ` <span class="muted">${ago(r.at)}</span></dd>`;
+  }).join('');
+  const where = [st.region, st.dxcc].filter(Boolean).join(' · ');
+  return `<h3>${esc(st.call)}</h3>`
+       + `<dl><dt>Grid</dt><dd>${esc(st.grid)}</dd>`
+       + (where ? `<dt>Where</dt><dd>${esc(where)}</dd>` : '')
+       + `<dt>Reports</dt><dd>${st.reports.length}</dd>`
+       + rows + '</dl>';
+}
+
+// ---- filtering, all of it local -------------------------------------------
+// Nothing here touches the network. That is the point: PSK Reporter asks for
+// one request every five minutes, and a filter bar is a machine for making
+// requests if you let it be.
+function visible() {
+  const cut = Date.now() / 1000 - (filters.since || 86400);
+  return all.filter((r) => {
+    if (r.at < cut) return false;
+    if (filters.dir === 'tx' && !r.is_tx) return false;
+    if (filters.dir === 'rx' && !r.is_rx) return false;
+    if (filters.band && r.band !== filters.band) return false;
+    if (filters.mode && r.mode !== filters.mode) return false;
+    if (filters.snr !== '' && (r.snr === null || r.snr < Number(filters.snr))) return false;
+    if (filters.country) {
+      const far = r.is_tx ? r.rx_dxcc : r.tx_dxcc;
+      // With no side established - a grid query watching everybody - either
+      // end matching is a match.
+      if (r.is_tx || r.is_rx) {
+        if (far !== filters.country) return false;
+      } else if (r.tx_dxcc !== filters.country && r.rx_dxcc !== filters.country) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+// The choices come from the data, so a band with nothing on it is not offered.
+function fillChoices() {
+  const fill = (sel, values, keep) => {
+    const el = $(sel);
+    const was = el.value;
+    el.innerHTML = `<option value="">${keep}</option>`
+      + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    el.value = values.includes(was) ? was : '';
+    if (el.value !== was) {
+      filters[sel.slice(1)] = el.value;
+    }
+  };
+  const uniq = (fn) => [...new Set(all.map(fn).filter(Boolean))].sort();
+  fill('#band', uniq((r) => r.band), 'Any band');
+  fill('#mode', uniq((r) => r.mode), 'Any mode');
+  fill('#country', [...new Set(all.flatMap((r) => [r.tx_dxcc, r.rx_dxcc])
+                                  .filter(Boolean))].sort(), 'Anywhere');
+}
+
+// ---- fetching --------------------------------------------------------------
+function showAge() {
+  const a = Number(meta.age_s || 0) + Math.round((Date.now() - (meta.got || Date.now())) / 1000);
+  const next = Math.max(0, Number(meta.next_s || 0) - Math.round((Date.now() - (meta.got || Date.now())) / 1000));
+  const bits = [];
+  if (meta.watching) bits.push(`watching ${meta.watching}`);
+  bits.push(a < 90 ? `updated ${a}s ago` : `updated ${Math.round(a / 60)}m ago`);
+  if (next > 0) bits.push(`next in ${next < 90 ? next + 's' : Math.round(next / 60) + 'm'}`);
+  if (meta.truncated) bits.push('capped at 2000 reports');
+  const el = $('#age');
+  el.textContent = bits.join(' · ');
+  el.className = a > 900 ? 'stale' : 'muted';
+}
+
+async function load(force) {
+  try {
+    const watch = $('#watch').value.trim();
+    // HD.card turns a third argument into a POST, so the query goes in the
+    // path: this is a read and should stay one.
+    const q = new URLSearchParams({
+      watch, hours: String(hoursFor(filters.since)), force: force ? '1' : '0',
+    });
+    const d = await HD.card('psk_reporter', `/api/reports?${q}`);
+    if (!d.ok) { $('#err').textContent = d.error || 'no data'; return; }
+    $('#err').textContent = d.error || '';
+    all = d.reports || [];
+    meta = Object.assign({}, d, { got: Date.now() });
+    fillChoices();
+    draw();
+    showAge();
+    if (!touched) fit();
+  } catch (e) {
+    $('#err').textContent = e.message;
+  }
+}
+
+// Ask upstream for a little more than the window on screen, so widening the
+// time filter usually needs no request at all.
+function hoursFor(secs) {
+  const h = (secs || 3600) / 3600;
+  return Math.min(24, h <= 1 ? 1 : h <= 3 ? 3 : h <= 6 ? 6 : h <= 12 ? 12 : 24);
+}
+
+function fit() {
+  // Every longitude is unwrapped relative to the station being watched, not
+  // to each report's own transmitter. Reports radiate from one place, so
+  // this bounds the whole set inside a single world; unwrapping each pair
+  // against its own end let the extremes drift to -233 and +237, which is
+  // 470 degrees and frames the map showing two copies of everything.
+  const home = me || HDMap.toLatLon(meta.watching || '') || { lat: 20, lon: 0 };
+  const pts = [];
+  const add = (p) => { if (p) pts.push([p.lat, HDMap.unwrapLon(home.lon, p.lon)]); };
+  visible().forEach((r) => {
+    add(HDMap.toLatLon(r.tx_grid));
+    add(HDMap.toLatLon(r.rx_grid));
+  });
+  if (!pts.length) return;
+  // maxZoom keeps a single nearby report from filling the screen with one
+  // county; the whole point of the card is the spread.
+  map.fitBounds(L.latLngBounds(pts), { padding: [25, 25], maxZoom: 5 });
+}
+
+// ---- setup -----------------------------------------------------------------
+function wantAzimuthal() {
+  return (conf.projection || 'flat').startsWith('azimuthal') && !!me;
+}
+
+function build() {
+  const az = wantAzimuthal();
+  map = HDMap.create('map', { azimuthal: az, centre: me || { lat: 20, lon: 0 } });
+  L_.base = HDMap.basemap(conf).addTo(map);
+  L_.canvas = L.canvas({ padding: 0.3 }).addTo(map);
+  L_.paths = L.layerGroup().addTo(map);
+  L_.spots = L.layerGroup().addTo(map);
+
+  space = HDMap.spaceLayers(map, {
+    owmKey: (conf.owm_key || '').trim(),
+    report: ({ error }) => { if (error !== undefined) $('#err').textContent = error; },
+  });
+  Object.assign(L_, space.groups);
+  L.control.layers(null, Object.assign({ 'Reports': L_.spots, 'Paths': L_.paths },
+                                       space.overlays),
+                   { collapsed: true }).addTo(map);
+  HDMap.resetControl(map, () => { touched = false; fit(); });
+  map.on('zoomstart movestart', (e) => { if (e.hard !== true) touched = true; });
+  map.on('overlayadd overlayremove', () => space.sync());
+}
+
+let builtAzimuthal = false, builtWithKey = '';
+function rebuildIfNeeded() {
+  const want = wantAzimuthal(), key = (conf.owm_key || '').trim();
+  if (map && want === builtAzimuthal && key === builtWithKey) return false;
+  if (map) { map.remove(); map = null; }
+  $('#map').innerHTML = '';
+  build();
+  builtAzimuthal = want;
+  builtWithKey = key;
+  return true;
+}
+
+// ---- wiring ----------------------------------------------------------------
+document.querySelectorAll('.dirs button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.dirs button').forEach((o) => o.classList.remove('on'));
+    b.classList.add('on');
+    filters.dir = b.dataset.dir;
+    draw();
+  };
+});
+['band', 'mode', 'country', 'snr'].forEach((name) => {
+  $(`#${name}`).onchange = (e) => { filters[name] = e.target.value; draw(); };
+});
+$('#since').onchange = (e) => {
+  const was = hoursFor(filters.since);
+  filters.since = Number(e.target.value);
+  draw();
+  // Only go back to the card when the window needs more than was fetched.
+  if (hoursFor(filters.since) > was) load(false);
+};
+$('#go').onclick = () => { touched = false; load(false); };
+$('#watch').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { touched = false; load(false); }
+});
+$('#refresh').onclick = () => load(true);
+window.addEventListener('hamdash:theme', () => { HDMap.readTheme(); draw(); });
+
+HD.onSettings((v) => {
+  conf = v || {};
+  if ($('#watch').value.trim() === '' && conf.watch) $('#watch').value = conf.watch;
+  if (rebuildIfNeeded()) { draw(); if (!touched) fit(); }
+  else draw();
+});
+
+(async function boot() {
+  try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  try {
+    const st = await HD.card('psk_reporter', '/api/station');
+    if (st && st.grid) me = Object.assign({ call: st.callsign }, HDMap.toLatLon(st.grid), { grid: st.grid });
+  } catch { /* the map still works without knowing where you are */ }
+  $('#watch').value = (conf.watch || (me && me.grid ? me.grid.slice(0, 4) : '')).toUpperCase();
+  rebuildIfNeeded();
+  await load(false);
+  // The card serves from its cache, so this is cheap and keeps the age line
+  // honest without going anywhere near pskreporter.
+  ageTimer = setInterval(showAge, 5000);
+  pollTimer = setInterval(() => load(false), 60000);
+})().catch((e) => { $('#err').textContent = e.message; });
+</script>
+</body>
+</html>

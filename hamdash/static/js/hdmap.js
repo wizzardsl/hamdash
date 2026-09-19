@@ -51,8 +51,12 @@ window.HDMap = (function () {
   const copies = () => (azimuthal ? [0] : [-COPY_SPAN, 0, COPY_SPAN]);
 
   // ---- Maidenhead ----------------------------------------------------------
+  // Two to eight characters. PSK Reporter reports ten - FT8 stations that
+  // know their position to a few metres - and the extra pair is finer than a
+  // pixel at any zoom this draws at, so it is read and discarded rather than
+  // rejecting the whole locator and losing the station.
   function toLatLon(loc) {
-    const s = (loc || '').trim().toUpperCase();
+    const s = (loc || '').trim().toUpperCase().slice(0, 8);
     if (!/^[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?$/.test(s)) return null;
     const A = (c) => c.charCodeAt(0) - 65;
     let lon = A(s[0]) * 20 - 180, lat = A(s[1]) * 10 - 90;

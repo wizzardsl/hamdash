@@ -47,8 +47,10 @@ hamdash/config.py   config.json, layout.json, tile settings, search paths
 hamdash/services/   radio (rigctld), callsign, logbook, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
-plugins/            rig_control, logbook, beacon_map, spectrum, web_embed,
-                    hello_card
+plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
+                    psk_reporter, web_embed, hello_card
+hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
+hamdash/static/vendor/       leaflet, proj4, the world outline
 tests/              regression guards — js_api shape, bus namespace,
                     packaging/spec drift, release notes
 tools/              release_notes.py (release notes), smoke_frozen.py (build check)
@@ -387,8 +389,24 @@ shape it settled on is worth reusing:
   rapid requests, which is easy to hit while developing.
 - D-RAP arrives as a text table, not JSON. All-zero is the normal, good case
   and is reported as `quiet`, not as an empty failure.
-- `path_map` is Leaflet, vendored in the card (`vendor/`, BSD-2, ~190 kB with
-  its images) rather than from a CDN, so it works offline and frozen. The
+- **The map machinery is shared, in `hamdash/static/js/hdmap.js`.** World
+  copies, the azimuthal projection, the offline basemap and its pane, the
+  greyline and the space-weather overlays live there; a card keeps its own
+  pins, framing and data. Both map cards use it, so a fix lands once. Leaflet
+  and proj4 are vendored in `hamdash/static/vendor/` (BSD-2, ~190 kB with
+  images) rather than from a CDN, so they work offline and frozen.
+- **A card that reads somebody else's API owns the cache, and the floor is in
+  the card, not the page.** `psk_reporter` is the pattern: PSK Reporter asks
+  for one retrieval every five minutes and reserves the right to block heavy
+  users, while a filter bar invites a request per keystroke. So the card
+  fetches once per query, serves everything else from memory, filters entirely
+  in the browser over what was already fetched, and refuses to let a Refresh
+  button jump the queue. It reports the age and the wait rather than
+  pretending, and keeps serving stale data through an outage.
+- **PSK Reporter has no "whole world" query.** Every one is anchored on a
+  callsign, or on a grid square with `modify=grid`. Their own map uses feeds
+  that are not in the public API, so "everything near me" means a grid.
+- `path_map` is Leaflet-based. The
   offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the
   same picker as tile basemaps.
 - **Leaflet writes colours into SVG presentation attributes**, where

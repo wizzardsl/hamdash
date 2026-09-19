@@ -42,7 +42,8 @@ run.py ──> hamdash/app.py            Flask: static shell, REST API, SSE bus,
              ├── services/           radio (rigctld), callsign, logbook, grid math
              ├── sdk/                what a card author imports
              └── static/             board, drag/resize, themes, card palette
-plugins/     rig_control, logbook, beacon_map, spectrum, web_embed, hello_card
+plugins/     rig_control, logbook, beacon_map, spectrum, path_map,
+             psk_reporter, web_embed, hello_card
 ```
 
 Why processes and not imports: a card someone wrote at 1am shouldn't be able to
@@ -375,6 +376,30 @@ The table pages: 30 contacts at a time by default, and the picker beside
 host — `GET /api/log/page?q=&limit=&offset=` returns the rows and the total —
 because sorting a page in the browser sorts only that page, which silently
 drops contacts off the end of every page but the last.
+
+## PSK Reporter
+
+The `psk_reporter` card draws reception reports from
+[pskreporter.info](https://pskreporter.info/): who heard whom, where, on what
+band and mode, and how well. Filter by band, mode, signal, country, which side
+of the report you were on, and how recently — all of it on the same map as the
+path card, with the same layers and projections.
+
+Type a **callsign** to watch one station, or a **grid square** (CN89, CN89kg)
+for everything around it. Their query API has no "whole world" endpoint; every
+query is anchored on a callsign or a grid.
+
+**The five minute rule is enforced in the card.** PSK Reporter asks that data
+be retrieved no more often than once every five minutes and reserves the right
+to rate limit or block anyone who loads their system. So the card process
+fetches once per query and serves everything else from memory; every filter
+works on what is already in the browser and makes no request at all. Refresh
+waits its turn like everything else, and the footer says how old the data is
+and how long until the next request is allowed.
+
+`appcontact` — the address PSK Reporter asks heavy users for so they can get
+in touch rather than simply blocking — is a tile setting, empty by default.
+Nothing is sent unless you fill it in.
 
 ## Logbook sync
 

@@ -7,6 +7,23 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A PSK Reporter card.** Who is hearing whom, on the same map machinery as
+  the path card — a world that repeats, the azimuthal projection, greyline,
+  aurora, absorption and ionosondes — with the filters their own map has:
+  band, mode, signal, country, which side of the report, and how recently.
+  Watch a callsign, or a grid square for everything around you.
+
+  **Every filter works on what is already fetched.** PSK Reporter asks for no
+  more than one retrieval every five minutes and says plainly that heavy users
+  may be rate limited or blocked; a filter bar is a machine for making requests
+  if you let it be. So the card process holds the cache and enforces the floor
+  — the Refresh button cannot jump it either — and changing band or mode or
+  time costs nothing at all. The footer says how old the data is and when the
+  next request is allowed. An outage keeps showing what it had rather than
+  going blank.
+- **The map machinery is now shared** (`hamdash/static/js/hdmap.js`), so both
+  map cards get the same world copies, projections, basemaps and overlays from
+  one place. Leaflet moved to `hamdash/static/vendor/`.
 - **World Radio League as a third sync service**, beside LoTW and QRZ: pull,
   push, per-service auto, and one API key. Their API is the one here that does
   not speak ADIF over the wire — it keeps a single instant where ADIF keeps a
