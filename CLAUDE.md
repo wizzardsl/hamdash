@@ -386,6 +386,11 @@ shape it settled on is worth reusing:
   says which one the credentials are for. It used to assume HamQTH, which
   posted a QRZ password to a company that never asked for it and spent a
   failed login doing it.
+- `/api/lookup/cache` sits under `/api/lookup/<call>`. Werkzeug prefers the
+  static rule, so it routes correctly, but that is a property of the router
+  rather than anything the code says — `tests/test_lookup.py` pins it, because
+  if it ever reversed, clearing the cache would quietly become a lookup of a
+  station called CACHE.
 - **A provider failing is not a fact about the callsign, so it is not
   cached.** It used to be: the prefix fallback was stored with its note for
   `cache_days`, so whatever was being typed during an outage went on reporting

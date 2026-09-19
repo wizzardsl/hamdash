@@ -17,6 +17,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   unsorted slice. `GET /api/log/page` returns the rows plus the total.
 - **Test lookup** in Settings → Integrations: one deliberate attempt at the
   configured provider, which also clears a remembered refusal.
+- **Clear remembered lookups**, beside it, saying how many there are. An
+  answer is kept for a month, which is a long time to be shown a grid the
+  station has since corrected with no way to say "ask again". It forgets a
+  rejected login too. `GET`/`DELETE /api/lookup/cache`.
 - Under **Automatic**, a field saying which service the username and password
   belong to. It used to guess HamQTH, which posted a QRZ password to a company
   that never asked for it and spent a failed login doing it.

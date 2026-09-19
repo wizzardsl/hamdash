@@ -20,6 +20,8 @@ from unittest import mock
 
 import requests
 
+from hamdash.app import create_app
+from hamdash.config import Config
 from hamdash.services.callsign import (Lookup, Refused, _blocked_until,
                                        links_for)
 
@@ -214,6 +216,60 @@ class TestTheCache(unittest.TestCase):
         self.assertEqual(left, {"VA7SLL"}, "the good row went too, or the bad one stayed")
 
 
+class TestClearingTheCache(unittest.TestCase):
+    """The escape hatch for an answer that has gone stale. A hit is kept for a
+    month, which is a long time to be shown a grid the station has since
+    corrected with no way to say "ask again"."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix="hamdash-clear-"))
+        self.db = self.home / "cache.sqlite3"
+        self.lk = Lookup(provider="qrz", user="me", password="pw",
+                         cache_path=self.db)
+        self.good = {"ok": True, "callsign": "VE7SL", "locator": "CN89",
+                     "source": "qrz", "approximate": False}
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_it_counts_what_is_remembered(self):
+        self.assertEqual(self.lk.cache_size(), 0)
+        with mock.patch.object(self.lk, "_qrz", return_value=self.good):
+            self.lk.lookup("VE7SL")
+        self.assertEqual(self.lk.cache_size(), 1)
+
+    def test_clearing_says_how_many_and_empties_it(self):
+        with mock.patch.object(self.lk, "_qrz", return_value=self.good):
+            self.lk.lookup("VE7SL")
+            self.lk.lookup("VA7SLL")
+        self.assertEqual(self.lk.clear_cache(), 2)
+        self.assertEqual(self.lk.cache_size(), 0)
+
+    def test_the_next_lookup_asks_the_provider_again(self):
+        with mock.patch.object(self.lk, "_qrz", return_value=self.good) as qrz:
+            self.lk.lookup("VE7SL")
+            self.lk.lookup("VE7SL")              # from the cache
+            self.assertEqual(qrz.call_count, 1)
+            self.lk.clear_cache()
+            self.lk.lookup("VE7SL")
+            self.assertEqual(qrz.call_count, 2)
+
+    def test_it_forgets_a_rejected_login_too(self):
+        """This is the button pressed when lookups are misbehaving; leaving a
+        refusal in place would make it look like it had done nothing."""
+        self.lk._refused["qrz"] = (time.time() + 9999, "nope")
+        self.lk.clear_cache()
+        self.lk._check_block("qrz")              # must not raise
+
+    def test_clearing_an_empty_cache_is_not_an_error(self):
+        self.assertEqual(self.lk.clear_cache(), 0)
+
+    def test_it_works_without_a_cache_at_all(self):
+        lk = offline_lookup(provider="offline")
+        self.assertEqual(lk.cache_size(), 0)
+        self.assertEqual(lk.clear_cache(), 0)
+
+
 class TestFallback(unittest.TestCase):
     def test_nothing_answers_gives_an_approximate_result_and_says_so(self):
         lk = offline_lookup(provider="auto")
@@ -312,6 +368,51 @@ class TestGridlessAnswers(unittest.TestCase):
              mock.patch.object(lk, "_hamdb", return_value=self.full) as hamdb:
             lk.lookup("K1JT")
         hamdb.assert_not_called()
+
+class TestTheCacheEndpoints(unittest.TestCase):
+    """`/api/lookup/cache` sits under `/api/lookup/<call>`. Werkzeug prefers
+    the static rule, but that is a routing detail rather than something the
+    code says, so it is worth pinning: if it ever reversed, clearing the cache
+    would quietly become a lookup of a station called CACHE."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix="hamdash-cache-api-"))
+        (self.home / "config.json").write_text(json.dumps({
+            "station": {"callsign": "VA7SLL", "grid": "CN89kg"},
+            "radio": {"mock": True},
+            "callsign_lookup": {"provider": "offline", "cache_days": 30},
+        }), encoding="utf-8")
+        (self.home / "layout.json").write_text("[]", encoding="utf-8")
+        cfg = Config(self.home)
+        app, _shutdown = create_app(cfg, port=0)
+        self.client = app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_the_static_route_wins_over_the_callsign_one(self):
+        got = self.client.get("/api/lookup/cache").get_json()
+        self.assertIn("entries", got)
+        self.assertNotIn("callsign", got, "routed to the lookup handler")
+
+    def test_a_callsign_still_routes_to_the_lookup(self):
+        got = self.client.get("/api/lookup/W1AW").get_json()
+        self.assertEqual(got["callsign"], "W1AW")
+
+    def test_the_count_reflects_what_has_been_looked_up(self):
+        self.assertEqual(self.client.get("/api/lookup/cache")
+                         .get_json()["entries"], 0)
+        self.client.get("/api/lookup/W1AW")
+        self.assertEqual(self.client.get("/api/lookup/cache")
+                         .get_json()["entries"], 1)
+
+    def test_delete_clears_and_says_how_many(self):
+        self.client.get("/api/lookup/W1AW")
+        got = self.client.delete("/api/lookup/cache").get_json()
+        self.assertEqual(got, {"ok": True, "cleared": 1})
+        self.assertEqual(self.client.get("/api/lookup/cache")
+                         .get_json()["entries"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

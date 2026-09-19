@@ -495,6 +495,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                         "name": res.get("name", ""),
                         "locator": res.get("locator", "")})
 
+    @app.get("/api/lookup/cache")
+    @guard("lookup")
+    def lookup_cache_size():
+        return jsonify({"entries": look.cache_size(),
+                        "days": cfg.data["callsign_lookup"].get("cache_days", 30)})
+
+    @app.delete("/api/lookup/cache")
+    @guard("lookup")
+    def lookup_cache_clear():
+        """Forget every remembered lookup, for an answer that has gone stale."""
+        return jsonify({"ok": True, "cleared": look.clear_cache()})
+
     @app.get("/api/space/aurora")
     @guard("space")
     def space_aurora():

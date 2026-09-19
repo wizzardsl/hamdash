@@ -151,6 +151,34 @@ class Lookup:
         """Forget rejected logins, so an explicit test tries again right now."""
         self._refused.clear()
 
+    def cache_size(self) -> int:
+        """How many callsigns are remembered."""
+        if not self.cache_path:
+            return 0
+        db = self._db()
+        n = db.execute("SELECT COUNT(*) FROM lookup_cache").fetchone()[0]
+        db.close()
+        return n
+
+    def clear_cache(self) -> int:
+        """Forget every remembered lookup. Returns how many there were.
+
+        The escape hatch for an answer that has gone stale - a station that
+        has moved, or a grid corrected at the provider after we asked. A hit
+        is kept for `cache_days`, which is a long time to be shown something
+        wrong with no way to say "ask again". Rejected logins go too: this is
+        the button somebody presses when lookups are misbehaving.
+        """
+        self.retry_auth()
+        if not self.cache_path:
+            return 0
+        db = self._db()
+        n = db.execute("SELECT COUNT(*) FROM lookup_cache").fetchone()[0]
+        db.execute("DELETE FROM lookup_cache")
+        db.commit()
+        db.close()
+        return n
+
     # ------------------------------------------------------------------ cache
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.cache_path)

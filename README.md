@@ -284,12 +284,23 @@ Three cards show the same station without knowing about each other. The host
 publishes `lookup.result` whenever anything looks a callsign up, and the map
 and the path card draw from it:
 
-- **Typing a callsign in the logbook** looks it up as you type (debounced), so
-  the map and the bearing are there before you have finished the QSO.
-- **Clicking a logged contact** switches all of them to that QSO. The grid
-  that was logged wins over a fresh lookup — `?grid=` on `/api/lookup/<call>`
-  overrides the locator for that one answer — because a portable activation or
-  an operator who has since moved would otherwise plot in the wrong place.
+- **Typing a callsign in the logbook** looks it up once the box holds
+  something shaped like a whole callsign, so the map and the bearing are there
+  before you have finished the QSO. It does not look up every prefix on the
+  way: that was six requests per contact, which is what the services rate
+  limit and then lock an account for.
+- **Clicking a logged contact** switches all of them to that QSO, fills the
+  callsign box, and opens the station panel. The grid that was logged wins
+  over a fresh lookup — `?grid=` on `/api/lookup/<call>` overrides the locator
+  for that one answer — because a portable activation or an operator who has
+  since moved would otherwise plot in the wrong place.
+
+An answer is remembered for `cache_days` (30). A provider refusing is never
+remembered — it says nothing about the callsign — and "no such record" only
+for an hour, so a new licensee appears. **Settings → Integrations → Clear
+remembered lookups** (`DELETE /api/lookup/cache`) is the escape hatch for an
+answer that has gone stale: a station that has moved, or a grid corrected at
+the provider after we asked.
 
 The `path_map` card is a Leaflet map. Scroll to zoom, drag to pan, click
 either pin for that station's details and public links, and the ⌂ button

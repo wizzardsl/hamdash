@@ -521,6 +521,7 @@
     $('#s-lk-account').value = lk.account || '';
     lookupNote('');
     refreshLookup();
+    showCacheSize();
     $('#s-lk-user').value = lk.user || '';
     // Secrets are never sent to us, so the box starts empty and only says
     // whether one is stored. Leaving it alone keeps whatever is there.
@@ -541,6 +542,35 @@
   function refreshLookup() {
     $('#s-lk-account-row').hidden = $('#s-lk-provider').value !== 'auto';
   }
+
+  // How much is remembered, so the button says whether it has anything to do.
+  async function showCacheSize() {
+    const btn = $('#s-lk-forget');
+    try {
+      const c = await HD.get('/api/lookup/cache');
+      btn.disabled = !c.entries;
+      btn.textContent = c.entries
+        ? `Clear ${c.entries} remembered lookup${c.entries === 1 ? '' : 's'}`
+        : 'Nothing remembered yet';
+    } catch {
+      btn.disabled = false;
+      btn.textContent = 'Clear remembered lookups';
+    }
+  }
+
+  $('#s-lk-forget').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      // An answer is kept for a month, which is a long time to be shown a
+      // grid a station has since corrected with no way to say "ask again".
+      const r = await HD.del('/api/lookup/cache');
+      lookupNote(`Forgot ${r.cleared} remembered lookup`
+        + `${r.cleared === 1 ? '' : 's'}. The next one asks the provider.`, 'ok');
+    } catch (err) {
+      lookupNote(err.message, 'warn');
+    }
+    showCacheSize();
+  };
   $('#s-lk-provider').onchange = refreshLookup;
 
   $('#s-lk-test').onclick = async (e) => {
@@ -558,6 +588,7 @@
       lookupNote(err.message, 'warn');
     } finally {
       e.target.disabled = false;
+      showCacheSize();
     }
   }
 
