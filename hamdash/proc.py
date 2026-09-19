@@ -21,7 +21,8 @@ from pathlib import Path
 from .config import FROZEN
 from .registry import Card
 
-START_TIMEOUT = 12.0
+START_TIMEOUT = 12.0       # a normal start; after this we only slow the polling
+READY_GIVE_UP = 180.0      # alive but never listening: something is actually wrong
 MAX_RESTARTS = 5
 HEALTH_EVERY = 10.0        # seconds between /_health polls
 HEALTH_FAILS = 3           # consecutive failures before a card is 'wedged'
@@ -116,18 +117,38 @@ class Worker:
             self._maybe_restart()
 
     def _wait_ready(self) -> None:
-        deadline = time.time() + START_TIMEOUT
-        while time.time() < deadline:
-            if self.proc and self.proc.poll() is not None:
-                return
+        """Wait for the card to bind its port.
+
+        Slow is not the same as dead. A card binds in about a second on a warm
+        machine, but a cold Windows boot - a fresh python.exe being read off
+        disk and scanned, several cards importing Flask at once - can take far
+        longer. This used to give up at START_TIMEOUT and never look again:
+        the card would bind its port moments later and serve perfectly while
+        the board went on saying "no response" until the whole app was
+        restarted. That is why it came right "after the third reboot", by
+        which point the file cache was warm.
+
+        So: keep looking while the process is alive. The status stays
+        "starting", which is what makes the card proxy hand back a page that
+        retries itself, and the tile fills in as soon as the card is up.
+        """
+        started = time.time()
+        while self.proc and self.proc.poll() is None:
             try:
                 with socket.create_connection(("127.0.0.1", self.port), 0.3):
                     self.status = "running"
                     threading.Thread(target=self._health_loop, daemon=True).start()
                     return
             except OSError:
-                time.sleep(0.2)
-        self.status = "no response"
+                pass
+            if time.time() - started > READY_GIVE_UP:
+                # Alive but has never listened. Something is wrong with the
+                # card itself, and saying so beats retrying for ever.
+                self.status = "no response"
+                return
+            # Gently back off: eager while a normal start is still plausible,
+            # patient afterwards, so a stuck card is not a busy loop.
+            time.sleep(0.2 if time.time() - started < START_TIMEOUT else 1.0)
 
     def _health_loop(self) -> None:
         """A card can bind its port and then wedge - blocked on a serial read,
