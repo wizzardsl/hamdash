@@ -108,6 +108,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **The flat map now repeats horizontally, the way a tile map does.** A
+  contact reached across the Pacific is drawn in the world copy next door — a
+  Japanese station lands at longitude -221, which is where Japan is one world
+  west — but the built-in basemap was drawn once, from -180 to 180, so the
+  contact sat in blank background in the middle of the ocean. Land, greyline,
+  aurora, absorption, ionosondes, the station pair and every logged contact
+  are now drawn in three copies, panning is bounded to where the land is, and
+  the view no longer jumps back to the middle copy when you pan towards a
+  contact. Centre the map on whichever continent you like and your contacts
+  are on it.
 - **A rejected callsign lookup login is no longer retried on every lookup.**
   Typing a callsign fires a lookup every few characters, and each one re-tried
   the same bad password: QRZ and HamQTH both lock an account after a handful of

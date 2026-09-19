@@ -302,7 +302,11 @@ remembered lookups** (`DELETE /api/lookup/cache`) is the escape hatch for an
 answer that has gone stale: a station that has moved, or a grid corrected at
 the provider after we asked.
 
-The `path_map` card is a Leaflet map. Scroll to zoom, drag to pan, click
+The `path_map` card is a Leaflet map. It repeats horizontally like any tiled
+map, so you can centre it on whichever continent you please and your contacts
+are there — a path across the Pacific is drawn continuously into the world
+copy next door rather than stopping dead at the antimeridian.
+Scroll to zoom, drag to pan, click
 either pin for that station's details and public links, and the ⌂ button
 returns to the default framing. A new station reframes the map unless you have
 moved it yourself.

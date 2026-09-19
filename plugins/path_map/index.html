@@ -132,6 +132,23 @@ function endpoint(from, to) {
   return { lat: to.lat, lon: from ? unwrapLon(from.lon, to.lon) : to.lon };
 }
 
+// ...and the other half of that bargain. Unwrapping puts the far end of a
+// Pacific path in the world copy next door - a contact in Japan lands at
+// -221, which is where Japan is one world to the west. A tile basemap repeats
+// for ever, so that is a real place with real land under it. Ours was drawn
+// once, from -180 to 180, so the contact floated in blank ocean and the map
+// looked broken at exactly the moment it was being most correct.
+//
+// So everything on the flat map is drawn in three copies. Pan whichever way
+// you like and the world is there, with your contacts on it. Azimuthal has no
+// world copies: it is a disc centred on you and wrapping means nothing.
+const COPY_SPAN = 360;
+function worldCopies() {
+  return wantAzimuthal() ? [0] : [-COPY_SPAN, 0, COPY_SPAN];
+}
+// How far the land extends either side, and so how far panning may go.
+const WORLD_EDGE = COPY_SPAN * 1.5;
+
 function greatCircle(a, b, steps = 180) {
   const vec = (p) => {
     const la = p.lat * D2R, lo = p.lon * D2R;
@@ -196,8 +213,11 @@ function drawGreyline() {
   if (!L_.greyline) return;
   L_.greyline.clearLayers();
   const { ring, sun } = nightPolygon(new Date());
-  L.polygon(ring, { stroke: false, fillColor: '#000', fillOpacity: 0.34,
-                    interactive: false }).addTo(L_.greyline);
+  worldCopies().forEach((dx) => {
+    L.polygon(ring.map(([lat, lon]) => [lat, lon + dx]),
+              { stroke: false, fillColor: '#000', fillOpacity: 0.34,
+                interactive: false }).addTo(L_.greyline);
+  });
   // A marker, not a circleMarker: the subsolar point is a symbol, not another
   // station, and it was reading as one more dot on the map. A divIcon also
   // keeps it the same size however far the map is zoomed.
@@ -206,7 +226,7 @@ function drawGreyline() {
     return `<line x1="${11 + 6 * Math.cos(a)}" y1="${11 + 6 * Math.sin(a)}"`
          + ` x2="${11 + 9.5 * Math.cos(a)}" y2="${11 + 9.5 * Math.sin(a)}"/>`;
   }).join('');
-  L.marker([sun.lat, sun.lon], {
+  worldCopies().forEach((dx) => L.marker([sun.lat, sun.lon + dx], {
     interactive: false,
     keyboard: false,
     icon: L.divIcon({
@@ -220,7 +240,7 @@ function drawGreyline() {
                        stroke="${THEME.bg}" stroke-width="1"/>
              </svg>`,
     }),
-  }).addTo(L_.greyline);
+  }).addTo(L_.greyline));
 }
 
 // --- aurora ------------------------------------------------------------------
@@ -233,15 +253,16 @@ async function drawAurora() {
     $('#err').textContent = '';
     // Canvas, not SVG: this is a couple of thousand cells and one DOM node
     // each would make panning crawl.
+    const copies = worldCopies();
     d.cells.forEach(([lon, lat, pct]) => {
-      L.circleMarker([lat, lon], {
+      copies.forEach((dx) => L.circleMarker([lat, lon + dx], {
         renderer: L_.auroraCanvas,
         radius: 3,
         stroke: false,
         fillColor: pct >= 40 ? THEME.alert : pct >= 20 ? THEME.accent : THEME.signal,
         fillOpacity: Math.min(0.8, 0.12 + pct / 100),
         interactive: false,
-      }).addTo(L_.aurora);
+      }).addTo(L_.aurora));
     });
     $('#detail').dataset.aurora = `aurora ${d.forecast || ''}`;
   } catch (e) {
@@ -287,12 +308,13 @@ async function drawDrap() {
       $('#detail').textContent = `no HF absorption anywhere (${d.valid_at})`;
       return;
     }
+    const copies = worldCopies();
     d.cells.forEach(([lon, lat, mhz]) => {
-      L.circleMarker([lat, lon], {
+      copies.forEach((dx) => L.circleMarker([lat, lon + dx], {
         renderer: L_.auroraCanvas, radius: 4, stroke: false,
         fillColor: mhz >= 20 ? THEME.alert : mhz >= 10 ? THEME.accent : THEME.signal,
         fillOpacity: Math.min(0.75, 0.2 + mhz / 40), interactive: false,
-      }).addTo(L_.drap);
+      }).addTo(L_.drap));
     });
     $('#detail').textContent = `absorption up to `
       + `${Math.max(...d.cells.map((c) => c[2]))} MHz (${d.valid_at})`;
@@ -313,7 +335,7 @@ async function drawMuf() {
       // says what is known and where, without inventing the rest.
       const colour = muf === null ? THEME.grip
         : muf >= 28 ? THEME.signal : muf >= 14 ? THEME.accent : THEME.alert;
-      L.circleMarker([st.lat, st.lon], {
+      worldCopies().forEach((dx) => L.circleMarker([st.lat, st.lon + dx], {
         radius: 5, weight: 1, color: THEME.bg, fillColor: colour, fillOpacity: 1,
       }).bindTooltip(muf === null ? st.name : `${st.name}: ${muf} MHz`,
                      { direction: 'top' })
@@ -323,7 +345,7 @@ async function drawMuf() {
           + (st.fof2 !== null ? `<dt>foF2</dt><dd>${st.fof2} MHz</dd>` : '')
           + `<dt>Measured</dt><dd>${(st.time || '').replace('T', ' ')}</dd>`
           + '</dl>')
-        .addTo(L_.muf);
+        .addTo(L_.muf));
     });
     $('#detail').textContent = `${d.stations.length} ionosondes · ${d.credit}`;
   } catch (e) { $('#err').textContent = `MUF: ${e.message}`; }
@@ -332,13 +354,16 @@ async function drawMuf() {
 // --- basemaps ----------------------------------------------------------------
 function builtInBasemap() {
   // The offline map is a Leaflet layer like any other, which is what lets it
-  // sit in the same picker as the tile ones.
-  return L.geoJSON(window.WORLD_LAND, {
+  // sit in the same picker as the tile ones. One copy per world, because a
+  // tile layer repeats and anything drawn beside it has to as well.
+  const land = (dx) => L.geoJSON(window.WORLD_LAND, {
+    coordsToLatLng: (c) => L.latLng(c[1], c[0] + dx),
     style: { color: THEME.grip, weight: 0.6, fillColor: THEME.panel2,
              fillOpacity: 1 },
     interactive: false,
     attribution: 'Natural Earth (public domain)',
   });
+  return L.layerGroup(worldCopies().map(land));
 }
 
 function chosenBasemap() {
@@ -401,19 +426,23 @@ function popupFor(which) {
 function drawStation() {
   if (!L_.station) return;
   L_.station.clearLayers();
+  const copies = worldCopies();
   if (me && them && conf.great_circle !== false) {
-    L.polyline(greatCircle(me, them),
-               { color: THEME.accent, weight: 2, interactive: false })
-      .addTo(L_.station);
+    const run = greatCircle(me, them);
+    copies.forEach((dx) => {
+      L.polyline(run.map(([lat, lon]) => [lat, lon + dx]),
+                 { color: THEME.accent, weight: 2, interactive: false })
+        .addTo(L_.station);
+    });
   }
-  const pin = (p, colour, label, which) =>
-    L.circleMarker([p.lat, p.lon], {
+  const pin = (p, colour, label, which) => copies.forEach((dx) =>
+    L.circleMarker([p.lat, p.lon + dx], {
       radius: 6, color: THEME.bg, weight: 1.5,
       fillColor: colour, fillOpacity: 1,
     }).bindTooltip(label, { permanent: true, direction: 'right',
                             className: 'pin-label', offset: [6, 0] })
       .bindPopup(() => popupFor(which), { maxWidth: 280 })
-      .addTo(L_.station);
+      .addTo(L_.station));
   if (me) pin(me, THEME.signal, me.call || 'home', 'me');
   // Same unwrapping as the path, so the pin sits on the end of its line.
   if (them) pin(endpoint(me, them), THEME.accent, them.call || them.grid, 'them');
@@ -449,8 +478,14 @@ function build() {
     opts.crs = azimuthalCRS(me);
     opts.worldCopyJump = false;      // there are no world copies in aeqd
   } else {
-    opts.worldCopyJump = true;
+    // Not worldCopyJump: it teleports the view back to the middle copy, which
+    // is precisely the pan you were making to reach a contact drawn in the one
+    // next door. The copies are really drawn instead, and panning stops where
+    // they do rather than at an arbitrary edge.
+    opts.worldCopyJump = false;
     opts.minZoom = 1;
+    opts.maxBounds = L.latLngBounds([[-85, -WORLD_EDGE], [85, WORLD_EDGE]]);
+    opts.maxBoundsViscosity = 1;
   }
   map = L.map('map', opts);
   if (az) map.setView([me.lat, me.lon], 2);
@@ -583,7 +618,14 @@ function plotLogged(stations) {
   // padded viewport, and a marker sitting on that boundary is drawn as the
   // half dot this used to show. SVG has no such edge, and a log of this size
   // is nothing for it.
-  const renderer = stations.length > 2000 ? L_.loggedCanvas : undefined;
+  const copies = worldCopies();
+  // The dots stay SVG while there are not too many of them: Leaflet's canvas
+  // renderer only paints the padded viewport, and a marker sitting on that
+  // boundary comes out as half a dot. The lines have no such edge to fall
+  // foul of and are the bulk of the work - one path of 180 points each, times
+  // however many world copies - so they are always on canvas.
+  const dots = stations.length * copies.length > 2000
+    ? L_.loggedCanvas : undefined;
   stations.forEach((raw) => {
     const home = toLatLon(raw.grid);
     if (!home) return;
@@ -596,14 +638,18 @@ function plotLogged(stations) {
     // A line home, the way the signal went. Thin and translucent so a big log
     // reads as a fan from the station rather than a ball of string.
     if (me) {
-      L.polyline(greatCircle(me, at), { color: THEME.signal, weight: 1,
-                                        opacity: 0.35, interactive: false })
-        .addTo(L_.logged);
+      const run = greatCircle(me, at);
+      copies.forEach((dx) => {
+        L.polyline(run.map(([lat, lon]) => [lat, lon + dx]),
+                   { renderer: L_.loggedCanvas, color: THEME.signal,
+                     weight: 1, opacity: 0.35,
+                     interactive: false }).addTo(L_.logged);
+      });
     }
     const when = (st.date || '').length === 8
       ? `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}` : '';
-    L.circleMarker([at.lat, at.lon], {
-      renderer,
+    copies.forEach((dx) => L.circleMarker([at.lat, at.lon + dx], {
+      renderer: dots,
       radius: 5, weight: 1.5, color: THEME.bg,
       fillColor: THEME.signal, fillOpacity: 1,
     }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
@@ -612,7 +658,7 @@ function plotLogged(stations) {
       + (st.band ? `<dt>Band</dt><dd>${esc(st.band)}</dd>` : '')
       + (st.mode ? `<dt>Mode</dt><dd>${esc(st.mode)}</dd>` : '')
       + (when ? `<dt>Date</dt><dd>${esc(when)}</dd>` : '')
-      + '</dl>').addTo(L_.logged);
+      + '</dl>').addTo(L_.logged));
   });
   if (bounds.length) {
     touched = true;               // the operator asked for this framing

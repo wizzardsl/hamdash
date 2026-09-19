@@ -329,9 +329,25 @@ shape it settled on is worth reusing:
   the line continuous and `endpoint()` puts the marker on the end of its own
   line. Anything framing a path must use `endpoint()` too, or fitBounds spans
   the wrong way round the planet.
+- **Unwrapping only works if the world repeats, so the flat map draws
+  everything three times** (`worldCopies()`, offsets -360/0/+360). A tile
+  basemap repeats for ever; ours was one GeoJSON layer from -180 to 180, so a
+  contact unwrapped to -221 - which is exactly where Japan is, one world west
+  - floated in blank background and the map looked broken at the moment it was
+  being most correct. Land, greyline, aurora, D-RAP, ionosondes, the station
+  pair and the logged contacts all repeat; `maxBounds` stops panning where the
+  land stops, so there is no edge to fall off. Azimuthal returns `[0]`: it is
+  a disc centred on you and wrapping means nothing there.
+- **`worldCopyJump` is off, deliberately.** It teleports the view back to the
+  middle copy, which is precisely the pan you are making to reach a contact
+  drawn in the one next door.
+- Framing (`fit`, `fitSelected`, `plotLogged`) must use the primary copy only,
+  or fitBounds spans three worlds and zooms out to nothing.
 - Leaflet's canvas renderer only paints the padded viewport, so a marker on
-  that boundary is drawn as half a dot. Markers use SVG unless there are
-  thousands of them.
+  that boundary is drawn as half a dot. The log's dots use SVG unless there
+  are thousands of them; its *lines* are always canvas - they have no such
+  edge to fall foul of, and at 180 points each times three copies they are the
+  bulk of the work.
 - **Leaflet fixes a map's CRS at construction**, and the layer control is
   built once, so changing projection or supplying a weather key means
   `map.remove()` and build again (`needsRebuild`/`rebuild`), not adjusting in
