@@ -108,6 +108,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **The map drew a contact's dot but not the line to it**, for every contact
+  over land — only the long path across the Pacific showed, because ocean is
+  the part with nothing drawn on top of it. The built-in basemap shared the
+  overlay pane, where Leaflet stacks a canvas below an SVG, so the lines were
+  painted underneath the continents. The basemap now sits in its own pane
+  under everything, where a tile basemap has always gone. The aurora and
+  absorption layers were losing the same argument wherever they crossed land.
 - **The flat map now repeats horizontally, the way a tile map does.** A
   contact reached across the Pacific is drawn in the world copy next door — a
   Japanese station lands at longitude -221, which is where Japan is one world

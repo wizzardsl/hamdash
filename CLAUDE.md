@@ -343,6 +343,17 @@ shape it settled on is worth reusing:
   drawn in the one next door.
 - Framing (`fit`, `fitSelected`, `plotLogged`) must use the primary copy only,
   or fitBounds spans three worlds and zooms out to nothing.
+- **The built-in basemap lives in its own pane, under everything.** It used to
+  share the overlay pane, where Leaflet stacks a canvas renderer (z-index 100)
+  *below* an SVG one (200) - so anything on canvas was painted underneath
+  opaque continents. It showed as a log whose only visible line was the one
+  across the Pacific, ocean being the part with no land on top of it, and the
+  aurora quietly missing wherever it crossed land. A tile basemap has always
+  gone under the overlays; the vector one now does too.
+- **A renderer must be on the map before paths are added to it.** It works out
+  its pixel bounds in `onAdd`; paths added in the same breath clip against
+  bounds that do not exist yet, end up with empty `_parts`, and are never
+  drawn. `L_.loggedCanvas` is added in `build()` for that reason.
 - Leaflet's canvas renderer only paints the padded viewport, so a marker on
   that boundary is drawn as half a dot. The log's dots use SVG unless there
   are thousands of them; its *lines* are always canvas - they have no such

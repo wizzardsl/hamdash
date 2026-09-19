@@ -356,7 +356,14 @@ function builtInBasemap() {
   // The offline map is a Leaflet layer like any other, which is what lets it
   // sit in the same picker as the tile ones. One copy per world, because a
   // tile layer repeats and anything drawn beside it has to as well.
+  // In its own pane, under everything else, which is where a tile basemap
+  // goes. It used to share the overlay pane: its land is opaque, so anything
+  // drawn on a surface Leaflet happens to stack lower - a canvas, which it
+  // gives z-index 100 against an SVG's 200 - was painted underneath the
+  // continents. That showed as a log whose only visible line was the one
+  // going across the Pacific, because ocean is the part with no land on top.
   const land = (dx) => L.geoJSON(window.WORLD_LAND, {
+    pane: 'basemap',
     coordsToLatLng: (c) => L.latLng(c[1], c[0] + dx),
     style: { color: THEME.grip, weight: 0.6, fillColor: THEME.panel2,
              fillOpacity: 1 },
@@ -488,6 +495,9 @@ function build() {
     opts.maxBoundsViscosity = 1;
   }
   map = L.map('map', opts);
+  // Same z-index as the tile pane: the built-in basemap is a basemap, and
+  // every overlay belongs on top of it.
+  map.createPane('basemap').style.zIndex = 200;
   if (az) map.setView([me.lat, me.lon], 2);
   else map.setView([20, 0], 1);
 
@@ -504,7 +514,13 @@ function build() {
   // Its own renderer. Sharing the aurora's canvas tied the log's dots to
   // whether a completely unrelated layer happened to be switched on, and put
   // them on a surface drawn for a heat map rather than for markers.
-  L_.loggedCanvas = L.canvas({ padding: 0.3 });
+  //
+  // On the map from the start, not when the first path lands on it. A
+  // renderer works out its pixel bounds in onAdd; paths added in the same
+  // breath as the renderer itself get clipped against bounds that do not
+  // exist yet, come out with no geometry, and are simply never drawn - which
+  // showed as a log of contacts with dots but no lines to them.
+  L_.loggedCanvas = L.canvas({ padding: 0.3 }).addTo(map);
   L_.aurora = L.layerGroup();
 
   const overlays = {
