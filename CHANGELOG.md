@@ -13,6 +13,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   band, mode, signal, country, which side of the report, and how recently.
   Watch a callsign, or a grid square for everything around you.
 
+  **Click the map** to drop a pin on any square and watch what is heard
+  there; **All** clears every filter and comes back to your own grid.
+
   **Every filter works on what is already fetched.** PSK Reporter asks for no
   more than one retrieval every five minutes and says plainly that heavy users
   may be rate limited or blocked; a filter bar is a machine for making requests
@@ -21,6 +24,28 @@ versions follow [SemVer](https://semver.org/). The version of record is
   time costs nothing at all. The footer says how old the data is and when the
   next request is allowed. An outage keeps showing what it had rather than
   going blank.
+
+  **The cache outlives the process.** In memory alone it lasts exactly as long
+  as the card, so restarting hamdash three times inside five minutes would be
+  three queries — which is what the rule asks you not to do; closing a window
+  is not what anybody means by it. It is written to disk and read back with
+  its clock intact, so a restart costs nothing.
+
+  **A failed fetch waits its turn too.** Found by causing it: several queries
+  in quick succession while developing earned a 429, and with nothing cached
+  there was nothing holding the clock — the page's own one-minute poll would
+  have retried into the limit for as long as the tile was open. Against a rate
+  limit, retrying is the thing that caused it. A failure is now remembered
+  like an answer, their `Retry-After` is honoured, and the card says so in
+  words rather than showing an HTTP error.
+- **A card can keep things between runs.** `card.store` is a directory beside
+  the host's own files, with `load_json`/`save_json` that never raise — losing
+  a cache is not worth failing a request over. Cards are told where the host
+  lives through `HAMDASH_HOME`.
+- **`--home` with a relative path put a card's files in the wrong place.** A
+  card process has its own working directory, so `--home ./dev` resolved
+  against the plugin folder rather than the host's. The config home is
+  absolute now.
 - **The map machinery is now shared** (`hamdash/static/js/hdmap.js`), so both
   map cards get the same world copies, projections, basemaps and overlays from
   one place. Leaflet moved to `hamdash/static/vendor/`.

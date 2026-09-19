@@ -53,47 +53,109 @@ _v = "0.1.0"
 USER_AGENT = f"hamdash-pskreporter/{_v} (+https://github.com/wizzardsl/hamdash)"
 
 
-class Fetcher:
-    """One upstream query, cached, with the five minute floor enforced here."""
+CACHE_FILE = "cache.json"
 
-    def __init__(self) -> None:
+
+class RateLimited(RuntimeError):
+    """They asked us to stop, and for how long."""
+
+    def __init__(self, message: str, retry_after: float) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class Fetcher:
+    """One upstream query, cached, with the five minute floor enforced here.
+
+    The cache is written to disk as well as held in memory. In memory alone
+    it lasts exactly as long as the card process, so restarting hamdash - or
+    the card being restarted under it - would send a fresh query every time.
+    Restart three times inside five minutes and that is three queries, which
+    is precisely what the rule asks you not to do; closing a window is not
+    what anybody means by "no more than once every five minutes".
+    """
+
+    def __init__(self, store=None) -> None:
         self._lock = threading.Lock()
         self._by_key: dict[tuple, dict] = {}
+        self._store = store
+        self._load()
+
+    # ---- across restarts -------------------------------------------------
+    def _load(self) -> None:
+        if not self._store:
+            return
+        saved = self._store.load_json(CACHE_FILE, None)
+        if not isinstance(saved, list):
+            return
+        now = time.time()
+        for row in saved:
+            try:
+                key = tuple(row["key"])
+                entry = row["entry"]
+                # A clock that has gone backwards would otherwise make an
+                # entry look fresh for ever.
+                keep = max(STALE_AFTER, entry.get("wait", 0))
+                if not (0 <= now - entry["at"] < keep):
+                    continue
+                self._by_key[key] = entry
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    def _save(self) -> None:
+        if not self._store:
+            return
+        self._store.save_json(CACHE_FILE, [
+            {"key": list(k), "entry": v} for k, v in self._by_key.items()])
 
     def get(self, watch: str, as_grid: bool, hours: float, mode: str,
             contact: str = "", force: bool = False) -> dict:
         key = (watch.upper(), as_grid, round(hours, 2), mode.upper())
+        now = time.time()
         with self._lock:
             got = self._by_key.get(key)
-            age = time.time() - got["at"] if got else None
+            age = now - got["at"] if got else None
             # Never sooner than MIN_INTERVAL, whatever anyone asks for. A
             # forced refresh from the page cannot buy its way past this; it
             # only skips the wait when the floor has already passed.
-            if got and age < MIN_INTERVAL:
+            if got and age < max(MIN_INTERVAL, got.get("wait", 0)):
                 return self._answer(got, age, fresh=False)
-            if got and not force and age < STALE_AFTER:
-                pass                 # due a refresh, but the old one still shows
             try:
                 fresh = self._fetch(watch, as_grid, hours, mode, contact)
             except Exception as exc:                # noqa: BLE001 - reported
+                # A failure waits its turn as surely as a success does.
+                # Without this there is nothing holding the clock, so the
+                # page's own poll retries every minute - and against a rate
+                # limit, retrying is the thing that caused it. Remember the
+                # attempt, and honour a Retry-After if one was given.
+                wait = max(MIN_INTERVAL, getattr(exc, "retry_after", 0) or 0)
                 if got:
                     # Keep showing what we have; say why it is not moving.
                     got["error"] = str(exc)
-                    return self._answer(got, time.time() - got["at"], fresh=False)
+                    got["at"], got["wait"] = now, wait
+                    self._save()
+                    return self._answer(got, 0.0, fresh=False)
+                self._by_key[key] = {"reports": [], "at": now, "wait": wait,
+                                     "watching": watch.upper(), "hours": hours,
+                                     "truncated": False, "error": str(exc),
+                                     "failed": True}
+                self._save()
                 return {"ok": False, "error": str(exc), "reports": [],
-                        "age_s": 0, "next_s": 0}
+                        "age_s": 0, "next_s": round(wait)}
             self._by_key[key] = fresh
             # One key per query, and there are only so many a person watches.
             if len(self._by_key) > 12:
                 oldest = min(self._by_key, key=lambda k: self._by_key[k]["at"])
                 self._by_key.pop(oldest, None)
+            self._save()
             return self._answer(fresh, 0.0, fresh=True)
 
     @staticmethod
     def _answer(entry: dict, age: float, fresh: bool) -> dict:
-        return {"ok": True, "reports": entry["reports"],
+        wait = max(MIN_INTERVAL, entry.get("wait", 0))
+        return {"ok": not entry.get("failed"), "reports": entry["reports"],
                 "age_s": round(age), "fresh": fresh,
-                "next_s": max(0, round(MIN_INTERVAL - age)),
+                "next_s": max(0, round(wait - age)),
                 "watching": entry["watching"], "hours": entry["hours"],
                 "error": entry.get("error", ""),
                 "truncated": entry.get("truncated", False)}
@@ -121,6 +183,18 @@ class Fetcher:
                                   # They may come to require this; it is
                                   # cheaper for both ends either way.
                                   "Accept-Encoding": "gzip, deflate"})
+        if r.status_code == 429:
+            # Their rate limit, which is a request to stop rather than a
+            # transient error to retry through.
+            try:
+                after = int(r.headers.get("Retry-After", "") or 0)
+            except ValueError:
+                after = 0
+            raise RateLimited(
+                "pskreporter is rate limiting this address"
+                + (f" and asks for {after}s" if after else "")
+                + ". Nothing is lost - it will try again by itself.",
+                after or MIN_INTERVAL * 4)
         r.raise_for_status()
         text = r.text
         if "<receptionReports" not in text:
@@ -191,7 +265,7 @@ def _band(mhz: float) -> str:
     return next((n for lo, hi, n in BANDS if lo <= mhz <= hi), "")
 
 
-FETCHER = Fetcher()
+FETCHER = Fetcher(store=card)
 
 
 @card.get("/reports")

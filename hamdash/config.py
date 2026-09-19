@@ -98,7 +98,11 @@ def _merge(base: dict, over: dict) -> dict:
 
 class Config:
     def __init__(self, home: Path | str | None = None) -> None:
-        self.home = Path(home).expanduser() if home else default_home()
+        # Absolute, always. A card process runs with its own working
+        # directory, so a relative --home would put its files somewhere
+        # else entirely - which is where the PSK cache first landed.
+        self.home = (Path(home).expanduser().resolve() if home
+                     else default_home())
         self.path = self.home / "config.json"
         self.layout_path = self.home / "layout.json"
         self.db_path = self.home / "logbook.sqlite3"

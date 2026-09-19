@@ -36,7 +36,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     host_url = f"http://{host}:{port}"
 
     cards = registry.discover(cfg.plugin_dirs)
-    sup = Supervisor(host_url)
+    sup = Supervisor(host_url, home=str(cfg.home))
     rig = Rig(cfg.data["radio"]["rigctld_host"], cfg.data["radio"]["rigctld_port"],
               mock=cfg.data["radio"].get("mock", True))
     rig.start_polling(hz=2)

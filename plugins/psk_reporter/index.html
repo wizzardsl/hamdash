@@ -66,8 +66,10 @@
 <body>
 
 <div class="bar">
-  <input id="watch" class="mono" spellcheck="false" title="A callsign, or a grid square for everything around it. Empty uses your own grid.">
+  <input id="watch" class="mono" spellcheck="false" placeholder="grid or call"
+         title="A callsign, or a grid square for everything around it. Click the map to pick a place. Empty uses your own grid.">
   <button class="btn btn-quiet" id="go">Watch</button>
+  <button class="btn btn-quiet" id="all" title="Every report this query returned: clears band, mode, country, signal and direction, and goes back to your own grid.">All</button>
   <div class="dirs" role="group" aria-label="Which side of the report">
     <button data-dir="all" class="on">Both</button>
     <button data-dir="tx">Heard me</button>
@@ -90,6 +92,7 @@
     <option value="86400">Last 24 hours</option>
   </select>
   <span class="grow"></span>
+  <span id="pin-note" class="muted" hidden></span>
   <button class="btn btn-quiet" id="refresh" title="Ask PSK Reporter again. They ask for no more than one request every five minutes, so this waits its turn.">Refresh</button>
 </div>
 
@@ -177,11 +180,29 @@ const SVG_LIMIT = 600;
 // second a frame - and a map that dense says nothing a few hundred does not.
 const PATH_LIMIT = 500;
 
+function drawPin() {
+  if (!L_.pin) return;
+  L_.pin.clearLayers();
+  const grid = (meta.watching || '');
+  const at = HDMap.toLatLon(grid);
+  $('#pin-note').hidden = !at;
+  if (!at) return;                 // watching a callsign, not a place
+  $('#pin-note').textContent = `pinned ${grid}`;
+  HDMap.each((dx) => {
+    L.circleMarker([at.lat, at.lon + dx], {
+      radius: 7, weight: 2, color: THEME.accent, fillColor: THEME.bg,
+      fillOpacity: 0.6, dashArray: '3 3',
+    }).bindTooltip(`watching ${grid}`, { direction: 'top', offset: [0, -6] })
+      .addTo(L_.pin);
+  });
+}
+
 function draw() {
   if (!map) return;
   const rows = visible();
   L_.spots.clearLayers();
   L_.paths.clearLayers();
+  drawPin();
   let pathsDrawn = 0;
 
   if (conf.paths !== false) {
@@ -369,6 +390,17 @@ function build() {
   L_.canvas = L.canvas({ padding: 0.3 }).addTo(map);
   L_.paths = L.layerGroup().addTo(map);
   L_.spots = L.layerGroup().addTo(map);
+  L_.pin = L.layerGroup().addTo(map);
+
+  // Clicking the map is the quickest way to ask "what is being heard over
+  // there?". PSK Reporter speaks Maidenhead, so a click becomes a grid
+  // square and that becomes the query.
+  map.on('click', (e) => {
+    const grid = HDMap.toGrid(e.latlng.lat, e.latlng.lng, 4);
+    $('#watch').value = grid;
+    touched = false;
+    load(false);
+  });
 
   space = HDMap.spaceLayers(map, {
     owmKey: (conf.owm_key || '').trim(),
@@ -415,6 +447,24 @@ $('#since').onchange = (e) => {
   if (hoursFor(filters.since) > was) load(false);
 };
 $('#go').onclick = () => { touched = false; load(false); };
+
+// "All": everything this query returned, from wherever the operator lives.
+// The filters are the thing people get stuck behind - an empty map after
+// four narrowing choices reads as broken rather than as filtered.
+$('#all').onclick = () => {
+  ['band', 'mode', 'country', 'snr'].forEach((n) => {
+    $(`#${n}`).value = '';
+    filters[n] = '';
+  });
+  document.querySelectorAll('.dirs button').forEach((b) =>
+    b.classList.toggle('on', b.dataset.dir === 'all'));
+  filters.dir = 'all';
+  // A blank box means "everywhere I can see from", which is the operator's
+  // own grid - the query API has no way to ask for the whole world.
+  $('#watch').value = (me && me.grid ? me.grid.slice(0, 4) : '').toUpperCase();
+  touched = false;
+  load(false);
+};
 $('#watch').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { touched = false; load(false); }
 });

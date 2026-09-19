@@ -68,6 +68,23 @@ window.HDMap = (function () {
     return { lat, lon };
   }
 
+  // The other way round, for turning a click on the map into somewhere a
+  // service that speaks Maidenhead will understand.
+  function toGrid(lat, lon, precision = 6) {
+    // Fold back into one world first: a click at -221 is a real place, but
+    // its locator is the one at +139.
+    let x = ((lon + 180) % 360 + 360) % 360;
+    let y = Math.min(179.999, Math.max(0, lat + 90));
+    const A = (n) => String.fromCharCode(65 + n);
+    let out = A(Math.floor(x / 20)) + A(Math.floor(y / 10))
+            + Math.floor((x % 20) / 2) + Math.floor(y % 10);
+    if (precision >= 6) {
+      out += String.fromCharCode(97 + Math.floor(((x % 2) / 2) * 24))
+           + String.fromCharCode(97 + Math.floor((y % 1) * 24));
+    }
+    return out;
+  }
+
   // ---- great circle --------------------------------------------------------
   // Longitudes are unwrapped, never split at the antimeridian. Splitting a
   // great circle into two polylines leaves one stopping dead at +-180 with no
@@ -410,7 +427,7 @@ window.HDMap = (function () {
 
   return {
     theme, readTheme, D2R,
-    toLatLon, unwrapLon, endpoint, greatCircle,
+    toLatLon, toGrid, unwrapLon, endpoint, greatCircle,
     copies, each, shift, WORLD_EDGE,
     subsolar, nightPolygon, drawGreyline,
     azimuthalCRS, builtInBasemap, basemap,

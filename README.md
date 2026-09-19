@@ -386,7 +386,9 @@ of the report you were on, and how recently — all of it on the same map as the
 path card, with the same layers and projections.
 
 Type a **callsign** to watch one station, or a **grid square** (CN89, CN89kg)
-for everything around it. Their query API has no "whole world" endpoint; every
+for everything around it — or just **click the map**, which drops a pin on
+that square and watches it. **All** clears every filter and comes back to your
+own grid. Their query API has no "whole world" endpoint; every
 query is anchored on a callsign or a grid.
 
 **The five minute rule is enforced in the card.** PSK Reporter asks that data
@@ -395,7 +397,9 @@ to rate limit or block anyone who loads their system. So the card process
 fetches once per query and serves everything else from memory; every filter
 works on what is already in the browser and makes no request at all. Refresh
 waits its turn like everything else, and the footer says how old the data is
-and how long until the next request is allowed.
+and how long until the next request is allowed. The cache is written to disk,
+so restarting hamdash does not spend a query either, and a rate limit or an
+outage is remembered rather than retried into.
 
 `appcontact` — the address PSK Reporter asks heavy users for so they can get
 in touch rather than simply blocking — is a tile setting, empty by default.

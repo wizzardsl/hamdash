@@ -10,7 +10,10 @@ Nothing here touches pskreporter: every response is a recorded one.
 
 Run with:  python -m unittest discover -s tests
 """
+import os
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -230,6 +233,147 @@ class TestTheCache(unittest.TestCase):
             for i in range(30):
                 self.f.get(f"AA{i:02d}", False, 1, "")
         self.assertLessEqual(len(self.f._by_key), 12)
+
+
+class TestTheCacheSurvivesARestart(unittest.TestCase):
+    """In memory alone the cache lasts exactly as long as the card process.
+    Restarting hamdash three times inside five minutes would then be three
+    queries - which is exactly what the rule asks you not to do."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix="hamdash-psk-"))
+        self.addCleanup(shutil.rmtree, self.home, True)
+
+    def a_card(self):
+        """A fresh Card, as a restarted card process would build."""
+        with mock.patch.dict(os.environ, {"HAMDASH_HOME": str(self.home),
+                                          "HAMDASH_CARD_ID": "psk_reporter"}):
+            return psk.Card(str(ROOT / "plugins" / "psk_reporter" / "card.py"))
+
+    def test_a_restart_does_not_spend_a_query(self):
+        with mock.patch("card.requests.get", return_value=a_reply()) as get:
+            psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+            # ...the process ends here, and a new one starts.
+            again = psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+        self.assertEqual(get.call_count, 1, "asked pskreporter again after a restart")
+        self.assertEqual(len(again["reports"]), 2)
+        self.assertFalse(again["fresh"])
+
+    def test_the_wait_carries_over_too(self):
+        """Not just the data: the clock. Otherwise the floor restarts with
+        the process and the rule is only ever honoured within one run."""
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+            again = psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+        self.assertGreater(again["next_s"], 250)
+
+    def test_something_stale_is_not_restored(self):
+        f = psk.Fetcher(store=self.a_card())
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            f.get("CN89", True, 1, "")
+        for entry in f._by_key.values():
+            entry["at"] -= psk.STALE_AFTER + 60
+        f._save()
+        with mock.patch("card.requests.get", return_value=a_reply()) as get:
+            psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+        self.assertEqual(get.call_count, 1)
+
+    def test_a_clock_that_went_backwards_does_not_freeze_it(self):
+        """An entry stamped in the future would otherwise look fresh for
+        ever, and the card would never ask again."""
+        f = psk.Fetcher(store=self.a_card())
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            f.get("CN89", True, 1, "")
+        for entry in f._by_key.values():
+            entry["at"] = time.time() + 86400
+        f._save()
+        with mock.patch("card.requests.get", return_value=a_reply()) as get:
+            psk.Fetcher(store=self.a_card()).get("CN89", True, 1, "")
+        self.assertEqual(get.call_count, 1)
+
+    def test_a_corrupt_cache_file_is_ignored_not_fatal(self):
+        card_obj = self.a_card()
+        (card_obj.store / psk.CACHE_FILE).write_text("{not json", encoding="utf-8")
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            got = psk.Fetcher(store=card_obj).get("CN89", True, 1, "")
+        self.assertTrue(got["ok"])
+
+    def test_it_works_with_nowhere_to_write(self):
+        """A card run by hand, with no host to tell it where home is."""
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            got = psk.Fetcher().get("CN89", True, 1, "")
+        self.assertTrue(got["ok"])
+
+
+class TestBackingOff(unittest.TestCase):
+    """A failure has to wait its turn as surely as a success does.
+
+    The bug this guards was found by causing it: several queries in quick
+    succession while developing earned a 429, and with nothing cached there
+    was nothing holding the clock - so the page's own one-minute poll would
+    have retried into the limit for as long as it was open. Against a rate
+    limit, retrying is the thing that caused it.
+    """
+
+    def setUp(self):
+        self.f = psk.Fetcher()
+
+    def a_429(self, after="120"):
+        r = mock.Mock(status_code=429, headers={"Retry-After": after})
+        return r
+
+    def test_a_rate_limit_is_not_retried_on_the_next_ask(self):
+        with mock.patch("card.requests.get", return_value=self.a_429()) as get:
+            for _ in range(10):
+                self.f.get("CN89", True, 1, "")
+        self.assertEqual(get.call_count, 1)
+
+    def test_it_says_so_in_words_rather_than_as_an_http_error(self):
+        with mock.patch("card.requests.get", return_value=self.a_429()):
+            got = self.f.get("CN89", True, 1, "")
+        self.assertFalse(got["ok"])
+        self.assertIn("rate limiting", got["error"])
+        self.assertIn("Nothing is lost", got["error"])
+
+    def test_their_own_retry_after_is_honoured_when_longer(self):
+        with mock.patch("card.requests.get", return_value=self.a_429("3600")):
+            got = self.f.get("CN89", True, 1, "")
+        self.assertGreater(got["next_s"], 3000)
+
+    def test_an_ordinary_outage_also_waits(self):
+        with mock.patch("card.requests.get",
+                        side_effect=psk.requests.ConnectionError("no route")) as get:
+            for _ in range(5):
+                self.f.get("CN89", True, 1, "")
+        self.assertEqual(get.call_count, 1)
+
+    def test_a_failure_does_not_pretend_to_be_an_answer(self):
+        with mock.patch("card.requests.get", return_value=self.a_429()):
+            self.f.get("CN89", True, 1, "")
+            again = self.f.get("CN89", True, 1, "")
+        self.assertFalse(again["ok"], "a remembered failure read as success")
+        self.assertEqual(again["reports"], [])
+
+    def test_it_recovers_once_the_wait_is_over(self):
+        with mock.patch("card.requests.get", return_value=self.a_429("1")):
+            self.f.get("CN89", True, 1, "")
+        for entry in self.f._by_key.values():
+            entry["at"] -= psk.MIN_INTERVAL + 1
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            got = self.f.get("CN89", True, 1, "")
+        self.assertTrue(got["ok"])
+        self.assertEqual(len(got["reports"]), 2)
+
+    def test_data_already_held_survives_a_rate_limit(self):
+        with mock.patch("card.requests.get", return_value=a_reply()):
+            self.f.get("CN89", True, 1, "")
+        for entry in self.f._by_key.values():
+            entry["at"] -= psk.MIN_INTERVAL + 1
+        with mock.patch("card.requests.get", return_value=self.a_429()):
+            got = self.f.get("CN89", True, 1, "")
+        self.assertTrue(got["ok"])
+        self.assertEqual(len(got["reports"]), 2)
+        self.assertIn("rate limiting", got["error"])
 
 
 class TestGridOrCallsign(unittest.TestCase):

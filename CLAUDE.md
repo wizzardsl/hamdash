@@ -403,6 +403,16 @@ shape it settled on is worth reusing:
   in the browser over what was already fetched, and refuses to let a Refresh
   button jump the queue. It reports the age and the wait rather than
   pretending, and keeps serving stale data through an outage.
+- **A failure has to wait its turn as surely as a success does.** Found by
+  causing it: with nothing cached, a 429 left nothing holding the clock, so
+  the page's own poll would have retried once a minute into the rate limit
+  that the retrying caused. `Fetcher` stores failures like answers, with a
+  `wait` that honours their `Retry-After`.
+- **A card's cache belongs on disk, not only in memory.** In memory it lasts
+  exactly as long as the process, and "no more than one request every five
+  minutes" is not honoured by restarting. `card.store` (from `HAMDASH_HOME`)
+  is where; `Config.home` is resolved absolute because a card process has its
+  own working directory and a relative `--home` landed in the plugin folder.
 - **PSK Reporter has no "whole world" query.** Every one is anchored on a
   callsign, or on a grid square with `modify=grid`. Their own map uses feeds
   that are not in the public API, so "everything near me" means a grid.

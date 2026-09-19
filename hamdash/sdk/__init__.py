@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -103,6 +104,7 @@ class Card:
         self.port = int(os.environ.get("HAMDASH_PORT", "0")) or _free()
         self.token = os.environ.get("HAMDASH_TOKEN", "")
         self.host_url = os.environ.get("HAMDASH_HOST", "http://127.0.0.1:8765")
+        self._home = os.environ.get("HAMDASH_HOME", "")
         self.host = HostClient(self.host_url, self.token, self.id)
         self.manifest = _manifest(self.dir)
         self.name = name or self.manifest.get("name", self.id)
@@ -112,6 +114,50 @@ class Card:
         self._settings_ttl = 5.0
         self._routes()
         self.on("card.settings_changed")(self._settings_changed)
+
+    # --- keeping things between runs ------------------------------------
+    @property
+    def store(self) -> Path:
+        """A directory this card may write to, which survives a restart.
+
+        For anything a card should not have to fetch again: a cache of
+        somebody else's API, a marker of where it got to. It lives beside the
+        host's own files rather than in the plugin directory, which may be
+        read-only in a packaged build and is not the operator's to fill up.
+
+        Falls back to a temporary directory when the card is run on its own,
+        so a card being developed by hand still works.
+        """
+        base = Path(self._home) if self._home else Path(tempfile.gettempdir()) / "hamdash"
+        d = base / "card-data" / self.id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def load_json(self, name: str, default=None):
+        """Read a file from `store`, or return `default`. Never raises.
+
+        A cache that cannot be read is not a reason to fail to start: the
+        worst case is doing the work again.
+        """
+        try:
+            return json.loads((self.store / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return default
+
+    def save_json(self, name: str, value) -> bool:
+        """Write a file to `store`. Returns whether it worked, and never
+        raises: losing a cache is not worth failing a request over.
+
+        Written to a temporary file and moved into place, so an interrupted
+        write leaves the previous contents rather than half of the new ones.
+        """
+        try:
+            tmp = self.store / f".{name}.tmp"
+            tmp.write_text(json.dumps(value), encoding="utf-8")
+            tmp.replace(self.store / name)
+            return True
+        except (OSError, TypeError, ValueError):
+            return False
 
     # --- routing --------------------------------------------------------
     def _routes(self) -> None:

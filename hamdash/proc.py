@@ -58,6 +58,7 @@ def free_port() -> int:
 class Worker:
     card: Card
     host_url: str
+    home: str = ""
     port: int = 0
     token: str = ""
     proc: subprocess.Popen | None = None
@@ -77,6 +78,11 @@ class Worker:
         env = dict(os.environ)
         env.update({
             "HAMDASH_CARD_ID": self.card.id,
+            # Where the host keeps its own files. A card that caches somebody
+            # else's API needs that cache to outlive a restart, or a rule like
+            # "no more than one request every five minutes" is broken by
+            # closing the window - which is not what anybody means by it.
+            "HAMDASH_HOME": str(self.home),
             "HAMDASH_PORT": str(self.port),
             "HAMDASH_HOST": self.host_url,
             "HAMDASH_TOKEN": self.token,
@@ -209,14 +215,16 @@ class Worker:
 
 
 class Supervisor:
-    def __init__(self, host_url: str) -> None:
+    def __init__(self, host_url: str, home: str = "") -> None:
         self.host_url = host_url
+        self.home = home
         self.workers: dict[str, Worker] = {}
 
     def ensure(self, card: Card) -> Worker:
         w = self.workers.get(card.id)
         if w is None:
-            w = Worker(card=card, host_url=self.host_url)
+            w = Worker(card=card, host_url=self.host_url,
+                       home=self.home)
             self.workers[card.id] = w
         if w.status in ("stopped", "") or (w.proc and w.proc.poll() is not None
                                           and not w.status.startswith("res")):
