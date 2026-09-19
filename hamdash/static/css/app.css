@@ -20,6 +20,13 @@
 
 * { box-sizing: border-box; }
 
+/* Links take the theme's accent. Without this they are the browser's default
+   blue, which is hard to read on any dark panel and all but invisible on a
+   blue one. Visited is the same colour on purpose: the alternative is the
+   browser's purple, which has the same problem. */
+a { color: var(--accent); }
+a:visited { color: var(--accent); }
+
 html, body {
   height: 100%;
   margin: 0;

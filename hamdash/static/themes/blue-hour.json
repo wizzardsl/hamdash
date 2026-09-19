@@ -1,0 +1,16 @@
+{
+  "id": "blue-hour",
+  "name": "Blue hour",
+  "vars": {
+    "--bg": "#0a0b2a",
+    "--panel": "#14163a",
+    "--panel-2": "#1c1f4a",
+    "--rule": "#2b2f63",
+    "--ink": "#e3e8ff",
+    "--muted": "#8990c4",
+    "--accent": "#19e6cf",
+    "--signal": "#7aaeff",
+    "--alert": "#ff4854",
+    "--grip": "#3f4c7b"
+  }
+}

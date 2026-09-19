@@ -7,6 +7,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A `blue-hour` theme** — deep navy with cyan highlights, in the manner of
+  World Radio League. Links now take the theme's accent instead of the
+  browser's default blue, which was hard to read on any dark panel and all but
+  invisible on a blue one; `daylight`'s amber is deepened so that it, too,
+  clears 4.5:1 as a link colour.
 - **Settings is in tabs** — Station, Display, Integrations, Radio — instead of
   one form that grew with every feature. Theme moved in beside distance units
   under Display; the quick picker in the top bar still works and the two stay

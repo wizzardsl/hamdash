@@ -515,10 +515,15 @@ from a hostile card.
 ## Themes
 
 A theme is a JSON file of CSS custom properties in `<HAMDASH_HOME>/themes/`.
-Copy one from `hamdash/static/themes/` (`night-watch`, `daylight`,
-`sixty-hertz`) and change the values — it shows up in the theme picker on next
-load. Light and dark are just themes; there is no separate light/dark switch to
-keep in sync.
+Copy one from `hamdash/static/themes/` — `night-watch` (dark teal),
+`blue-hour` (deep navy, cyan highlights), `sixty-hertz` (warm amber),
+`daylight` (light) — and change the values; it shows up in the theme picker on
+next load. Light and dark are just themes; there is no separate light/dark
+switch to keep in sync.
+
+Ten properties, and every card reads the same ten, so a theme only has to be
+written once. Keep `--accent` at 4.5:1 against `--panel`: it is the link and
+heading colour, and everything else in the palette is chosen around it.
 
 ## If something goes wrong
 
