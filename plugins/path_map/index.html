@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="/static/css/app.css">
-<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
 <style>
   html, body { height: 100%; }
   body { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
@@ -58,33 +58,23 @@
 <p class="err" id="err"></p>
 
 <script src="/static/js/hamdash.js"></script>
-<script src="vendor/leaflet.js"></script>
-<script src="vendor/proj4.js"></script>
-<script src="vendor/proj4leaflet.js"></script>
-<script src="world.js"></script>
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/proj4.js"></script>
+<script src="/static/vendor/proj4leaflet.js"></script>
+<script src="/static/vendor/world.js"></script>
+<script src="/static/js/hdmap.js"></script>
 <script>
 HD.cardId = 'path_map';
 const $ = (s) => document.querySelector(s);
-const D2R = Math.PI / 180;
+const D2R = HDMap.D2R;
 
-// Leaflet writes colours into SVG presentation attributes, where var(--x)
-// does not resolve. Read the theme's values once instead, so the map still
-// follows whichever theme the board is on.
-const css = (name, fallback) =>
-  getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
-const THEME = {};
-function readTheme() {
-  Object.assign(THEME, {
-    bg: css('--bg', '#0d1419'),
-    ink: css('--ink', '#d7e3ea'),
-    rule: css('--rule', '#26363f'),
-    grip: css('--grip', '#3b4d58'),
-    panel2: css('--panel-2', '#1c2932'),
-    accent: css('--accent', '#e9a13b'),
-    signal: css('--signal', '#56b6a8'),
-    alert: css('--alert', '#d9604a'),
-  });
-}
+// The shared map machinery lives in /static/js/hdmap.js, so the PSK card and
+// this one cannot drift apart on what a world copy is or where the basemap
+// sits. Local names for the pieces used here, so the rest of this file reads
+// as it did when they lived in it.
+const THEME = HDMap.theme;
+const { toLatLon, unwrapLon, endpoint, greatCircle, readTheme } = HDMap;
+const worldCopies = HDMap.copies;
 
 let conf = {};
 let map = null;
@@ -95,302 +85,8 @@ let touched = false;    // has the operator moved the map themselves?
 let auroraTimer = null;
 const L_ = {};          // layers, by name
 
-// --- Maidenhead --------------------------------------------------------------
-function toLatLon(loc) {
-  const s = (loc || '').trim().toUpperCase();
-  if (!/^[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?$/.test(s)) return null;
-  const A = (c) => c.charCodeAt(0) - 65;
-  let lon = A(s[0]) * 20 - 180, lat = A(s[1]) * 10 - 90;
-  lon += (+s[2]) * 2; lat += (+s[3]);
-  if (s.length >= 6) {
-    lon += A(s[4]) * (2 / 24); lat += A(s[5]) * (1 / 24);
-    lon += 1 / 24; lat += 1 / 48;
-  } else { lon += 1; lat += 0.5; }
-  return { lat, lon };
-}
-
-// --- great circle ------------------------------------------------------------
-// Leaflet draws a polyline straight between consecutive points, so the path is
-// sampled.
-//
-// Longitudes are *unwrapped*, not split at the antimeridian. Splitting left a
-// polyline stopping dead at +-180 with no station on the end, which reads as a
-// dot that failed to draw - and the real end was 360 degrees away off the
-// other side of the map. Leaflet is happy with longitudes beyond +-180 and
-// draws them in the neighbouring world copy, so the line and its dot stay
-// together and a short path across the Pacific is drawn going west, the way
-// the signal actually goes.
-function unwrapLon(fromLon, lon) {
-  let out = lon;
-  while (out - fromLon > 180) out -= 360;
-  while (out - fromLon < -180) out += 360;
-  return out;
-}
-
-// Where to put the far end so it lines up with the path drawn from `from`.
-function endpoint(from, to) {
-  return { lat: to.lat, lon: from ? unwrapLon(from.lon, to.lon) : to.lon };
-}
-
-// ...and the other half of that bargain. Unwrapping puts the far end of a
-// Pacific path in the world copy next door - a contact in Japan lands at
-// -221, which is where Japan is one world to the west. A tile basemap repeats
-// for ever, so that is a real place with real land under it. Ours was drawn
-// once, from -180 to 180, so the contact floated in blank ocean and the map
-// looked broken at exactly the moment it was being most correct.
-//
-// So everything on the flat map is drawn in three copies. Pan whichever way
-// you like and the world is there, with your contacts on it. Azimuthal has no
-// world copies: it is a disc centred on you and wrapping means nothing.
-const COPY_SPAN = 360;
-function worldCopies() {
-  return wantAzimuthal() ? [0] : [-COPY_SPAN, 0, COPY_SPAN];
-}
-// How far the land extends either side, and so how far panning may go.
-const WORLD_EDGE = COPY_SPAN * 1.5;
-
-function greatCircle(a, b, steps = 180) {
-  const vec = (p) => {
-    const la = p.lat * D2R, lo = p.lon * D2R;
-    return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
-  };
-  const [v1, v2] = [vec(a), vec(b)];
-  const dot = Math.max(-1, Math.min(1, v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]));
-  const om = Math.acos(dot);
-  const run = []; let prev = null;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    let p = v1;
-    if (om >= 1e-9) {
-      const s1 = Math.sin((1 - t) * om) / Math.sin(om);
-      const s2 = Math.sin(t * om) / Math.sin(om);
-      p = [v1[0]*s1 + v2[0]*s2, v1[1]*s1 + v2[1]*s2, v1[2]*s1 + v2[2]*s2];
-    }
-    const lat = Math.atan2(p[2], Math.hypot(p[0], p[1])) / D2R;
-    let lon = Math.atan2(p[1], p[0]) / D2R;
-    if (prev !== null) lon = unwrapLon(prev, lon);
-    run.push([lat, lon]);
-    prev = lon;
-  }
-  return run;
-}
-
-// --- greyline ----------------------------------------------------------------
-// Where the sun is, from the clock. No network and no service: this is a few
-// lines of trigonometry and asking a server would be a round trip for an
-// answer the browser already has everything to compute.
-function subsolar(when) {
-  const n = when.getTime() / 86400000 + 2440587.5 - 2451545.0;   // days from J2000
-  const L = (280.460 + 0.9856474 * n) % 360;
-  const g = ((357.528 + 0.9856003 * n) % 360) * D2R;
-  const lam = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
-  const eps = (23.439 - 0.0000004 * n) * D2R;
-  const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
-  const ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
-  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
-  let lon = (ra / D2R - gmst * 15) % 360;
-  if (lon > 180) lon -= 360;
-  if (lon < -180) lon += 360;
-  return { lat: dec / D2R, lon, dec };
-}
-
-function nightPolygon(when) {
-  const sun = subsolar(when);
-  const ring = [];
-  for (let lon = -180; lon <= 180; lon += 1) {
-    // Terminator latitude for this meridian: the circle 90 degrees from the
-    // subsolar point.
-    const lat = Math.atan(-Math.cos((lon - sun.lon) * D2R) / Math.tan(sun.dec)) / D2R;
-    ring.push([lat, lon]);
-  }
-  // Close the ring over whichever pole is in darkness.
-  const pole = sun.dec > 0 ? -90 : 90;
-  ring.push([pole, 180], [pole, -180]);
-  return { ring, sun };
-}
-
-function drawGreyline() {
-  if (!L_.greyline) return;
-  L_.greyline.clearLayers();
-  const { ring, sun } = nightPolygon(new Date());
-  worldCopies().forEach((dx) => {
-    L.polygon(ring.map(([lat, lon]) => [lat, lon + dx]),
-              { stroke: false, fillColor: '#000', fillOpacity: 0.34,
-                interactive: false }).addTo(L_.greyline);
-  });
-  // A marker, not a circleMarker: the subsolar point is a symbol, not another
-  // station, and it was reading as one more dot on the map. A divIcon also
-  // keeps it the same size however far the map is zoomed.
-  const rays = Array.from({ length: 8 }, (_, i) => {
-    const a = (i * 45) * D2R;
-    return `<line x1="${11 + 6 * Math.cos(a)}" y1="${11 + 6 * Math.sin(a)}"`
-         + ` x2="${11 + 9.5 * Math.cos(a)}" y2="${11 + 9.5 * Math.sin(a)}"/>`;
-  }).join('');
-  worldCopies().forEach((dx) => L.marker([sun.lat, sun.lon + dx], {
-    interactive: false,
-    keyboard: false,
-    icon: L.divIcon({
-      className: 'sun-icon',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
-      html: `<svg viewBox="0 0 22 22" width="22" height="22">
-               <g stroke="${THEME.accent}" stroke-width="1.6"
-                  stroke-linecap="round">${rays}</g>
-               <circle cx="11" cy="11" r="4.6" fill="${THEME.accent}"
-                       stroke="${THEME.bg}" stroke-width="1"/>
-             </svg>`,
-    }),
-  }).addTo(L_.greyline));
-}
-
-// --- aurora ------------------------------------------------------------------
-async function drawAurora() {
-  if (!L_.aurora) return;
-  try {
-    const d = await HD.get('/api/space/aurora', { threshold: 8 });
-    L_.aurora.clearLayers();
-    if (!d.ok) { $('#err').textContent = d.error || 'no aurora data'; return; }
-    $('#err').textContent = '';
-    // Canvas, not SVG: this is a couple of thousand cells and one DOM node
-    // each would make panning crawl.
-    const copies = worldCopies();
-    d.cells.forEach(([lon, lat, pct]) => {
-      copies.forEach((dx) => L.circleMarker([lat, lon + dx], {
-        renderer: L_.auroraCanvas,
-        radius: 3,
-        stroke: false,
-        fillColor: pct >= 40 ? THEME.alert : pct >= 20 ? THEME.accent : THEME.signal,
-        fillOpacity: Math.min(0.8, 0.12 + pct / 100),
-        interactive: false,
-      }).addTo(L_.aurora));
-    });
-    $('#detail').dataset.aurora = `aurora ${d.forecast || ''}`;
-  } catch (e) {
-    $('#err').textContent = `aurora: ${e.message}`;
-  }
-}
-
-// --- projection --------------------------------------------------------------
-// Azimuthal equidistant centred on the operator: every bearing leaves the
-// middle as a straight line and every distance from the centre is to scale,
-// which is the projection a beam heading actually lives in.
-//
-// It cannot be combined with tiles. No tile service publishes tiles in this
-// projection, so the base map is forced to the built-in vector one - which is
-// GeoJSON, and reprojects like any other geometry.
-function azimuthalCRS(at) {
-  const proj = `+proj=aeqd +lat_0=${at.lat} +lon_0=${at.lon} `
-             + '+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs';
-  const half = 20037508.34;            // half the planet, in metres
-  const res = [];
-  for (let z = 0; z < 12; z++) res.push((2 * half / 256) / Math.pow(2, z));
-  return new L.Proj.CRS('AEQD:hamdash', proj, {
-    resolutions: res,
-    origin: [-half, half],
-    bounds: L.bounds([-half, -half], [half, half]),
-  });
-}
-
 function wantAzimuthal() {
   return (conf.projection || 'flat').startsWith('azimuthal') && !!me;
-}
-
-// --- absorption and ionosondes ----------------------------------------------
-async function drawDrap() {
-  if (!L_.drap) return;
-  try {
-    const d = await HD.get('/api/space/drap', { threshold: 1 });
-    L_.drap.clearLayers();
-    if (!d.ok) { $('#err').textContent = d.error; return; }
-    $('#err').textContent = '';
-    if (d.quiet) {
-      // An empty layer here is the good news, not a failure to load.
-      $('#detail').textContent = `no HF absorption anywhere (${d.valid_at})`;
-      return;
-    }
-    const copies = worldCopies();
-    d.cells.forEach(([lon, lat, mhz]) => {
-      copies.forEach((dx) => L.circleMarker([lat, lon + dx], {
-        renderer: L_.auroraCanvas, radius: 4, stroke: false,
-        fillColor: mhz >= 20 ? THEME.alert : mhz >= 10 ? THEME.accent : THEME.signal,
-        fillOpacity: Math.min(0.75, 0.2 + mhz / 40), interactive: false,
-      }).addTo(L_.drap));
-    });
-    $('#detail').textContent = `absorption up to `
-      + `${Math.max(...d.cells.map((c) => c[2]))} MHz (${d.valid_at})`;
-  } catch (e) { $('#err').textContent = `D-RAP: ${e.message}`; }
-}
-
-async function drawMuf() {
-  if (!L_.muf) return;
-  try {
-    const d = await HD.get('/api/space/muf');
-    L_.muf.clearLayers();
-    if (!d.ok) { $('#err').textContent = d.error; return; }
-    $('#err').textContent = '';
-    d.stations.forEach((st) => {
-      const muf = st.mufd;
-      // Measured points, not a field. The familiar smooth MUF map is an
-      // interpolation of exactly these stations; drawing the measurements
-      // says what is known and where, without inventing the rest.
-      const colour = muf === null ? THEME.grip
-        : muf >= 28 ? THEME.signal : muf >= 14 ? THEME.accent : THEME.alert;
-      worldCopies().forEach((dx) => L.circleMarker([st.lat, st.lon + dx], {
-        radius: 5, weight: 1, color: THEME.bg, fillColor: colour, fillOpacity: 1,
-      }).bindTooltip(muf === null ? st.name : `${st.name}: ${muf} MHz`,
-                     { direction: 'top' })
-        .bindPopup(`<h3>${st.code || st.name}</h3><dl>`
-          + `<dt>Station</dt><dd>${st.name}</dd>`
-          + (muf !== null ? `<dt>MUF(3000)</dt><dd>${muf} MHz</dd>` : '')
-          + (st.fof2 !== null ? `<dt>foF2</dt><dd>${st.fof2} MHz</dd>` : '')
-          + `<dt>Measured</dt><dd>${(st.time || '').replace('T', ' ')}</dd>`
-          + '</dl>')
-        .addTo(L_.muf));
-    });
-    $('#detail').textContent = `${d.stations.length} ionosondes · ${d.credit}`;
-  } catch (e) { $('#err').textContent = `MUF: ${e.message}`; }
-}
-
-// --- basemaps ----------------------------------------------------------------
-function builtInBasemap() {
-  // The offline map is a Leaflet layer like any other, which is what lets it
-  // sit in the same picker as the tile ones. One copy per world, because a
-  // tile layer repeats and anything drawn beside it has to as well.
-  // In its own pane, under everything else, which is where a tile basemap
-  // goes. It used to share the overlay pane: its land is opaque, so anything
-  // drawn on a surface Leaflet happens to stack lower - a canvas, which it
-  // gives z-index 100 against an SVG's 200 - was painted underneath the
-  // continents. That showed as a log whose only visible line was the one
-  // going across the Pacific, because ocean is the part with no land on top.
-  const land = (dx) => L.geoJSON(window.WORLD_LAND, {
-    pane: 'basemap',
-    coordsToLatLng: (c) => L.latLng(c[1], c[0] + dx),
-    style: { color: THEME.grip, weight: 0.6, fillColor: THEME.panel2,
-             fillOpacity: 1 },
-    interactive: false,
-    attribution: 'Natural Earth (public domain)',
-  });
-  return L.layerGroup(worldCopies().map(land));
-}
-
-function chosenBasemap() {
-  // Tiles are square in Web Mercator and nothing else, so azimuthal always
-  // gets the vector map. Saying so beats drawing a broken one.
-  if (wantAzimuthal()) return builtInBasemap();
-  const pick = conf.basemap || 'built-in (offline)';
-  if (pick === 'OpenStreetMap') {
-    return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-      attribution: '&copy; OpenStreetMap contributors',
-    });
-  }
-  if (pick === 'custom tiles' && (conf.tile_url || '').trim()) {
-    return L.tileLayer(conf.tile_url.trim(), {
-      maxZoom: 19,
-      attribution: conf.tile_attribution || 'custom tiles',
-    });
-  }
-  return builtInBasemap();
 }
 
 // --- pins --------------------------------------------------------------------
@@ -480,79 +176,36 @@ function fitSelected() {
 // --- setup -------------------------------------------------------------------
 function build() {
   const az = wantAzimuthal();
-  const opts = { zoomControl: true, attributionControl: true, minZoom: 0 };
-  if (az) {
-    opts.crs = azimuthalCRS(me);
-    opts.worldCopyJump = false;      // there are no world copies in aeqd
-  } else {
-    // Not worldCopyJump: it teleports the view back to the middle copy, which
-    // is precisely the pan you were making to reach a contact drawn in the one
-    // next door. The copies are really drawn instead, and panning stops where
-    // they do rather than at an arbitrary edge.
-    opts.worldCopyJump = false;
-    opts.minZoom = 1;
-    opts.maxBounds = L.latLngBounds([[-85, -WORLD_EDGE], [85, WORLD_EDGE]]);
-    opts.maxBoundsViscosity = 1;
-  }
-  map = L.map('map', opts);
-  // Same z-index as the tile pane: the built-in basemap is a basemap, and
-  // every overlay belongs on top of it.
-  map.createPane('basemap').style.zIndex = 200;
-  if (az) map.setView([me.lat, me.lon], 2);
-  else map.setView([20, 0], 1);
-
-  L_.base = chosenBasemap().addTo(map);
-  L_.station = L.layerGroup().addTo(map);
-  L_.auroraCanvas = L.canvas({ padding: 0.5 });
+  map = HDMap.create('map', { azimuthal: az, centre: me });
   builtAzimuthal = az;
   builtWithKey = (conf.owm_key || '').trim();
-  L_.greyline = L.layerGroup();
-  L_.drap = L.layerGroup();
-  L_.muf = L.layerGroup();
-  L_.weather = null;                 // built on demand: it needs a key
-  L_.logged = L.layerGroup();
-  // Its own renderer. Sharing the aurora's canvas tied the log's dots to
-  // whether a completely unrelated layer happened to be switched on, and put
-  // them on a surface drawn for a heat map rather than for markers.
-  //
-  // On the map from the start, not when the first path lands on it. A
-  // renderer works out its pixel bounds in onAdd; paths added in the same
-  // breath as the renderer itself get clipped against bounds that do not
-  // exist yet, come out with no geometry, and are simply never drawn - which
-  // showed as a log of contacts with dots but no lines to them.
-  L_.loggedCanvas = L.canvas({ padding: 0.3 }).addTo(map);
-  L_.aurora = L.layerGroup();
 
-  const overlays = {
-    'Logged contacts': L_.logged,
-    'Greyline': L_.greyline,
-    'Aurora (NOAA)': L_.aurora,
-    'Absorption (D-RAP)': L_.drap,
-    'Ionosondes (MUF)': L_.muf,
-  };
-  // Clouds need somebody's API key, so the layer only exists once there is
-  // one. An entry that always fails is worse than no entry.
-  if ((conf.owm_key || '').trim() && !wantAzimuthal()) {
-    L_.weather = L.tileLayer(
-      `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${conf.owm_key.trim()}`,
-      { opacity: 0.45, attribution: '&copy; OpenWeatherMap' });
-    overlays.Clouds = L_.weather;
-  }
-  L.control.layers(null, overlays, { collapsed: true }).addTo(map);
+  L_.base = HDMap.basemap(conf).addTo(map);
+  L_.station = L.layerGroup().addTo(map);
+  L_.logged = L.layerGroup();
+  // Its own renderer, on the map from the start. A renderer works out its
+  // pixel bounds in onAdd; paths added in the same breath are clipped against
+  // bounds that do not exist yet, come out with no geometry, and are never
+  // drawn - which showed as a log of contacts with dots but no lines to them.
+  L_.loggedCanvas = L.canvas({ padding: 0.3 }).addTo(map);
+
+  space = HDMap.spaceLayers(map, {
+    owmKey: builtWithKey,
+    report: ({ error, detail }) => {
+      if (error !== undefined) $('#err').textContent = error;
+      if (detail !== undefined) $('#detail').textContent = detail;
+    },
+  });
+  Object.assign(L_, space.groups);
+
+  L.control.layers(null,
+                   Object.assign({ 'Logged contacts': L_.logged },
+                                 space.overlays),
+                   { collapsed: true }).addTo(map);
 
   // A reset control, because "fit the path" is otherwise lost the moment you
   // touch the map.
-  const Reset = L.Control.extend({
-    onAdd() {
-      const a = L.DomUtil.create('a', 'leaflet-bar');
-      a.href = '#'; a.title = 'Back to the default view';
-      a.style.cssText = 'width:26px;height:26px;line-height:26px;text-align:center;display:block';
-      a.innerHTML = '&#8962;';
-      L.DomEvent.on(a, 'click', L.DomEvent.stop).on(a, 'click', resetView);
-      return a;
-    },
-  });
-  new Reset({ position: 'topleft' }).addTo(map);
+  HDMap.resetControl(map, resetView);
 
   map.on('zoomstart movestart', (e) => {
     // Only a human moving the map counts; fit() moves it too.
@@ -562,28 +215,24 @@ function build() {
 }
 
 function syncOverlays() {
-  // Ticking "Logged contacts" is the whole gesture now: the layer fetches the
-  // log when it is switched on and drops it when it is switched off, so there
-  // is nothing to press first and nothing left drawn behind it.
+  // Ticking "Logged contacts" is the whole gesture: the layer fetches the log
+  // when it is switched on and drops it when it is switched off, so there is
+  // nothing to press first and nothing left drawn behind it.
   if (map.hasLayer(L_.logged)) loadLogged();
   else L_.logged.clearLayers();
-  if (map.hasLayer(L_.greyline)) drawGreyline();
+  space.sync();
   clearInterval(auroraTimer);
-  const live = [
-    [L_.aurora, drawAurora],
-    [L_.drap, drawDrap],
-    [L_.muf, drawMuf],
-  ].filter(([layer]) => map.hasLayer(layer));
-  live.forEach(([, draw]) => draw());
+  const live = ['aurora', 'drap', 'muf'].filter((n) => map.hasLayer(L_[n]));
   if (live.length) {
     // Everything here is published about every five minutes and cached by the
     // host, so this mostly hits the cache and never hits the source harder
     // than it wants - NOAA resets the connection if you ask too often.
-    auroraTimer = setInterval(() => live.forEach(([, draw]) => draw()), 300000);
+    auroraTimer = setInterval(() => live.forEach((n) => space.draw[n]()), 300000);
   }
 }
 
 let builtAzimuthal = false, builtWithKey = '';
+let space = null;              // the shared space-weather overlays
 
 function needsRebuild() {
   // Leaflet fixes a map's CRS when it is created, and the layer control is
@@ -606,7 +255,7 @@ function applyConf() {
   if (!map) return;
   if (needsRebuild()) { rebuild(); return; }
   if (L_.base) map.removeLayer(L_.base);
-  L_.base = chosenBasemap().addTo(map);
+  L_.base = HDMap.basemap(conf).addTo(map);
   L_.base.bringToBack?.();
   const want = (name, on) => {
     if (on && !map.hasLayer(L_[name])) map.addLayer(L_[name]);
@@ -763,7 +412,7 @@ HD.onSettings((v) => { conf = v; applyConf(); resetView(); });
 
 // The greyline moves about a degree every four minutes; once a minute is
 // smooth enough and costs nothing.
-setInterval(() => { if (map && map.hasLayer(L_.greyline)) drawGreyline(); }, 60000);
+setInterval(() => { if (map && map.hasLayer(L_.greyline)) space.draw.greyline(); }, 60000);
 
 (async function boot() {
   readTheme();
