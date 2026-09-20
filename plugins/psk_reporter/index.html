@@ -20,6 +20,10 @@
   .muted { color: var(--muted); }
   .grow { flex: 1; }
   .dirs { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+  /* An author `display: flex` beats the user agent's `[hidden] {display:none}`,
+     so hiding the group needs saying explicitly or it stays on screen while
+     the code believes it is gone. */
+  .dirs[hidden] { display: none; }
   .dirs button {
     font: inherit; font-size: 12px; background: none; border: 0;
     color: var(--muted); padding: 3px 9px; cursor: pointer;
@@ -61,16 +65,41 @@
     font-family: var(--mono); font-size: 11px;
   }
   .leaflet-tooltip-top:before { border-top-color: var(--rule); }
+
+  /* The legend. Labels wear text tokens; only the swatch carries colour, so
+     the key reads even where the colour does not. */
+  .legend {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 6px 9px; font-size: 11px; line-height: 1.5;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+  .legend h4 {
+    margin: 0 0 4px; font-size: 10px; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .legend .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .legend .sw {
+    width: 10px; height: 10px; border-radius: 50%; flex: none;
+    border: 1px solid var(--bg);
+  }
+  .legend .sw.ring { background: none; border: 2px dashed var(--accent); }
+  .legend .sw.home { border: 2px solid var(--ink); }
+  .legend .n { margin-left: auto; padding-left: 10px; color: var(--muted);
+               font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .legend .note { margin-top: 4px; color: var(--muted); }
 </style>
 </head>
 <body>
 
 <div class="bar">
-  <input id="watch" class="mono" spellcheck="false" placeholder="grid or call"
-         title="A callsign, or a grid square for everything around it. Click the map to pick a place. Empty uses your own grid.">
-  <button class="btn btn-quiet" id="go">Watch</button>
-  <button class="btn btn-quiet" id="all" title="Everything known about the place being watched: clears band, mode, country, signal, direction and the time window. Keeps the pin — empty the box first to come back to your own grid.">All</button>
-  <div class="dirs" role="group" aria-label="Which side of the report">
+  <div class="dirs" id="modes" role="group" aria-label="Watch a callsign or a grid square">
+    <button data-mode="grid" class="on" title="Everything heard by or from stations in one grid square. Clicking the map picks one.">Grid</button>
+    <button data-mode="call" title="One station: everywhere it was heard, and everything it heard.">Call</button>
+  </div>
+  <input id="watch" class="mono" spellcheck="false"
+         title="Press Enter, or click away, to watch it. Clicking the map picks a grid square.">
+  <div class="dirs" id="dirs" role="group" aria-label="Which side of the report" hidden>
     <button data-dir="all" class="on">Both</button>
     <button data-dir="tx">Heard me</button>
     <button data-dir="rx">I heard</button>
@@ -91,6 +120,7 @@
     <option value="21600">Last 6 hours</option>
     <option value="86400">Last 24 hours</option>
   </select>
+  <button class="btn btn-quiet" id="all" title="Put every filter back to everything: band, mode, country, signal, direction and the time window. The place being watched is left alone.">Reset filters</button>
   <span class="grow"></span>
   <span id="pin-note" class="muted" hidden></span>
   <button class="btn btn-quiet" id="refresh" title="Ask PSK Reporter again. They ask for no more than one request every five minutes, so this waits its turn.">Refresh</button>
@@ -125,6 +155,45 @@ let ageTimer = null, pollTimer = null;
 let touched = false;
 const L_ = {};
 const filters = { dir: 'all', band: '', mode: '', country: '', snr: '', since: 3600 };
+
+// Watching a grid square or one callsign. It used to be guessed from the
+// shape of whatever was typed, which works but leaves the operator unable to
+// tell which question is being asked - and the two ask different things of
+// the same box.
+let watchMode = 'grid';
+
+// A grid square, or something shaped like a whole callsign. Committing on
+// blur means a half-typed callsign would otherwise become a query, and
+// pskreporter is not a service to send half-questions to.
+const LOOKS_GRID = /^[A-R]{2}[0-9]{2}([A-X]{2})?$/i;
+const LOOKS_CALL = /^(?:[A-Z0-9]{1,4}\/)?[A-Z0-9]{1,3}[0-9][A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/i;
+const watchable = (v) =>
+  (watchMode === 'grid' ? LOOKS_GRID : LOOKS_CALL).test((v || '').trim());
+
+function setMode(next, { reload = true } = {}) {
+  watchMode = next === 'call' ? 'call' : 'grid';
+  document.querySelectorAll('#modes button').forEach((b) =>
+    b.classList.toggle('on', b.dataset.mode === watchMode));
+  $('#watch').placeholder = watchMode === 'grid' ? 'CN89' : 'VA7SLL';
+  // "Heard me" and "I heard" only mean anything when there is a "me" - one
+  // callsign. Watching a square, both sides of a report can be strangers, so
+  // the choice is gone rather than sitting there greyed.
+  $('#dirs').hidden = watchMode !== 'call';
+  if (watchMode !== 'call' && filters.dir !== 'all') {
+    // A filter that is hidden but still narrowing is the worst of both: the
+    // map looks wrong and nothing on screen says why.
+    filters.dir = 'all';
+    document.querySelectorAll('#dirs button').forEach((b) =>
+      b.classList.toggle('on', b.dataset.dir === 'all'));
+  }
+  conf = { ...conf, watch_mode: watchMode };
+  HD.saveSettings(conf).catch(() => { /* still applies now */ });
+  if (reload && watchable($('#watch').value)) { touched = false; load(false); }
+}
+
+document.querySelectorAll('[data-mode]').forEach((b) => {
+  b.onclick = () => setMode(b.dataset.mode);
+});
 
 // ---- drawing ---------------------------------------------------------------
 // One dot per station rather than one per report: a busy grid square produces
@@ -163,13 +232,28 @@ const ago = (secs) => {
   return `${(d / 3600).toFixed(1)}h ago`;
 };
 
-// Colour by signal, the way the reports read: strong is good.
-function snrColour(snr) {
-  if (snr === null) return THEME.grip;
-  if (snr >= -5) return THEME.signal;
-  if (snr >= -15) return THEME.accent;
-  return THEME.alert;
+// Colour is signal strength and nothing else. It is tempting to colour by
+// band instead - that is what pskreporter's own map does and what most people
+// guess these dots mean - but a map is a form where any two marks can end up
+// side by side, and eight band hues measured far below the readable floor
+// there (worst pair dE 1.6 under deuteranopia). A one-hue ramp fares no
+// better: it yields four distinguishable steps across a light and a dark
+// theme, which is coarser than 20m-versus-17m. The band and mode selectors
+// isolate one exactly, which is the honest way to ask that question.
+const BUCKETS = [
+  { key: 'strong', min: -5, label: '\u2265 \u22125 dB', colour: () => THEME.signal },
+  { key: 'fair', min: -15, label: '\u221215 to \u22125 dB', colour: () => THEME.accent },
+  { key: 'weak', min: -Infinity, label: 'below \u221215 dB', colour: () => THEME.alert },
+];
+const NO_REPORT = { key: 'none', label: 'no signal report',
+                    colour: () => THEME.grip };
+
+function bucketFor(snr) {
+  if (snr === null || snr === undefined) return NO_REPORT;
+  return BUCKETS.find((b) => snr >= b.min) || BUCKETS[BUCKETS.length - 1];
 }
+
+function snrColour(snr) { return bucketFor(snr).colour(); }
 
 // Above this many drawn objects, dots move from SVG to canvas. SVG has no
 // clipped edge to draw half a dot at, so it is the better surface while there
@@ -179,6 +263,36 @@ const SVG_LIMIT = 600;
 // polylines once the world copies are counted, which drags panning to a
 // second a frame - and a map that dense says nothing a few hundred does not.
 const PATH_LIMIT = 500;
+
+// Counts come from what is on screen, so the legend doubles as a summary of
+// the filtering - and a bucket with nothing in it is left out rather than
+// offered as a colour you will not find.
+function drawLegend(rows) {
+  if (!L_.legend) return;
+  const tally = new Map();
+  stations(rows).forEach((st) => {
+    const b = bucketFor(st.best);
+    tally.set(b.key, (tally.get(b.key) || 0) + 1);
+  });
+  const keys = [...BUCKETS, NO_REPORT].filter((b) => tally.get(b.key));
+  const row = (swatch, label, n) =>
+    `<div class="row"><span class="sw ${swatch.cls || ''}"`
+    + `${swatch.colour ? ` style="background:${swatch.colour}"` : ''}></span>`
+    + `<span>${esc(label)}</span>`
+    + (n === undefined ? '' : `<span class="n">${n}</span>`) + '</div>';
+
+  const parts = [`<h4>Signal heard</h4>`];
+  keys.forEach((b) => parts.push(row({ colour: b.colour() }, b.label,
+                                     tally.get(b.key))));
+  if (!keys.length) parts.push(`<div class="note">nothing on the map</div>`);
+  if (me) parts.push(row({ colour: THEME.grip, cls: 'home' }, 'your station'));
+  if (HDMap.toLatLon(meta.watching || '')) {
+    parts.push(row({ cls: 'ring' }, `watching ${esc(meta.watching)}`));
+  }
+  parts.push('<div class="note">colour is signal, not band \u2014 '
+             + 'use the selectors for those</div>');
+  L_.legend.getContainer().innerHTML = parts.join('');
+}
 
 function drawPin() {
   if (!L_.pin) return;
@@ -228,6 +342,7 @@ function draw() {
     });
   }
 
+  drawLegend(rows);
   const spots = stations(rows);
   const renderer = spots.length * HDMap.copies().length > SVG_LIMIT
     ? L_.canvas : undefined;
@@ -237,8 +352,12 @@ function draw() {
       L.circleMarker([st.at.lat, st.at.lon + dx], {
         renderer,
         radius: mine ? 6 : 4,
-        weight: 1.2, color: THEME.bg,
-        fillColor: mine ? THEME.accent : snrColour(st.best),
+        // Your own station is marked by its ring, not by its fill: colour
+        // means signal everywhere on this map, and an accent-filled dot for
+        // "home" made accent mean two things at once.
+        weight: mine ? 2 : 1.2,
+        color: mine ? THEME.ink : THEME.bg,
+        fillColor: snrColour(st.best),
         fillOpacity: 1,
       }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
         .bindPopup(() => popupFor(st), { maxWidth: 300 })
@@ -337,6 +456,7 @@ async function load(force) {
     // path: this is a read and should stay one.
     const q = new URLSearchParams({
       watch, hours: String(hoursFor(filters.since)), force: force ? '1' : '0',
+      as: watchMode,
     });
     const d = await HD.card('psk_reporter', `/api/reports?${q}`);
     if (!d.ok) { $('#err').textContent = d.error || 'no data'; return; }
@@ -396,8 +516,11 @@ function build() {
   // there?". PSK Reporter speaks Maidenhead, so a click becomes a grid
   // square and that becomes the query.
   map.on('click', (e) => {
+    // A place is a grid square, so picking one off the map says so.
     const grid = HDMap.toGrid(e.latlng.lat, e.latlng.lng, 4);
+    if (watchMode !== 'grid') setMode('grid', { reload: false });
     $('#watch').value = grid;
+    lastWatched = grid;
     touched = false;
     load(false);
   });
@@ -410,6 +533,19 @@ function build() {
   L.control.layers(null, Object.assign({ 'Reports': L_.spots, 'Paths': L_.paths },
                                        space.overlays),
                    { collapsed: true }).addTo(map);
+  const Legend = L.Control.extend({
+    onAdd() {
+      const el = L.DomUtil.create('div', 'legend');
+      // Otherwise a drag that starts on the legend pans the map, and a click
+      // on it drops a pin underneath.
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+      return el;
+    },
+  });
+  L_.legend = new Legend({ position: 'bottomleft' });
+  L_.legend.addTo(map);
+
   HDMap.resetControl(map, () => { touched = false; fit(); });
   map.on('zoomstart movestart', (e) => { if (e.hard !== true) touched = true; });
   map.on('overlayadd overlayremove', () => space.sync());
@@ -428,9 +564,12 @@ function rebuildIfNeeded() {
 }
 
 // ---- wiring ----------------------------------------------------------------
-document.querySelectorAll('.dirs button').forEach((b) => {
+// Scoped to #dirs, not to .dirs: the mode switcher shares the class for its
+// looks, and a handler bound to the class fired for both - a mode click was
+// clearing every direction button and setting filters.dir to undefined.
+document.querySelectorAll('#dirs button').forEach((b) => {
   b.onclick = () => {
-    document.querySelectorAll('.dirs button').forEach((o) => o.classList.remove('on'));
+    document.querySelectorAll('#dirs button').forEach((o) => o.classList.remove('on'));
     b.classList.add('on');
     filters.dir = b.dataset.dir;
     draw();
@@ -446,21 +585,40 @@ $('#since').onchange = (e) => {
   // Only go back to the card when the window needs more than was fetched.
   if (hoursFor(filters.since) > was) load(false);
 };
-$('#go').onclick = () => { touched = false; load(false); };
+// No Watch button: the box commits itself on Enter and on leaving it, which
+// is the only thing the button did. Nothing is sent for a half-typed
+// callsign, and the card's own cache decides whether a commit costs a
+// request at all.
+let lastWatched = '';
+function commitWatch() {
+  const v = $('#watch').value.trim().toUpperCase();
+  $('#watch').value = v;
+  if (!v) {                       // empty means home, which is a grid
+    setMode('grid', { reload: false });
+    if (me && me.grid) $('#watch').value = me.grid.slice(0, 4).toUpperCase();
+  } else if (!watchable(v)) {
+    return;                       // not a question worth asking yet
+  }
+  if ($('#watch').value === lastWatched) return;
+  lastWatched = $('#watch').value;
+  touched = false;
+  load(false);
+}
+$('#watch').addEventListener('blur', commitWatch);
 
-// "All": everything known about the place being watched. The filters are
-// what people get stuck behind - an empty map after four narrowing choices
-// reads as broken rather than as filtered - so this drops all of them.
+// Reset filters: every filter back to everything. The filters are what
+// people get stuck behind - an empty map after four narrowing choices reads
+// as broken rather than as filtered.
 //
-// It keeps the location. "Show all in a region" is about the region you are
-// looking at, and a button that quietly sent you home instead was the first
-// version of this and was simply wrong.
+// It leaves the place being watched alone, which is why it is named for the
+// filters and not called "All": "show all in a region" is about the region
+// you are looking at, and an earlier version of this quietly sent you home.
 $('#all').onclick = () => {
   ['band', 'mode', 'country', 'snr'].forEach((n) => {
     $(`#${n}`).value = '';
     filters[n] = '';
   });
-  document.querySelectorAll('.dirs button').forEach((b) =>
+  document.querySelectorAll('#dirs button').forEach((b) =>
     b.classList.toggle('on', b.dataset.dir === 'all'));
   filters.dir = 'all';
   // The widest time window already covered by what was fetched. Going wider
@@ -472,17 +630,12 @@ $('#all').onclick = () => {
     .filter((v) => v <= have)
     .sort((a, b) => b - a)[0];
   if (widest) { $('#since').value = String(widest); filters.since = widest; }
-  // Only an empty box falls back to home: the query API has no way to ask
-  // for the whole world, so "everywhere" means the operator's own grid.
-  if (!$('#watch').value.trim() && me && me.grid) {
-    $('#watch').value = me.grid.slice(0, 4).toUpperCase();
-  }
   touched = false;
-  if ($('#watch').value.trim() !== (meta.watching || '')) load(false);
-  else { draw(); fit(); }
+  draw();
+  fit();
 };
 $('#watch').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { touched = false; load(false); }
+  if (e.key === 'Enter') { e.preventDefault(); commitWatch(); }
 });
 $('#refresh').onclick = () => load(true);
 window.addEventListener('hamdash:theme', () => { HDMap.readTheme(); draw(); });
@@ -500,7 +653,11 @@ HD.onSettings((v) => {
     const st = await HD.card('psk_reporter', '/api/station');
     if (st && st.grid) me = Object.assign({ call: st.callsign }, HDMap.toLatLon(st.grid), { grid: st.grid });
   } catch { /* the map still works without knowing where you are */ }
-  $('#watch').value = (conf.watch || (me && me.grid ? me.grid.slice(0, 4) : '')).toUpperCase();
+  const start = (conf.watch || (me && me.grid ? me.grid.slice(0, 4) : '')).toUpperCase();
+  $('#watch').value = start;
+  lastWatched = start;
+  setMode(conf.watch_mode || (LOOKS_GRID.test(start) ? 'grid' : 'call'),
+          { reload: false });
   rebuildIfNeeded();
   await load(false);
   // The card serves from its cache, so this is cheap and keeps the age line

@@ -13,10 +13,20 @@ versions follow [SemVer](https://semver.org/). The version of record is
   band, mode, signal, country, which side of the report, and how recently.
   Watch a callsign, or a grid square for everything around you.
 
-  **Click the map** to drop a pin on any square and watch what is heard
-  there. **All** shows everything known about the place being watched — it
-  clears band, mode, country, signal, direction and the time window, and
-  **keeps the pin**; empty the box first to come back to your own grid.
+  **Watch a Grid or a Call** — an explicit choice rather than one box guessing
+  from what you typed. Clicking the map picks a grid square. The box commits
+  itself on Enter or when you click away, so there is no Watch button, and a
+  half-typed callsign is never sent. **Heard me / I heard** only exist in Call
+  mode: watching a square, both ends of a report can be strangers, so the
+  choice is gone rather than greyed — and the filter resets with it, because
+  one that is hidden but still narrowing makes the map look broken with
+  nothing on screen to say why. **Reset filters** is named for what it does:
+  every filter back to everything, the place being watched left alone.
+
+  **A legend** for the dot colours, with live counts. The colours are signal
+  strength — not band, which is what most people guess — so the legend says
+  so. Your own station is now marked by its ring rather than by its fill:
+  colour means one thing on this map.
 
   **Every filter works on what is already fetched.** PSK Reporter asks for no
   more than one retrieval every five minutes and says plainly that heavy users

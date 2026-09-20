@@ -291,7 +291,11 @@ def reports():
         return {"ok": False, "reports": [],
                 "error": "Nothing to watch yet. Set your grid in Settings, or "
                          "type a callsign above."}
-    as_grid = _looks_like_grid(watch)
+    # The page says which question it is asking; falling back to the shape of
+    # the text only when it does not, which is what a card run on its own or
+    # an older page will do.
+    asked = (request.args.get("as") or "").strip().lower()
+    as_grid = (asked == "grid") if asked in ("grid", "call")         else _looks_like_grid(watch)
     try:
         hours = float(request.args.get("hours") or conf.get("hours") or 1)
     except ValueError:

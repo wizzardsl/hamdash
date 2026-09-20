@@ -413,6 +413,21 @@ shape it settled on is worth reusing:
   minutes" is not honoured by restarting. `card.store` (from `HAMDASH_HOME`)
   is where; `Config.home` is resolved absolute because a card process has its
   own working directory and a relative `--home` landed in the plugin folder.
+- **Colour on the PSK map is signal, and only signal.** Band is the usual
+  guess and was measured rather than argued: a map is an all-pairs form, and
+  the eight categorical hues fail it badly (worst pair dE 1.6 deutan, 7.1
+  normal-vision). Band is ordinal, so a one-hue ramp is the right shape, but
+  it yields six steps on a dark surface and only four that also clear a light
+  one - coarser than 20m versus 17m. The band and mode selectors are the
+  honest way to isolate one. `scripts/validate_palette.py` in the dataviz
+  skill is what settled it; run it rather than reasoning about it.
+- **`[hidden]` does nothing to a flex container.** An author `display: flex`
+  beats the user agent's `[hidden] { display: none }`, so a group hidden in
+  code stays on screen. `.dirs[hidden]`, `.peek[hidden]`, `.sync-svc[hidden]`
+  all exist for that reason.
+- **A hidden filter must reset when it is hidden.** The PSK card drops the
+  direction filter when it leaves Call mode: one that is invisible but still
+  narrowing makes the map look broken with nothing on screen to explain it.
 - **PSK Reporter has no "whole world" query.** Every one is anchored on a
   callsign, or on a grid square with `modify=grid`. Their own map uses feeds
   that are not in the public API, so "everything near me" means a grid.

@@ -391,6 +391,24 @@ class TestGridOrCallsign(unittest.TestCase):
                 self.assertFalse(psk._looks_like_grid(s))
 
 
+class TestTheModeIsAsked(unittest.TestCase):
+    """The page says whether it means a grid or a callsign. Guessing from the
+    shape still happens when nothing says - an older page, or the card run on
+    its own - but a WA7 that looks a bit like a locator should never decide
+    which question gets asked."""
+
+    def test_explicit_grid_wins_over_the_shape(self):
+        self.assertTrue(psk._looks_like_grid("CN89"))
+        self.assertFalse(psk._looks_like_grid("VA7SLL"))
+
+    def test_the_shape_test_is_strict_about_callsigns(self):
+        for s in ("VE7A", "K1AB", "W1AW", "AB1CD"):
+            with self.subTest(s=s):
+                # Four characters, but the third and fourth are not both
+                # digits, so it is not mistaken for a locator.
+                self.assertFalse(psk._looks_like_grid(s))
+
+
 class TestBands(unittest.TestCase):
     def test_the_ones_these_reports_actually_use(self):
         for mhz, band in [(14.074, "20m"), (7.074, "40m"), (18.1, "17m"),

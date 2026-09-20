@@ -387,9 +387,18 @@ path card, with the same layers and projections.
 
 Type a **callsign** to watch one station, or a **grid square** (CN89, CN89kg)
 for everything around it — or just **click the map**, which drops a pin on
-that square and watches it. **All** shows everything known about the place you
-are watching — every filter cleared, the pin kept. Empty the box first if you
-want to come back to your own grid. Their query API has no "whole world" endpoint; every
+that square and watches it. The box commits on Enter or when you click away.
+**Reset filters** puts every filter back to everything and leaves the place
+being watched alone.
+
+**The dot colours are signal strength**, and the legend in the corner says so
+with a live count per band of signal. They are not band colours, which is the
+usual guess: a map is a form where any two marks can sit side by side, and
+eight band hues measure far below the readable floor there (worst pair
+ΔE 1.6 under deuteranopia) — a one-hue ramp manages only four steps that
+clear both a light and a dark theme, which is coarser than 20m versus 17m.
+The band and mode selectors isolate one exactly, which is the honest way to
+ask that question. Their query API has no "whole world" endpoint; every
 query is anchored on a callsign or a grid.
 
 **The five minute rule is enforced in the card.** PSK Reporter asks that data
