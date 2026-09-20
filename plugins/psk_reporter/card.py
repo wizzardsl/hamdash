@@ -1,28 +1,35 @@
 """PSK Reporter card.
 
 Reception reports from pskreporter.info: who heard whom, where, on what, and
-how well. The card process owns the fetching and the cache; the page asks the
+how well. The card process owns the fetching and the store; the page asks the
 card, never pskreporter directly.
 
-**The cache is the whole design.** Philip Gladstone asks that data be retrieved
-no more often than once every five minutes, and says plainly that he reserves
-the right to rate limit or block anyone who loads his system. A map with
-filters invites exactly the behaviour that would earn that: change the band,
-change the mode, drag the time window, and each of those is a redraw. So:
+**The store is the whole design.** Philip Gladstone asks that data be retrieved
+no more often than once every five minutes, says plainly that he reserves the
+right to rate limit or block anyone who loads his system, and asks for "an
+adaptive use of the retrieval mechanism". A map with filters invites exactly
+the opposite: change the band, change the mode, drag the time window, and each
+of those wants to be a request.
 
-* one upstream request per query at most every `MIN_INTERVAL` seconds, kept
-  here rather than trusted to the page;
-* filtering happens on what is already cached, so changing band, mode, sent
-  or received, country or time costs nothing at all;
-* the only thing that changes the upstream query is the callsign or grid being
-  watched and how far back to look, and even that serves the cached answer
-  until it is properly stale;
-* a request that arrives while the cache is warm gets the cached answer with
-  its age attached, so the page can say how old it is rather than pretending.
+So:
+
+* **one upstream request per watched target**, at most every `MIN_INTERVAL`
+  seconds, enforced here rather than trusted to the page;
+* **`lastseqno`** on every pull after the first, so each one carries only what
+  has arrived since - their own mechanism for exactly this, and the reason the
+  polling costs so little;
+* reports **accumulate** in `store.py` rather than being re-fetched, so the
+  window grows past what one reply can hold and a restart costs nothing;
+* **every filter runs against the store or in the page** - band, mode, signal,
+  country, direction and the time window - so none of them is a request.
+
+Correctness does not depend on `lastseqno`: rows are keyed on what makes a
+report unique, so an overlapping pull updates rather than duplicates, and a
+`lastseqno` that is ignored costs bandwidth and nothing else.
 
 The query API cannot return the whole world - every query is anchored on a
 callsign or, with `modify=grid`, a grid square. So "everything near me" means
-a grid square, which is what `watch` defaults to.
+a grid square.
 
 Spec: pskreporter.info/pskdev.html
 """
@@ -35,25 +42,25 @@ import xml.etree.ElementTree as ET
 import requests
 
 from hamdash.sdk import Card
+from store import RETAIN, Store, band_for
 
 card = Card(__file__)
 
 QUERY = "https://retrieve.pskreporter.info/query"
 # Their ask is "no more often than once every five minutes". This is the floor
-# for one query; the page may poll as often as it likes and will be served
-# from here.
+# for one target; the page may poll as often as it likes and is served from
+# the store.
 MIN_INTERVAL = 300.0
-# How long an answer is still worth showing while a refresh is due. Reports
-# age out of usefulness quickly - this is propagation, not history.
-STALE_AFTER = 1800.0
 TIMEOUT = 45.0
+# What one reply may carry. The store is how the window gets deeper than this.
 MAX_ROWS = 2000
+# How far back the first pull for a target reaches. Their limit is 24 hours;
+# asking for all of it on a busy square would just hit `rptlimit` and throw
+# most of it away, and every pull after this one is incremental anyway.
+FIRST_PULL = 3600 * 6
 
-_v = "0.1.0"
+_v = "0.2.0"
 USER_AGENT = f"hamdash-pskreporter/{_v} (+https://github.com/wizzardsl/hamdash)"
-
-
-CACHE_FILE = "cache.json"
 
 
 class RateLimited(RuntimeError):
@@ -65,119 +72,81 @@ class RateLimited(RuntimeError):
 
 
 class Fetcher:
-    """One upstream query, cached, with the five minute floor enforced here.
+    """One target, polled incrementally, with the five minute floor here."""
 
-    The cache is written to disk as well as held in memory. In memory alone
-    it lasts exactly as long as the card process, so restarting hamdash - or
-    the card being restarted under it - would send a fresh query every time.
-    Restart three times inside five minutes and that is three queries, which
-    is precisely what the rule asks you not to do; closing a window is not
-    what anybody means by "no more than once every five minutes".
-    """
-
-    def __init__(self, store=None) -> None:
+    def __init__(self, store: Store) -> None:
+        self.store = store
         self._lock = threading.Lock()
-        self._by_key: dict[tuple, dict] = {}
-        self._store = store
-        self._load()
 
-    # ---- across restarts -------------------------------------------------
-    def _load(self) -> None:
-        if not self._store:
-            return
-        saved = self._store.load_json(CACHE_FILE, None)
-        if not isinstance(saved, list):
-            return
-        now = time.time()
-        for row in saved:
-            try:
-                key = tuple(row["key"])
-                entry = row["entry"]
-                # A clock that has gone backwards would otherwise make an
-                # entry look fresh for ever.
-                keep = max(STALE_AFTER, entry.get("wait", 0))
-                if not (0 <= now - entry["at"] < keep):
-                    continue
-                self._by_key[key] = entry
-            except (KeyError, TypeError, ValueError):
-                continue
-
-    def _save(self) -> None:
-        if not self._store:
-            return
-        self._store.save_json(CACHE_FILE, [
-            {"key": list(k), "entry": v} for k, v in self._by_key.items()])
-
-    def get(self, watch: str, as_grid: bool, hours: float, mode: str,
+    def get(self, watch: str, as_grid: bool, window: float,
             contact: str = "", force: bool = False) -> dict:
-        key = (watch.upper(), as_grid, round(hours, 2), mode.upper())
+        target = watch.upper()
         now = time.time()
         with self._lock:
-            got = self._by_key.get(key)
-            age = now - got["at"] if got else None
-            # Never sooner than MIN_INTERVAL, whatever anyone asks for. A
-            # forced refresh from the page cannot buy its way past this; it
-            # only skips the wait when the floor has already passed.
-            if got and age < max(MIN_INTERVAL, got.get("wait", 0)):
-                return self._answer(got, age, fresh=False)
-            try:
-                fresh = self._fetch(watch, as_grid, hours, mode, contact)
-            except Exception as exc:                # noqa: BLE001 - reported
-                # A failure waits its turn as surely as a success does.
-                # Without this there is nothing holding the clock, so the
-                # page's own poll retries every minute - and against a rate
-                # limit, retrying is the thing that caused it. Remember the
-                # attempt, and honour a Retry-After if one was given.
-                wait = max(MIN_INTERVAL, getattr(exc, "retry_after", 0) or 0)
-                if got:
-                    # Keep showing what we have; say why it is not moving.
-                    got["error"] = str(exc)
-                    got["at"], got["wait"] = now, wait
-                    self._save()
-                    return self._answer(got, 0.0, fresh=False)
-                self._by_key[key] = {"reports": [], "at": now, "wait": wait,
-                                     "watching": watch.upper(), "hours": hours,
-                                     "truncated": False, "error": str(exc),
-                                     "failed": True}
-                self._save()
-                return {"ok": False, "error": str(exc), "reports": [],
-                        "age_s": 0, "next_s": round(wait)}
-            self._by_key[key] = fresh
-            # One key per query, and there are only so many a person watches.
-            if len(self._by_key) > 12:
-                oldest = min(self._by_key, key=lambda k: self._by_key[k]["at"])
-                self._by_key.pop(oldest, None)
-            self._save()
-            return self._answer(fresh, 0.0, fresh=True)
+            st = self.store.state(target)
+            last = float(st.get("at") or 0)
+            wait = max(MIN_INTERVAL, float(st.get("wait") or 0))
+            # `force` is the Refresh button. It cannot buy its way past the
+            # floor - it only means "do not wait for the poll".
+            if not last or (now - last) >= wait:
+                try:
+                    self._pull(target, as_grid, st, contact)
+                    self.store.mark(target, at=now, wait=0, error="", failed=0,
+                                    as_grid=1 if as_grid else 0)
+                    self.store.prune()
+                except Exception as exc:            # noqa: BLE001 - reported
+                    # A failure waits its turn as surely as a success does.
+                    # Without this the page's own poll retries every minute,
+                    # and against a rate limit retrying is what caused it.
+                    back = max(MIN_INTERVAL,
+                               getattr(exc, "retry_after", 0) or 0)
+                    self.store.mark(target, at=now, wait=back, error=str(exc),
+                                    failed=1, as_grid=1 if as_grid else 0)
+                st = self.store.state(target)
+            return self._answer(target, window, st)
 
-    @staticmethod
-    def _answer(entry: dict, age: float, fresh: bool) -> dict:
-        wait = max(MIN_INTERVAL, entry.get("wait", 0))
-        return {"ok": not entry.get("failed"), "reports": entry["reports"],
-                "age_s": round(age), "fresh": fresh,
-                "next_s": max(0, round(wait - age)),
-                "watching": entry["watching"], "hours": entry["hours"],
-                "error": entry.get("error", ""),
-                "truncated": entry.get("truncated", False)}
+    def _answer(self, target: str, window: float, st: dict) -> dict:
+        age = time.time() - float(st.get("at") or 0)
+        wait = max(MIN_INTERVAL, float(st.get("wait") or 0))
+        rows = self.store.since(target, window)
+        oldest = self.store.oldest(target)
+        return {
+            # A failure is only a failure while there is nothing to show.
+            # Once the store holds reports, an outage is a note beside them.
+            "ok": bool(rows) or not st.get("failed"),
+            "reports": rows,
+            "watching": target,
+            "age_s": round(age) if st.get("at") else 0,
+            "next_s": max(0, round(wait - age)) if st.get("at") else 0,
+            "error": st.get("error") or "",
+            "held": self.store.count(target),
+            # How far back the store actually reaches, so the page can say
+            # what a window is worth rather than implying one it cannot fill.
+            "covers_s": round(time.time() - oldest) if oldest else 0,
+            "retain_s": RETAIN,
+        }
 
-    def _fetch(self, watch: str, as_grid: bool, hours: float, mode: str,
-               contact: str) -> dict:
+    def _pull(self, target: str, as_grid: bool, st: dict, contact: str) -> None:
+        seq = (st.get("last_seq") or "").strip()
         params = {
-            "callsign": watch.upper(),
-            # A negative number of seconds, and their limit is 24 hours.
-            "flowStartSeconds": -int(min(hours, 24) * 3600),
-            "rronly": 1,             # reception reports only, not the monitor list
+            "callsign": target,
+            "rronly": 1,             # reception reports only, not the monitors
             "noactive": 1,
             "rptlimit": MAX_ROWS,
         }
         if as_grid:
             params["modify"] = "grid"
-        if mode:
-            params["mode"] = mode.upper()
+        if seq:
+            # Only what has arrived since we last looked. This is the whole
+            # point: after the first pull these replies are small.
+            params["lastseqno"] = seq
+        else:
+            params["flowStartSeconds"] = -int(FIRST_PULL)
         if contact.strip():
             # Opt-in, empty by default. They ask for it so they can reach a
             # heavy user rather than simply blocking one.
             params["appcontact"] = contact.strip()
+
         r = requests.get(QUERY, params=params, timeout=TIMEOUT,
                          headers={"User-Agent": USER_AGENT,
                                   # They may come to require this; it is
@@ -206,11 +175,17 @@ class Fetcher:
         except ET.ParseError as exc:
             raise RuntimeError(f"pskreporter sent XML that would not "
                                f"parse ({exc})") from exc
-        rows = [_report(el) for el in root.iter("receptionReport")]
-        rows = [r for r in rows if r]
-        return {"reports": rows, "at": time.time(),
-                "watching": watch.upper(), "hours": hours,
-                "truncated": len(rows) >= MAX_ROWS, "error": ""}
+
+        rows = [x for x in (_report(el) for el in root.iter("receptionReport"))
+                if x]
+        self.store.add(target, rows)
+        # Their reply carries the high-water mark, and keeping it is what
+        # makes the next pull incremental. A reply without one leaves the
+        # marker alone rather than resetting us to fetching everything again.
+        found = root.find("lastSequenceNumber")
+        got = found.get("value") if found is not None else ""
+        if got:
+            self.store.mark(target, last_seq=got)
 
 
 def _report(el) -> dict | None:
@@ -229,7 +204,7 @@ def _report(el) -> dict | None:
         "rx_grid": g.get("receiverLocator", ""),
         "hz": hz,
         "mhz": round(hz / 1e6, 6),
-        "band": _band(hz / 1e6),
+        "band": band_for(hz / 1e6),
         "mode": g.get("mode", ""),
         "snr": _int(g.get("sNR")),
         "at": when,
@@ -252,34 +227,20 @@ def _int(v):
         return None
 
 
-BANDS = [(0.13, 0.14, "2200m"), (0.47, 0.48, "630m"), (1.8, 2.0, "160m"),
-         (3.5, 4.0, "80m"), (5.25, 5.45, "60m"), (7.0, 7.3, "40m"),
-         (10.1, 10.15, "30m"), (14.0, 14.35, "20m"), (18.06, 18.17, "17m"),
-         (21.0, 21.45, "15m"), (24.89, 24.99, "12m"), (28.0, 29.7, "10m"),
-         (50.0, 54.0, "6m"), (70.0, 71.0, "4m"), (144.0, 148.0, "2m"),
-         (222.0, 225.0, "1.25m"), (420.0, 450.0, "70cm"),
-         (902.0, 928.0, "33cm"), (1240.0, 1300.0, "23cm")]
-
-
-def _band(mhz: float) -> str:
-    return next((n for lo, hi, n in BANDS if lo <= mhz <= hi), "")
-
-
-FETCHER = Fetcher(store=card)
+STORE = Store(card.store / "reports.sqlite3")
+FETCHER = Fetcher(STORE)
 
 
 @card.get("/reports")
 def reports():
-    """Everything cached for this query. The page filters what it gets.
+    """One window of the store, refreshing it if it is due.
 
-    Filtering client side is not laziness: it is what keeps a person changing
-    band and mode from turning into upstream requests.
+    The window is a query against the local file, so the page may ask for any
+    of them as often as it likes.
     """
     from flask import request
     conf = card.settings(card.tile_uid())
-    watch = (request.args.get("watch")
-             or conf.get("watch")
-             or "").strip()
+    watch = (request.args.get("watch") or conf.get("watch") or "").strip()
     if not watch:
         station = {}
         try:
@@ -295,13 +256,13 @@ def reports():
     # the text only when it does not, which is what a card run on its own or
     # an older page will do.
     asked = (request.args.get("as") or "").strip().lower()
-    as_grid = (asked == "grid") if asked in ("grid", "call")         else _looks_like_grid(watch)
+    as_grid = (asked == "grid") if asked in ("grid", "call") \
+        else _looks_like_grid(watch)
     try:
-        hours = float(request.args.get("hours") or conf.get("hours") or 1)
+        window = float(request.args.get("window") or RETAIN)
     except ValueError:
-        hours = 1.0
-    return FETCHER.get(watch, as_grid, max(0.05, min(hours, 24)),
-                       (conf.get("mode_filter") or "").strip(),
+        window = float(RETAIN)
+    return FETCHER.get(watch, as_grid, max(60.0, min(window, RETAIN)),
                        (conf.get("appcontact") or "").strip(),
                        force=request.args.get("force") == "1")
 

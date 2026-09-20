@@ -37,11 +37,23 @@ versions follow [SemVer](https://semver.org/). The version of record is
   next request is allowed. An outage keeps showing what it had rather than
   going blank.
 
-  **The cache outlives the process.** In memory alone it lasts exactly as long
-  as the card, so restarting hamdash three times inside five minutes would be
-  three queries — which is what the rule asks you not to do; closing a window
-  is not what anybody means by it. It is written to disk and read back with
-  its clock intact, so a restart costs nothing.
+  **Reports accumulate in SQLite, pulled incrementally.** Every reply carries
+  the last sequence number in their database; passing it back as `lastseqno`
+  asks only for what has arrived since — the "adaptive use of the retrieval
+  mechanism" their developer notes ask for by name. Three things follow: each
+  pull after the first is small; the window grows past what one reply can
+  hold, where a busy square used to truncate at two thousand reports and the
+  card had to admit it; and **the time filter stops costing requests
+  entirely**, because the retained window is a query against a local file
+  rather than a different upstream question. Correctness does not depend on
+  `lastseqno` — rows are keyed on what makes a report unique, so an
+  overlapping pull updates rather than duplicates.
+
+  **The store outlives the process.** A restart must not spend a query —
+  doing it three times inside five minutes would be three of them, and
+  closing a window is not what anybody means by the rule. The reports, the
+  clock and the sequence marker are all on disk, so the first pull after a
+  restart is incremental too.
 
   **A failed fetch waits its turn too.** Found by causing it: several queries
   in quick succession while developing earned a 429, and with nothing cached

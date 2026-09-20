@@ -297,6 +297,10 @@ shape it settled on is worth reusing:
   minute (invariant 4).
 - `sqlite3.connect` as a context manager commits but does **not** close. Use
   `Logbook._conn`, which does both; the old code leaked a connection per read.
+  `psk_reporter/store.py` made the same mistake again while quoting this very
+  warning in its own docstring - `contextlib.contextmanager` around
+  commit-then-close is the shape that works, and
+  `-W error::ResourceWarning` on the test run is what catches it.
 - **QRZ HTML-escapes the ADIF payload in its reply.** Splitting the response
   on `&` truncates it at the first `&lt;` and leaves `ADIF` present and empty,
   which reads as "no ADIF" and sends you looking in the wrong place. Take
@@ -408,6 +412,16 @@ shape it settled on is worth reusing:
   the page's own poll would have retried once a minute into the rate limit
   that the retrying caused. `Fetcher` stores failures like answers, with a
   `wait` that honours their `Retry-After`.
+- **Pull incrementally where the API offers it.** PSK Reporter returns
+  `lastSequenceNumber` on every reply and takes `lastseqno` on the next, so
+  each pull after the first carries only what is new - their developer notes
+  ask for exactly this. `psk_reporter/store.py` accumulates into SQLite
+  instead of re-fetching, which also lifts the `rptlimit` ceiling (a busy
+  square truncated at 2000 and covered barely ten minutes) and makes the time
+  filter free: the window is a `SELECT`, not a different upstream question.
+  **Correctness must not depend on the marker** - rows are keyed on
+  `(target, tx, rx, at, hz)`, so an ignored `lastseqno` costs bandwidth and
+  nothing else.
 - **A card's cache belongs on disk, not only in memory.** In memory it lasts
   exactly as long as the process, and "no more than one request every five
   minutes" is not honoured by restarting. `card.store` (from `HAMDASH_HOME`)

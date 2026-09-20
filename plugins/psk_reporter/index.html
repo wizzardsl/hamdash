@@ -443,7 +443,11 @@ function showAge() {
   if (meta.watching) bits.push(`watching ${meta.watching}`);
   bits.push(a < 90 ? `updated ${a}s ago` : `updated ${Math.round(a / 60)}m ago`);
   if (next > 0) bits.push(`next in ${next < 90 ? next + 's' : Math.round(next / 60) + 'm'}`);
-  if (meta.truncated) bits.push('capped at 2000 reports');
+  if (meta.held) {
+    const covers = Number(meta.covers_s || 0);
+    bits.push(`${meta.held} held`
+      + (covers > 3600 ? ` over ${(covers / 3600).toFixed(1)}h` : ''));
+  }
   const el = $('#age');
   el.textContent = bits.join(' · ');
   el.className = a > 900 ? 'stale' : 'muted';
@@ -454,9 +458,12 @@ async function load(force) {
     const watch = $('#watch').value.trim();
     // HD.card turns a third argument into a POST, so the query goes in the
     // path: this is a read and should stay one.
+    // Ask for everything the store holds and filter in the page. The
+    // window used to be part of the upstream query, so widening it was a
+    // request; it is a SELECT now and costs nothing.
     const q = new URLSearchParams({
-      watch, hours: String(hoursFor(filters.since)), force: force ? '1' : '0',
-      as: watchMode,
+      watch, window: String(meta.retain_s || 86400),
+      force: force ? '1' : '0', as: watchMode,
     });
     const d = await HD.card('psk_reporter', `/api/reports?${q}`);
     if (!d.ok) { $('#err').textContent = d.error || 'no data'; return; }
@@ -470,13 +477,6 @@ async function load(force) {
   } catch (e) {
     $('#err').textContent = e.message;
   }
-}
-
-// Ask upstream for a little more than the window on screen, so widening the
-// time filter usually needs no request at all.
-function hoursFor(secs) {
-  const h = (secs || 3600) / 3600;
-  return Math.min(24, h <= 1 ? 1 : h <= 3 ? 3 : h <= 6 ? 6 : h <= 12 ? 12 : 24);
 }
 
 function fit() {
@@ -579,11 +579,11 @@ document.querySelectorAll('#dirs button').forEach((b) => {
   $(`#${name}`).onchange = (e) => { filters[name] = e.target.value; draw(); };
 });
 $('#since').onchange = (e) => {
-  const was = hoursFor(filters.since);
+  // Purely local: the card hands over everything it holds and this picks a
+  // slice of it. No request, whichever way it moves.
   filters.since = Number(e.target.value);
   draw();
-  // Only go back to the card when the window needs more than was fetched.
-  if (hoursFor(filters.since) > was) load(false);
+  fit();
 };
 // No Watch button: the box commits itself on Enter and on leaving it, which
 // is the only thing the button did. Nothing is sent for a half-typed
@@ -621,13 +621,12 @@ $('#all').onclick = () => {
   document.querySelectorAll('#dirs button').forEach((b) =>
     b.classList.toggle('on', b.dataset.dir === 'all'));
   filters.dir = 'all';
-  // The widest time window already covered by what was fetched. Going wider
-  // than that would be a request, and "show me everything" should not
-  // quietly become "ask them again".
-  const have = (meta.hours || 1) * 3600;
+  // The widest window the store actually reaches. Offering 24 hours when it
+  // has twenty minutes would just look like the filter did nothing.
+  const covers = Number(meta.covers_s || 0);
   const widest = [...$('#since').options]
     .map((o) => Number(o.value))
-    .filter((v) => v <= have)
+    .filter((v) => v <= Math.max(covers, 900))
     .sort((a, b) => b - a)[0];
   if (widest) { $('#since').value = String(widest); filters.since = widest; }
   touched = false;

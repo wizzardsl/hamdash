@@ -401,6 +401,15 @@ The band and mode selectors isolate one exactly, which is the honest way to
 ask that question. Their query API has no "whole world" endpoint; every
 query is anchored on a callsign or a grid.
 
+**Reports accumulate locally and are pulled incrementally.** Each reply
+carries a sequence number; the card passes it back so the next pull asks only
+for what has arrived since — their own mechanism, and what their developer
+notes ask for. Reports go into a small SQLite file per watched target, pruned
+to the 24 hours their API could refill, so the window deepens as the card runs
+instead of truncating at whatever one reply can hold. **Every filter, the time
+window included, is a query against that file or the page** and costs no
+request at all.
+
 **The five minute rule is enforced in the card.** PSK Reporter asks that data
 be retrieved no more often than once every five minutes and reserves the right
 to rate limit or block anyone who loads their system. So the card process

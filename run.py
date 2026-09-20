@@ -63,6 +63,13 @@ def run_card(entry: str) -> int:
         print(f"--run-card: {path} does not exist (cwd {Path.cwd()})",
               file=sys.stderr)
         return 2
+    # `python card.py` puts the script's own directory on sys.path; runpy
+    # does not. Without this a card that splits itself over more than one
+    # file imports fine from source and fails only in a frozen build, which
+    # is exactly the difference that makes a broken spec look healthy.
+    here = str(path.resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
     sys.argv = [str(path)]
     runpy.run_path(str(path), run_name="__main__")
     return 0

@@ -2,7 +2,7 @@
   "id": "psk_reporter",
   "name": "PSK Reporter",
   "kind": "python",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "HamDash",
   "description": "Who is hearing whom, from pskreporter.info, on a map you can filter",
   "entry": "card.py",
@@ -23,20 +23,7 @@
       "type": "string",
       "label": "Watch",
       "default": "",
-      "help": "A callsign, or a grid square for everything around it (CN89, CN89kg). Left empty, your own grid is used. PSK Reporter has no 'whole world' query - every one is anchored on a callsign or a grid."
-    },
-    "hours": {
-      "type": "select",
-      "label": "Look back",
-      "options": ["0.25", "1", "3", "6", "12", "24"],
-      "default": "1",
-      "help": "Hours of reports to ask for. Their limit is 24. Asking for less is kinder to their server and quicker to draw."
-    },
-    "mode_filter": {
-      "type": "string",
-      "label": "Mode, upstream",
-      "default": "",
-      "help": "Narrows the query itself to one mode (FT8, FT4, CW...). Leave empty to fetch everything and filter on the card, which costs no extra requests."
+      "help": "A callsign, or a grid square for everything around it (CN89, CN89kg). Left empty, your own grid is used. Clicking the map picks a square. PSK Reporter has no 'whole world' query - every one is anchored on a callsign or a grid."
     },
     "basemap": {
       "type": "select",

@@ -9,6 +9,7 @@ Run with:  python -m unittest discover -s tests
 import ast
 import re
 import sys
+import json
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -43,6 +44,59 @@ class TestCardCommand(unittest.TestCase):
         self.assertIn(argv[1], launcher,
                       "run.py does not handle the flag proc.py sends")
         self.assertIn('sys.argv[1] == "--run-card"', launcher)
+
+
+class TestRunCardSeesItsOwnDirectory(unittest.TestCase):
+    """`python card.py` puts the script's directory on sys.path; runpy does
+    not, and --run-card is runpy. A card split over more than one file - as
+    psk_reporter is, with its store - therefore imports fine from source and
+    fails only in a frozen build. That is the exact shape of bug the frozen
+    path keeps producing, so it is pinned here rather than left to the smoke
+    test to find after a release."""
+
+    def test_the_entry_directory_goes_on_the_path(self):
+        import run
+        card = ROOT / "plugins" / "psk_reporter" / "card.py"
+        here = str(card.resolve().parent)
+        seen = []
+        with mock.patch("runpy.run_path",
+                        side_effect=lambda *a, **k: seen.extend(sys.path)):
+            run.run_card(str(card))
+        self.assertIn(here, seen)
+
+    def test_a_missing_entry_is_reported_not_raised(self):
+        import run
+        self.assertEqual(run.run_card(str(ROOT / "nope" / "card.py")), 2)
+
+
+class TestEveryCardImports(unittest.TestCase):
+    """A card that cannot be imported is a card that cannot start, and the
+    board only says "no response"."""
+
+    def test_what_a_card_imports_is_findable(self):
+        import importlib.util
+        for manifest in sorted((ROOT / "plugins").glob("*/card.json")):
+            meta = json.loads(manifest.read_text(encoding="utf-8"))
+            if meta.get("kind") != "python":
+                continue
+            entry = manifest.parent / meta.get("entry", "card.py")
+            with self.subTest(card=meta.get("id")):
+                self.assertTrue(entry.exists(), f"{entry} is missing")
+                tree = ast.parse(entry.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.ImportFrom) or node.level:
+                        continue
+                    top = (node.module or "").split(".")[0]
+                    if not top:
+                        continue
+                    # Either a file beside the card - which only resolves
+                    # because run_card puts that directory on sys.path - or
+                    # something this interpreter can find on its own.
+                    beside = (manifest.parent / f"{top}.py").exists()
+                    found = beside or importlib.util.find_spec(top) is not None
+                    self.assertTrue(found,
+                                    f"{entry.name} imports {top!r}, which is "
+                                    f"neither beside it nor importable")
 
 
 class TestBundlePaths(unittest.TestCase):
