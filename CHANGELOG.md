@@ -14,7 +14,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   Watch a callsign, or a grid square for everything around you.
 
   **Click the map** to drop a pin on any square and watch what is heard
-  there; **All** clears every filter and comes back to your own grid.
+  there. **All** shows everything known about the place being watched — it
+  clears band, mode, country, signal, direction and the time window, and
+  **keeps the pin**; empty the box first to come back to your own grid.
 
   **Every filter works on what is already fetched.** PSK Reporter asks for no
   more than one retrieval every five minutes and says plainly that heavy users

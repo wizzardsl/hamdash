@@ -69,7 +69,7 @@
   <input id="watch" class="mono" spellcheck="false" placeholder="grid or call"
          title="A callsign, or a grid square for everything around it. Click the map to pick a place. Empty uses your own grid.">
   <button class="btn btn-quiet" id="go">Watch</button>
-  <button class="btn btn-quiet" id="all" title="Every report this query returned: clears band, mode, country, signal and direction, and goes back to your own grid.">All</button>
+  <button class="btn btn-quiet" id="all" title="Everything known about the place being watched: clears band, mode, country, signal, direction and the time window. Keeps the pin — empty the box first to come back to your own grid.">All</button>
   <div class="dirs" role="group" aria-label="Which side of the report">
     <button data-dir="all" class="on">Both</button>
     <button data-dir="tx">Heard me</button>
@@ -448,9 +448,13 @@ $('#since').onchange = (e) => {
 };
 $('#go').onclick = () => { touched = false; load(false); };
 
-// "All": everything this query returned, from wherever the operator lives.
-// The filters are the thing people get stuck behind - an empty map after
-// four narrowing choices reads as broken rather than as filtered.
+// "All": everything known about the place being watched. The filters are
+// what people get stuck behind - an empty map after four narrowing choices
+// reads as broken rather than as filtered - so this drops all of them.
+//
+// It keeps the location. "Show all in a region" is about the region you are
+// looking at, and a button that quietly sent you home instead was the first
+// version of this and was simply wrong.
 $('#all').onclick = () => {
   ['band', 'mode', 'country', 'snr'].forEach((n) => {
     $(`#${n}`).value = '';
@@ -459,11 +463,23 @@ $('#all').onclick = () => {
   document.querySelectorAll('.dirs button').forEach((b) =>
     b.classList.toggle('on', b.dataset.dir === 'all'));
   filters.dir = 'all';
-  // A blank box means "everywhere I can see from", which is the operator's
-  // own grid - the query API has no way to ask for the whole world.
-  $('#watch').value = (me && me.grid ? me.grid.slice(0, 4) : '').toUpperCase();
+  // The widest time window already covered by what was fetched. Going wider
+  // than that would be a request, and "show me everything" should not
+  // quietly become "ask them again".
+  const have = (meta.hours || 1) * 3600;
+  const widest = [...$('#since').options]
+    .map((o) => Number(o.value))
+    .filter((v) => v <= have)
+    .sort((a, b) => b - a)[0];
+  if (widest) { $('#since').value = String(widest); filters.since = widest; }
+  // Only an empty box falls back to home: the query API has no way to ask
+  // for the whole world, so "everywhere" means the operator's own grid.
+  if (!$('#watch').value.trim() && me && me.grid) {
+    $('#watch').value = me.grid.slice(0, 4).toUpperCase();
+  }
   touched = false;
-  load(false);
+  if ($('#watch').value.trim() !== (meta.watching || '')) load(false);
+  else { draw(); fit(); }
 };
 $('#watch').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { touched = false; load(false); }

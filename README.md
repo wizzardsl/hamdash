@@ -387,8 +387,9 @@ path card, with the same layers and projections.
 
 Type a **callsign** to watch one station, or a **grid square** (CN89, CN89kg)
 for everything around it — or just **click the map**, which drops a pin on
-that square and watches it. **All** clears every filter and comes back to your
-own grid. Their query API has no "whole world" endpoint; every
+that square and watches it. **All** shows everything known about the place you
+are watching — every filter cleared, the pin kept. Empty the box first if you
+want to come back to your own grid. Their query API has no "whole world" endpoint; every
 query is anchored on a callsign or a grid.
 
 **The five minute rule is enforced in the card.** PSK Reporter asks that data
