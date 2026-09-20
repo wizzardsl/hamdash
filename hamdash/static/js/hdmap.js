@@ -223,29 +223,51 @@ window.HDMap = (function () {
   }
 
   // ---- basemaps ------------------------------------------------------------
-  function builtInBasemap() {
+  function builtInBasemap(opts = {}) {
     // In its own pane, under everything else, which is where a tile basemap
     // goes. It used to share the overlay pane: its land is opaque, so anything
     // drawn on a surface Leaflet stacks lower - a canvas, which it gives
     // z-index 100 against an SVG's 200 - was painted underneath the
     // continents. One copy per world, because a tile layer repeats and
     // anything drawn beside it has to as well.
-    const land = (dx) => L.geoJSON(window.WORLD_LAND, {
+    const layer = (data, dx, style) => L.geoJSON(data, {
       pane: 'basemap',
       coordsToLatLng: (c) => L.latLng(c[1], c[0] + dx),
-      style: { color: theme.grip, weight: 0.6, fillColor: theme.panel2,
-               fillOpacity: 1 },
+      style,
       interactive: false,
       attribution: 'Natural Earth (public domain)',
     });
-    return L.layerGroup(copies().map(land));
+    const out = [];
+    copies().forEach((dx) => {
+      out.push(layer(window.WORLD_LAND, dx,
+                     { color: theme.grip, weight: 0.6,
+                       fillColor: theme.panel2, fillOpacity: 1 }));
+      // Borders sit on the same pane as the land, added after it so they
+      // draw on top of the fill rather than under it. Thinner and dimmer
+      // than the coastline: a border is a fact about the land, not an edge
+      // of it, and at these zooms a crisp one competes with the data.
+      if (opts.borders !== false && window.WORLD_BORDERS) {
+        out.push(layer(window.WORLD_BORDERS, dx,
+                       { color: theme.grip, weight: 0.7, opacity: 0.95,
+                         fill: false, dashArray: '3 2' }));
+      }
+      if (opts.subdivisions && window.WORLD_SUBDIVISIONS) {
+        out.push(layer(window.WORLD_SUBDIVISIONS, dx,
+                       { color: theme.grip, weight: 0.5, opacity: 0.6,
+                         fill: false }));
+      }
+    });
+    return L.layerGroup(out);
   }
 
   function basemap(conf) {
+    conf = conf || {};
+    const lines = { borders: conf.borders !== false,
+                    subdivisions: !!conf.subdivisions };
     // Tiles are square in Web Mercator and nothing else, so azimuthal always
     // gets the vector map. Saying so beats drawing a broken one.
-    if (azimuthal) return builtInBasemap();
-    const pick = (conf || {}).basemap || 'built-in (offline)';
+    if (azimuthal) return builtInBasemap(lines);
+    const pick = conf.basemap || 'built-in (offline)';
     if (pick === 'OpenStreetMap') {
       return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
@@ -258,7 +280,7 @@ window.HDMap = (function () {
         attribution: conf.tile_attribution || 'custom tiles',
       });
     }
-    return builtInBasemap();
+    return builtInBasemap(lines);
   }
 
   // ---- the map itself ------------------------------------------------------

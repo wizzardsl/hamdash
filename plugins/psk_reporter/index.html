@@ -141,6 +141,7 @@
 <script src="/static/vendor/proj4.js"></script>
 <script src="/static/vendor/proj4leaflet.js"></script>
 <script src="/static/vendor/world.js"></script>
+<script src="/static/vendor/borders.js"></script>
 <script src="/static/js/hdmap.js"></script>
 <script>
 HD.cardId = 'psk_reporter';
@@ -507,6 +508,7 @@ function build() {
   const az = wantAzimuthal();
   map = HDMap.create('map', { azimuthal: az, centre: me || { lat: 20, lon: 0 } });
   L_.base = HDMap.basemap(conf).addTo(map);
+  builtBase = baseKey();
   L_.canvas = L.canvas({ padding: 0.3 }).addTo(map);
   L_.paths = L.layerGroup().addTo(map);
   L_.spots = L.layerGroup().addTo(map);
@@ -639,11 +641,22 @@ $('#watch').addEventListener('keydown', (e) => {
 $('#refresh').onclick = () => load(true);
 window.addEventListener('hamdash:theme', () => { HDMap.readTheme(); draw(); });
 
+// What the base map is made of, so a change to any of it swaps the layer
+// rather than waiting for a reload.
+const baseKey = () => [conf.basemap, conf.tile_url, conf.tile_attribution,
+                       conf.borders !== false, !!conf.subdivisions].join('|');
+let builtBase = '';
+
 HD.onSettings((v) => {
   conf = v || {};
   if ($('#watch').value.trim() === '' && conf.watch) $('#watch').value = conf.watch;
-  if (rebuildIfNeeded()) { draw(); if (!touched) fit(); }
-  else draw();
+  if (rebuildIfNeeded()) { draw(); if (!touched) fit(); return; }
+  if (map && baseKey() !== builtBase) {
+    if (L_.base) map.removeLayer(L_.base);
+    L_.base = HDMap.basemap(conf).addTo(map);
+    builtBase = baseKey();
+  }
+  draw();
 });
 
 (async function boot() {

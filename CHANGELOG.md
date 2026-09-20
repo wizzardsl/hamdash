@@ -70,6 +70,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   card process has its own working directory, so `--home ./dev` resolved
   against the plugin folder rather than the host's. The config home is
   absolute now.
+- **Boundaries on the offline base map.** Country borders, and states and
+  provinces for the nine countries Natural Earth publishes them for —
+  Australia, Brazil, Canada, China, India, Indonesia, Russia, South Africa
+  and the United States. Both are settings on either map card; borders are on
+  by default, subdivisions off. Bundled rather than fetched, like the
+  coastline, so they work offline and frozen: simplified and rounded the same
+  way, which is 51 kB for both.
 - **The map machinery is now shared** (`hamdash/static/js/hdmap.js`), so both
   map cards get the same world copies, projections, basemaps and overlays from
   one place. Leaflet moved to `hamdash/static/vendor/`.

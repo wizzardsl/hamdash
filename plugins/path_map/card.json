@@ -33,6 +33,18 @@
       "default": "built-in (offline)",
       "help": "Built-in needs no network and no account, and is the only one that works in a shack with no internet. The tile options need a connection."
     },
+    "borders": {
+      "type": "bool",
+      "label": "Country borders",
+      "default": true,
+      "help": "Drawn on the built-in base map. Tile base maps bring their own."
+    },
+    "subdivisions": {
+      "type": "bool",
+      "label": "States and provinces",
+      "default": false,
+      "help": "Internal boundaries, on the built-in base map. Natural Earth publishes these for Australia, Brazil, Canada, China, India, Indonesia, Russia, South Africa and the United States; elsewhere there is nothing to draw."
+    },
     "projection": {
       "type": "select",
       "label": "Projection",

@@ -385,6 +385,14 @@ shape it settled on is worth reusing:
   built once, so changing projection or supplying a weather key means
   `map.remove()` and build again (`needsRebuild`/`rebuild`), not adjusting in
   place.
+- **Boundaries are vendored like the coastline** (`vendor/borders.js`:
+  `WORLD_BORDERS`, admin-0 at 1:110m; `WORLD_SUBDIVISIONS`, admin-1 at 1:50m).
+  Simplified with Douglas-Peucker and rounded to 0.1 degrees, the same as
+  `world.js` - 51 kB for both, against 340 kB and 880 kB raw. They are drawn
+  on the `basemap` pane *after* the land so they sit on its fill rather than
+  under it, and once per world copy like everything else. Natural Earth
+  publishes admin-1 lines for nine countries only; elsewhere there is nothing
+  to draw, which is the data rather than a broken layer.
 - Azimuthal cannot use tiles: no service publishes tiles in aeqd, so the base
   map is forced to the built-in vector one, which reprojects like any other
   GeoJSON.

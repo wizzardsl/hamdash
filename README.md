@@ -303,6 +303,13 @@ remembered lookups** (`DELETE /api/lookup/cache`) is the escape hatch for an
 answer that has gone stale: a station that has moved, or a grid corrected at
 the provider after we asked.
 
+The built-in base map draws **country borders**, and **states and provinces**
+for the nine countries Natural Earth publishes them for (Australia, Brazil,
+Canada, China, India, Indonesia, Russia, South Africa, the United States).
+Both are per-tile settings; borders are on, subdivisions off. Anywhere Natural
+Earth has no internal lines simply has none — that is the data, not a failure
+to load. Tile base maps bring their own.
+
 The `path_map` card is a Leaflet map. It repeats horizontally like any tiled
 map, so you can centre it on whichever continent you please and your contacts
 are there — a path across the Pacific is drawn continuously into the world
