@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Up and down tuning on the rig card**, with a step picker beside the dial:
+  1 Hz through 1 MHz, including the 9 kHz and 12.5 kHz channel steps. The
+  arrow keys do the same unless you are typing in the frequency box. The step
+  is kept per tile, so two rig tiles can step differently. One press adds or
+  subtracts the step rather than snapping to a grid, so up and then down puts
+  the dial back exactly where it was.
 - **Several radios, three ways of reaching one.** Settings → Radio is a list
   of up to ten rigs rather than one set of fields, each with a backend:
   **OmniRig** (Windows), **Hamlib** (hamdash starts `rigctld` for a model and

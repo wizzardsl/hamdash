@@ -446,6 +446,11 @@ reaches it:
 **Test** asks one radio one question without taking the one you are using away
 from you. **Use this one** makes it live.
 
+The rig card tunes with ▲ and ▼ beside the dial, or the arrow keys, by
+whatever the step picker says — 1 Hz up to 1 MHz. A press adds or subtracts
+the step rather than snapping to a grid, so up then down returns the dial
+exactly where it was.
+
 An **OmniRig** entry has no port or baud, on purpose: OmniRig's own dialog
 owns those, and two programs cannot share a serial port — which is the reason
 to use it in the first place. The button opens OmniRig's settings rather than

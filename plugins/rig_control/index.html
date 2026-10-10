@@ -19,6 +19,18 @@
   .mem button { font-size: 12px; padding: 3px 7px; }
   .ptt { background: var(--alert); color: var(--bg); }
   .err { color: var(--alert); font-size: 12px; margin-top: 8px; }
+  /* The arrows sit with the dial, because that is the thing they move. */
+  .tuner { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .tuner button {
+    font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+    color: var(--ink); background: var(--panel-2);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 2px 9px; min-width: 30px;
+  }
+  .tuner button:hover:not([disabled]) { color: var(--accent); border-color: var(--accent); }
+  .tuner button:active:not([disabled]) { background: var(--accent); color: var(--bg); }
+  .tuner button[disabled] { opacity: .4; cursor: default; }
+  .tuner select { font-size: 12px; padding: 3px 5px; }
 </style>
 </head>
 <body>
@@ -26,6 +38,11 @@
   <span class="dial" id="dial">--.------</span>
   <span class="band" id="band"></span>
   <span class="state" id="state"></span>
+  <span class="tuner">
+    <button id="down" title="Down one step (or the down arrow key)" aria-label="Tune down one step">&#9660;</button>
+    <button id="up" title="Up one step (or the up arrow key)" aria-label="Tune up one step">&#9650;</button>
+    <select id="step" aria-label="Tuning step" title="How far one press moves the dial"></select>
+  </span>
 </div>
 
 <div class="row">
@@ -43,7 +60,43 @@
 HD.cardId = 'rig_control';
 const $ = (s) => document.querySelector(s);
 
+// What one press moves the dial. The familiar ham steps rather than a
+// round-numbers-only list: 9 kHz is European broadcast spacing and 12.5 kHz
+// is the FM channel step, and a rig that cannot do them is not the point -
+// this moves the frequency, it does not ask the rig for its own step table.
+const STEPS = [
+  [1, '1 Hz'], [10, '10 Hz'], [50, '50 Hz'], [100, '100 Hz'],
+  [500, '500 Hz'], [1000, '1 kHz'], [2500, '2.5 kHz'], [5000, '5 kHz'],
+  [9000, '9 kHz'], [10000, '10 kHz'], [12500, '12.5 kHz'],
+  [25000, '25 kHz'], [100000, '100 kHz'], [1000000, '1 MHz'],
+];
+let conf = {};
+let live = null;              // the last state the rig gave us
+let stepping = false;         // one request at a time while a key is held
+
+function stepHz() {
+  return Number($('#step').value) || 1000;
+}
+
+// Add and subtract rather than snapping to a grid: up then down puts the
+// dial back exactly where it was, which a button ought to do. Snapping to
+// the nearest multiple does not survive that round trip.
+async function nudge(dir) {
+  if (stepping || !live || !live.ok) return;
+  const want = Math.max(0, (live.freq || 0) + dir * stepHz());
+  stepping = true;
+  try {
+    paint(await HD.radio.freq(want));
+  } catch (e) {
+    fail(e);
+  } finally {
+    stepping = false;
+  }
+}
+
 function paint(s) {
+  live = s;
+  $('#up').disabled = $('#down').disabled = !s.ok;
   if (!s.ok) {
     $('#err').textContent = s.error || 'rig unavailable';
     $('#state').textContent = 'offline';
@@ -63,6 +116,31 @@ function paint(s) {
 }
 
 async function boot() {
+  try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  $('#step').innerHTML = STEPS.map(([hz, label]) =>
+    `<option value="${hz}">${label}</option>`).join('');
+  $('#step').value = String(Number(conf.step_hz) || 1000);
+  // Kept on the tile, so two rig tiles can step differently and the choice
+  // travels with the tile.
+  $('#step').onchange = async () => {
+    conf = { ...conf, step_hz: Number($('#step').value) };
+    try { await HD.saveSettings(conf); } catch { /* still applies now */ }
+  };
+  HD.onSettings((v) => {
+    conf = v || {};
+    if (conf.step_hz) $('#step').value = String(conf.step_hz);
+  });
+
+  $('#up').onclick = () => nudge(1);
+  $('#down').onclick = () => nudge(-1);
+  // The arrow keys do the same, unless the operator is typing a frequency
+  // into the box - where up and down belong to the box.
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'ArrowUp') { e.preventDefault(); nudge(1); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); nudge(-1); }
+  });
+
   const modes = await HD.radio.modes();
   $('#mode').innerHTML = modes.map(m => `<option>${m}</option>`).join('');
   $('#mode').onchange = (e) => HD.radio.mode(e.target.value).then(paint).catch(fail);
