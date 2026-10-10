@@ -212,6 +212,24 @@
 
     get: (p, params) => req('GET', params ? `${p}?${new URLSearchParams(params)}` : p),
     post: (p, body) => req('POST', p, body || {}),
+
+    // The band table, fetched once from the host rather than kept here. Three
+    // copies in python had already drifted apart; a fourth in the browser
+    // would be a fourth answer to "what band is this".
+    bands() {
+      if (!HD._bands) HD._bands = req('GET', '/api/bands')
+        .then((d) => { HD._bandTable = d.bands || []; return d; })
+        .catch(() => { HD._bandTable = []; return { bands: [], names: [] }; });
+      return HD._bands;
+    },
+    // Synchronous once bands() has resolved; '' before that and for anything
+    // off band, which is a real answer rather than a guess.
+    bandFor(mhz) {
+      const f = Number(mhz);
+      if (!f || !HD._bandTable) return '';
+      const hit = HD._bandTable.find(([lo, hi]) => f >= lo && f <= hi);
+      return hit ? hit[2] : '';
+    },
     put: (p, body) => req('PUT', p, body || {}),
     // A raw body, for endpoints that take a document rather than JSON -
     // ADIF import being the one that exists.

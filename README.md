@@ -98,8 +98,8 @@ await HD.card('my_card', '/api/state');
 ```
 
 Shared services are opt-in, not mandatory: `/api/radio/*`, `/api/lookup/<call>`,
-`/api/grid/distance`, `/api/log`, `/api/publish`, `/api/events`. A card that
-wants to ignore all of it and just draw a waterfall can.
+`/api/grid/distance`, `/api/log`, `/api/bands`, `/api/publish`, `/api/events`.
+A card that wants to ignore all of it and just draw a waterfall can.
 
 ## Moving cards around
 
@@ -365,6 +365,13 @@ one.
   polling NOAA directly would be both rude and slow.
 
 ## The log
+
+The frequency box fills itself from the radio while it is empty, and the
+**Band** beside it follows what you type — it is a list of every band rather
+than a text box, so overriding it is a choice rather than a typo. A band you
+pick by hand sticks, with an accent border to say so, until the frequency
+moves out of it; then the dial wins again, because a band that disagrees with
+the frequency is a mistake about to be logged.
 
 Typing a callsign fills in a panel above the table before the QSO is even
 finished: who they are, their country and state with a flag, how far and on

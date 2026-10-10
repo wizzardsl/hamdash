@@ -44,7 +44,7 @@ hamdash/proc.py     one OS process per python card, health, restart, reap
 hamdash/registry.py reads card.json from plugins/ and <home>/cards/
 hamdash/windows.py  native pop-out windows (pywebview js_api bridge)
 hamdash/config.py   config.json, layout.json, tile settings, search paths
-hamdash/services/   radio (rigctld), callsign, logbook, grid math
+hamdash/services/   radio/rigs, callsign, logbook, bands, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
@@ -258,7 +258,23 @@ README and is guesswork as a result.
 
 `radio.rigs` is a list of up to `rigs.MAX_RIGS` entries with `radio.active`
 naming the live one; `services/rigs.py` holds the backends and the manager.
-`services/radio.py` keeps only `band_for`, `MODES` and `RigError`.
+`services/radio.py` keeps only `MODES`, `RigError` and a re-export of
+`band_for`.
+
+- **One band table, `services/bands.py`.** There were three and they had
+  drifted - 5.3 MHz was 60m to the logbook and out of band to the rig, 17m
+  had two different pairs of edges, only one knew 2200m/630m/4m. A band is
+  written into the log and drawn on the map, so two answers is two answers in
+  front of the operator. The browser gets it from `GET /api/bands` into
+  `HD.bands()`/`HD.bandFor()` rather than keeping a fourth copy;
+  `tests/test_bands.py` fails on any module that declares its own `BANDS`.
+  It imports nothing, so a card process may import it directly.
+- **A guessed band must not go stale.** The logbook guesses from the
+  frequency; a frequency on no band clears the guess rather than leaving the
+  previous one, or 15 MHz reads "2m" and that is what gets logged. A band
+  chosen by hand is pinned and survives frequency edits until the frequency
+  lands on a different band, which is the point at which the operator's
+  choice has become wrong rather than deliberate.
 
 - **OmniRig is COM, and COM is per-apartment.** `CoInitialize` has to be
   called on the thread that uses an object, and an object made on one thread

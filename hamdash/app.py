@@ -22,6 +22,7 @@ from .services.callsign import Lookup
 from .services.logbook import Logbook
 from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
 from .services.radio import MODES
+from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes
 
@@ -521,6 +522,16 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return jsonify(ok=False, error=str(exc)), 502
         except Exception as exc:                    # noqa: BLE001 - reported
             return jsonify(ok=False, error=str(exc)), 502
+
+    @app.get("/api/bands")
+    def bands_list():
+        """The band table, so the browser does not keep its own.
+
+        Three copies had already drifted - 5.3 MHz was 60m to the logbook and
+        out of band to the rig - so a fourth in JavaScript would just be a
+        fourth answer.
+        """
+        return jsonify({"bands": bandsvc.as_json(), "names": bandsvc.NAMES})
 
     @app.get("/api/radio/modes")
     @guard("radio")

@@ -2,7 +2,7 @@
   "id": "logbook",
   "name": "Logbook",
   "kind": "python",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "HamDash",
   "description": "Log QSOs, look up callsigns, export ADIF",
   "entry": "card.py",

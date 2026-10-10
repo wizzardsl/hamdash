@@ -12,6 +12,7 @@ import threading
 from datetime import datetime, timezone
 
 from ..bus import BUS
+from .bands import for_mhz as band_for
 
 FIELDS = ["call", "qso_date", "time_on", "time_off", "band", "mode", "freq",
           "rst_sent", "rst_rcvd", "gridsquare", "name", "qth", "country",
@@ -26,20 +27,7 @@ FIELDS = ["call", "qso_date", "time_on", "time_off", "band", "mode", "freq",
 # LoTW itself matches within 30 minutes, and clocks in the shack drift.
 DUPE_MINUTES = 30
 
-BANDS = [(1.8, 2.0, "160m"), (3.5, 4.0, "80m"), (5.25, 5.45, "60m"),
-         (7.0, 7.3, "40m"), (10.1, 10.15, "30m"), (14.0, 14.35, "20m"),
-         (18.068, 18.168, "17m"), (21.0, 21.45, "15m"), (24.89, 24.99, "12m"),
-         (28.0, 29.7, "10m"), (50.0, 54.0, "6m"), (144.0, 148.0, "2m"),
-         (222.0, 225.0, "1.25m"), (420.0, 450.0, "70cm"),
-         (902.0, 928.0, "33cm"), (1240.0, 1300.0, "23cm")]
-
 _TAG = re.compile(r"<([A-Za-z_0-9]+):(\d+)(?::[A-Za-z])?>")
-
-
-def band_for(mhz: float | None) -> str:
-    if not mhz:
-        return ""
-    return next((n for lo, hi, n in BANDS if lo <= mhz <= hi), "")
 
 
 class Logbook:

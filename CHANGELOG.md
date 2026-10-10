@@ -7,6 +7,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A frequency on the logbook entry pane**, which the rig fills when it is
+  empty and which sets the band as you type it. The band is a dropdown of
+  every band rather than a text box, so an override is a choice from the list
+  and not a typo: pick one and it stays — shown with an accent border — until
+  the frequency moves out of it, at which point the dial wins again, because a
+  band that disagrees with the frequency is a logged mistake. A frequency on
+  no band clears the guess rather than leaving the last one standing.
 - **Up and down tuning on the rig card**, with a step picker beside the dial:
   1 Hz through 1 MHz, including the 9 kHz and 12.5 kHz channel steps. The
   arrow keys do the same unless you are typing in the frequency box. The step
@@ -212,6 +219,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   with automatic contrast, per-tile input selection and a synthesised `mock`
   signal so it works with no radio attached. Needs numpy and sounddevice,
   both now bundled in the frozen build.
+
+### Changed
+- **One band table**, `hamdash/services/bands.py`, where there were three.
+  `radio.py`, `logbook.py` and the PSK card each carried their own and they
+  had drifted: 5.3 MHz was 60m to the logbook and out of band to the rig, 17m
+  had two different pairs of edges, and only one of them had heard of 2200m,
+  630m or 4m. A band is written into the log and drawn on the map, so two
+  answers to the same question is two answers in front of the operator. The
+  browser reads the table from `GET /api/bands` rather than keeping a fourth
+  copy in JavaScript.
 
 ### Fixed
 - **`config.changed` published every secret to every card.** It carried

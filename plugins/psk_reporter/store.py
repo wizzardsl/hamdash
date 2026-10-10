@@ -32,6 +32,10 @@ import contextlib
 import sqlite3
 import time
 
+# The host's band table, not a fourth copy of it: three had already
+# drifted apart. bands.py imports nothing, so a card may have it.
+from hamdash.services.bands import for_mhz as band_for
+
 # Their own limit is 24 hours of history, so there is no sense keeping more:
 # nothing could refill it after a restart.
 RETAIN = 24 * 3600
@@ -162,22 +166,6 @@ def _text(v):
     if v is False:
         return "0"
     return str(v)
-
-
-BANDS = [(0.13, 0.14, "2200m"), (0.47, 0.48, "630m"), (1.8, 2.0, "160m"),
-         (3.5, 4.0, "80m"), (5.25, 5.45, "60m"), (7.0, 7.3, "40m"),
-         (10.1, 10.15, "30m"), (14.0, 14.35, "20m"), (18.06, 18.17, "17m"),
-         (21.0, 21.45, "15m"), (24.89, 24.99, "12m"), (28.0, 29.7, "10m"),
-         (50.0, 54.0, "6m"), (70.0, 71.0, "4m"), (144.0, 148.0, "2m"),
-         (222.0, 225.0, "1.25m"), (420.0, 450.0, "70cm"),
-         (902.0, 928.0, "33cm"), (1240.0, 1300.0, "23cm")]
-
-
-def band_for(mhz: float) -> str:
-    """The band a frequency falls in, derived rather than stored: it is a
-    function of the frequency and a stored copy is just a chance to disagree
-    with it."""
-    return next((n for lo, hi, n in BANDS if lo <= mhz <= hi), "")
 
 
 def _row(r: sqlite3.Row) -> dict:

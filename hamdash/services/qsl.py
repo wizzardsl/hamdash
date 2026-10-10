@@ -36,7 +36,7 @@ from pathlib import Path
 
 import requests
 
-from .logbook import BANDS, band_for
+from .bands import BANDS, for_mhz as band_for
 
 # QRZ requires an identifying User-Agent and names python-requests as the
 # kind it rate limits.

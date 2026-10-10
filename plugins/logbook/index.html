@@ -7,8 +7,13 @@
   body { padding: 10px; overflow: auto; }
   .entry { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; }
   .entry label { font-size: 11px; color: var(--muted); display: block; }
-  .entry input { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
+  .entry input, .entry select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg);
     border: 1px solid var(--rule); border-radius: var(--radius); padding: 4px 6px; }
+  .entry select.mono { font-family: var(--mono); }
+  /* A band the operator set by hand, where the frequency says otherwise.
+     Said quietly - it is allowed, it is just worth seeing. */
+  .entry select.pinned { border-color: var(--accent); }
   .entry input.mono { font-family: var(--mono); }
   .actions { display: flex; gap: 6px; margin: 10px 0; align-items: center; }
   .found { color: var(--muted); font-size: 12px; }
@@ -107,7 +112,8 @@
   <div><label for="f-sent">Sent</label><input id="f-sent" class="mono" value="59"></div>
   <div><label for="f-rcvd">Received</label><input id="f-rcvd" class="mono" value="59"></div>
   <div><label for="f-grid">Grid</label><input id="f-grid" class="mono" spellcheck="false"></div>
-  <div><label for="f-band">Band</label><input id="f-band" class="mono"></div>
+  <div><label for="f-freq">Freq MHz</label><input id="f-freq" class="mono" inputmode="decimal" placeholder="14.074000"></div>
+  <div><label for="f-band">Band</label><select id="f-band" class="mono"></select></div>
   <div><label for="f-mode">Mode</label><input id="f-mode" class="mono"></div>
   <div><label for="f-comment">Comment</label><input id="f-comment"></div>
 </div>
@@ -209,6 +215,48 @@ const $ = (s) => document.querySelector(s);
 let lookupTimer;
 let conf = {};
 
+// Most loggers guess the band from the frequency and let you override it.
+// So: typing a frequency sets the band, and choosing a band by hand sticks
+// until the frequency moves out of it - at which point the guess takes over
+// again, because a band that disagrees with the dial is a logged mistake.
+let bandPinned = false;
+
+function fillBands(names) {
+  const el = $('#f-band');
+  const was = el.value;
+  el.innerHTML = '<option value="">\u2014</option>'
+    + names.map((n) => `<option value="${n}">${n}</option>`).join('');
+  if (was) el.value = was;
+}
+
+function guessBand() {
+  const want = HD.bandFor($('#f-freq').value);
+  const el = $('#f-band');
+  if (!want) {
+    // A frequency that is on no band must not leave the last guess standing:
+    // 15 MHz showing "2m" is a wrong band about to be written into the log.
+    // A band chosen by hand stays, and so does one the rig gave us when the
+    // box is empty - neither of those is a guess going stale.
+    if ($('#f-freq').value.trim() && !bandPinned) el.value = '';
+    el.classList.toggle('pinned', bandPinned && !!el.value);
+    return;
+  }
+  if (bandPinned && el.value && el.value !== want) {
+    // Their choice stands, but the frequency no longer agrees with it.
+    el.classList.add('pinned');
+    return;
+  }
+  bandPinned = false;
+  el.classList.remove('pinned');
+  if ([...el.options].some((o) => o.value === want)) el.value = want;
+}
+
+$('#f-freq').addEventListener('input', guessBand);
+$('#f-band').addEventListener('change', () => {
+  bandPinned = true;
+  guessBand();
+});
+
 // Something shaped like a callsign: an optional portable prefix, a prefix, a
 // digit, a suffix. Typing VE7STV used to look up VE7, VE7S, VE7ST and VE7STV
 // - four provider calls for one contact, plus one for every typo on the way -
@@ -239,10 +287,11 @@ $('#f-call').addEventListener('blur', (e) => {
 async function prefill(call) {
   try {
     const { qso, info } = await HD.card('logbook', `/api/prefill/${call}`);
-    ['grid:gridsquare', 'band:band', 'mode:mode'].forEach((pair) => {
+    ['grid:gridsquare', 'freq:freq', 'band:band', 'mode:mode'].forEach((pair) => {
       const [field, key] = pair.split(':');
       if (!$(`#f-${field}`).value && qso[key]) $(`#f-${field}`).value = qso[key];
     });
+    guessBand();
     showPeek(call, info);
   } catch (e) { $('#err').textContent = e.message; }
 }
@@ -364,8 +413,8 @@ $('#save').onclick = async () => {
   const qso = {
     call: $('#f-call').value, rst_sent: $('#f-sent').value,
     rst_rcvd: $('#f-rcvd').value, gridsquare: $('#f-grid').value,
-    band: $('#f-band').value, mode: $('#f-mode').value,
-    comment: $('#f-comment').value,
+    freq: $('#f-freq').value, band: $('#f-band').value,
+    mode: $('#f-mode').value, comment: $('#f-comment').value,
   };
   try {
     const full = await HD.card('logbook', `/api/prefill/${qso.call || 'X'}`);
@@ -760,11 +809,22 @@ async function refresh() {
 
 HD.on('log.qso_added', refresh);
 HD.on('radio.state', (s) => {
-  if (s.ok && !$('#f-band').value) $('#f-band').value = s.band || '';
-  if (s.ok && !$('#f-mode').value) $('#f-mode').value = s.mode || '';
+  if (!s.ok) return;
+  // Only into empty boxes: a frequency typed by hand is the operator saying
+  // this QSO was not on the dial the rig is showing now.
+  if (!$('#f-freq').value && s.freq) {
+    $('#f-freq').value = (s.freq / 1e6).toFixed(6);
+    guessBand();
+  }
+  if (!$('#f-band').value) $('#f-band').value = s.band || '';
+  if (!$('#f-mode').value) $('#f-mode').value = s.mode || '';
 });
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  try {
+    fillBands((await HD.bands()).names || []);
+  } catch { fillBands([]); }
+  guessBand();
   if (conf.page_size !== undefined && conf.page_size !== '') {
     $('#page-size').value = String(conf.page_size);
   }
