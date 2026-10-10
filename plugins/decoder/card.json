@@ -38,6 +38,12 @@
       "label": "Wrap long lines",
       "default": true,
       "help": "Off gives one long line per over, which some people prefer for reading a contest exchange."
+    },
+    "running": {
+      "type": "bool",
+      "label": "Decoding",
+      "default": true,
+      "help": "Off releases the sound card so another program can have it. The Start/Stop button on the tile is the same setting."
     }
   }
 }

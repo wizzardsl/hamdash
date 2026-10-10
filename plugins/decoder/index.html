@@ -22,6 +22,13 @@
   .ear { width: 8px; height: 8px; border-radius: 50%; background: var(--rule);
          flex: none; }
   .ear.on { background: var(--signal); }
+  /* Stopped has to look different from a quiet band. The lamp being dark
+     already means "nothing to hear", so a card that has been turned off
+     must not look the same as one that is listening to silence. */
+  .ear.off { background: var(--alert); opacity: .55; }
+  button.run { min-width: 4.4em; }
+  button.run.on { color: var(--accent); border-color: var(--accent); }
+  body.stopped #out { opacity: .5; }
 
   #out {
     flex: 1; min-height: 40px; overflow-y: auto; overflow-x: auto;
@@ -47,6 +54,7 @@
   <select id="source" aria-label="Audio input" title="Where the audio comes from"></select>
   <span class="spacer"></span>
   <span class="read" id="read"></span>
+  <button class="run" id="run" type="button">Stop</button>
   <button id="clear" type="button" title="Empty the window. The speed estimate is kept.">Clear</button>
 </div>
 
@@ -61,6 +69,11 @@ const $ = (s) => document.querySelector(s);
 let conf = {};
 let seq = 0;              // the next character we have not seen
 let fading = [];          // spans recently added, to un-highlight
+
+// Whether this tile is decoding. Kept on the tile, so a card left stopped is
+// still stopped tomorrow, and so two tiles can watch different inputs with
+// only one of them running.
+let running = true;
 
 // Whether to keep the view pinned to the newest text. Pinned until the
 // operator scrolls up, because yanking the view back down while somebody is
@@ -103,7 +116,43 @@ function readout(d) {
   $('#err').textContent = d.error || '';
 }
 
+function paintRun() {
+  document.body.classList.toggle('stopped', !running);
+  $('#ear').classList.toggle('off', !running);
+  if (!running) $('#ear').classList.remove('on');
+  const b = $('#run');
+  b.textContent = running ? 'Stop' : 'Start';
+  b.classList.toggle('on', !running);
+  b.title = running ? 'Stop decoding and give the sound card back'
+                    : 'Start decoding';
+  $('#out').dataset.empty = running ? 'Listening…' : 'Stopped';
+  if (!running) {
+    $('#read').textContent = 'stopped';
+    $('#err').textContent = '';
+  }
+}
+
+async function setRunning(on, { save = true } = {}) {
+  running = on;
+  paintRun();
+  if (on) {
+    seq = 0;                 // a restarted listener counts from zero again
+    tick();
+  } else {
+    // Say so rather than just going quiet. The card would work it out from
+    // the polling stopping, but half a minute later, and the usual reason to
+    // press Stop is to hand the sound card to another program now.
+    try { await HD.card('decoder', '/api/stop', {}); } catch { /* the
+      reaper will get there eventually */ }
+  }
+  if (save) {
+    conf = { ...conf, running: on };
+    try { await HD.saveSettings(conf); } catch { /* it applies now anyway */ }
+  }
+}
+
 async function tick() {
+  if (!running) return;
   let d;
   try {
     d = await HD.card('decoder', `/api/text?since=${seq}`);
@@ -156,6 +205,8 @@ function applyWrap() {
   $('#out').classList.toggle('nowrap', conf.wrap === false);
 }
 
+$('#run').onclick = () => setRunning(!running);
+
 $('#clear').onclick = async () => {
   try {
     const r = await HD.card('decoder', '/api/clear', {});
@@ -172,10 +223,16 @@ $('#mode').onchange = async () => {
 };
 
 $('#source').onchange = async () => {
+  // Let go of the old input before taking the new one: two inputs open for
+  // one tile is one sound card nobody else can have.
+  if (running) {
+    try { await HD.card('decoder', '/api/stop', {}); } catch { /* ignore */ }
+  }
   conf = { ...conf, source: $('#source').value };
   $('#out').textContent = '';
   seq = 0;
   try { await HD.saveSettings(conf); } catch { /* as above */ }
+  if (running) tick();
 };
 
 // The radio's audio input can change without this tile being touched -
@@ -189,9 +246,15 @@ HD.on('radio.state', () => { fillLists(); });
     conf = v || {};
     applyWrap();
     fillLists();
+    // The settings sheet can turn it off too, and the tile has to follow.
+    if (conf.running !== undefined && !!conf.running !== running) {
+      setRunning(!!conf.running, { save: false });
+    }
   });
   applyWrap();
   await fillLists();
+  running = conf.running !== false;
+  paintRun();
   tick();
   // Twice a second. A character at 20 WPM takes about half of that, so the
   // text arrives looking live without polling for the sake of it.

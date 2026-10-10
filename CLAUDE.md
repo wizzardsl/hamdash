@@ -94,6 +94,17 @@ same-origin parent and does not open a socket. Because events then arrive
 through the parent, a card page's declared `subscribes` is filtered by the
 board (`window.__hamdashRelayFilter` in `app.js`), not by the server.
 
+**3b. Starting a card is not re-entrant, and `ensure()` is called from
+every request.** A board loading one tile makes several at once - the
+iframe, its settings, the card's own first call - and waitress gives each to
+a different thread. Two of them passing the "is it already running" check
+together each spawned a process: the second took the port the first had been
+told to use, so the host held one process handle and the other's port, the
+tile sat on "Starting..." for ever, and a stray process kept the sound card
+or the serial port. It presents as a card that will not load. `Worker.start`
+re-checks under `Worker.lock`, and `Supervisor.ensure` builds the Worker
+under its own. `tests/test_proc.py` races eight threads at it.
+
 **4. Every SSE stream holds one server thread for its life.** Waitress is a
 blocking server. The board, each card page, and each card process each keep a
 stream. So: streams are capped at 55s and clients reconnect (that's the only
@@ -205,6 +216,14 @@ pipe from the supervisor) is left alone.
   `--- Logging error ---` instead of a message).
 - Errors in the UI name what to fix, not just what failed. The SDK unwraps the
   host's JSON `error` rather than raising a bare `403 Forbidden`.
+- **Nothing that arrives on a socket may end a card's bus reader.** The host
+  signs every stream off with an empty `event: reconnect` frame before
+  closing it, and the SDK used to read a topic straight out of whatever
+  arrived: `KeyError`, which is not a `RequestException`, so it escaped the
+  loop and killed the thread. Every card stopped hearing the bus about a
+  minute after it started - silently, because a card that is not listening
+  still serves requests and still looks healthy. `tests/test_sdk_bus.py`
+  drives the reader across three stream rollovers.
 
 ## Releasing
 
@@ -370,6 +389,11 @@ follows it):
   must reap it: every request marks its device wanted, and a thread closes
   anything unwanted for 30s. Without that, changing the input in tile settings
   leaks the old one and the radio's audio stays locked against other software.
+- **Count the wants per tile, not per device.** The decoder's Stop has to
+  close the input *now* - the reason to press it is to give the sound card to
+  another program - but only if no other tile is still listening to it. A
+  single timestamp per device cannot answer that, so `_wanted` is
+  `device -> {tile: when}` and Stop removes one entry.
 - **Don't respin a failed resource on every request.** Doing so means the
   caller only ever sees a brand new object in its "starting" state and never
   the error saying what is wrong. Retry on a timer instead.

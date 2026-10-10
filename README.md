@@ -498,6 +498,12 @@ worth choosing: it follows you when you switch radios. **Mock** synthesises
 Morse, so the card works with no radio attached. Anything else is a sound
 card by name.
 
+**Stop** gives the sound card back, rather than only going quiet: the usual
+reason to stop decoding is to let WSJT-X or fldigi have the input. The tile
+remembers, so one left stopped is still stopped after a restart, and two
+tiles listening to the same input are counted separately — stopping one
+leaves the other running.
+
 The lamp is lit while there is a signal to hear. Beside it are the speed and
 the tone the decoder has settled on, and the signal-to-noise ratio it is
 working with. **Clear** empties the window and leaves the speed estimate

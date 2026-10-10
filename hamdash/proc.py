@@ -65,14 +65,34 @@ class Worker:
     restarts: int = 0
     log: list[str] = field(default_factory=list)
     status: str = "stopped"
+    # Starting is not re-entrant and waitress serves every request on its own
+    # thread, so two of them arriving for a card that has not started yet
+    # would each spawn one. See `start`.
+    lock: threading.Lock = field(default_factory=threading.Lock,
+                                 repr=False, compare=False)
 
     @property
     def base(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
     def start(self) -> None:
-        if self.proc and self.proc.poll() is None:
-            return
+        """Spawn the card, once.
+
+        The guard has to be inside the lock. A board loads several things at
+        once - the tile's iframe, its settings, the card's own first request
+        - and every one of them goes through `ensure`. Two threads passing
+        this check together spawned two processes for one card: the second
+        took the port the first had been told to use, the host kept one
+        process handle and the other port, and the tile sat on "Starting..."
+        for ever with a stray process holding the sound card or the serial
+        port. It presents as a card that will not load, never as a race.
+        """
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                return
+            self._spawn()
+
+    def _spawn(self) -> None:
         self.port = free_port()
         self.token = secrets.token_urlsafe(24)
         env = dict(os.environ)
@@ -219,13 +239,18 @@ class Supervisor:
         self.host_url = host_url
         self.home = home
         self.workers: dict[str, Worker] = {}
+        self._lock = threading.Lock()
 
     def ensure(self, card: Card) -> Worker:
-        w = self.workers.get(card.id)
-        if w is None:
-            w = Worker(card=card, host_url=self.host_url,
-                       home=self.home)
-            self.workers[card.id] = w
+        # Two requests arriving together for a card nobody has started would
+        # otherwise each build a Worker, and the second would replace the
+        # first in the dict - leaving a process that nothing owns.
+        with self._lock:
+            w = self.workers.get(card.id)
+            if w is None:
+                w = Worker(card=card, host_url=self.host_url,
+                           home=self.home)
+                self.workers[card.id] = w
         if w.status in ("stopped", "") or (w.proc and w.proc.poll() is not None
                                           and not w.status.startswith("res")):
             w.start()

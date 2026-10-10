@@ -298,16 +298,35 @@ class Card:
                     for line in r.iter_lines(decode_unicode=True):
                         if not line or not line.startswith("data: "):
                             continue
-                        evt = json.loads(line[6:])
+                        try:
+                            evt = json.loads(line[6:])
+                        except ValueError:
+                            continue
+                        # The host ends a stream with `event: reconnect` and
+                        # an empty payload. Reading a topic out of that threw
+                        # a KeyError, which is not a RequestException - so it
+                        # escaped this loop and killed the thread. Every card
+                        # stopped seeing the bus about a minute after it
+                        # started, silently, including the settings_changed
+                        # it relies on to notice its own tile being edited.
+                        topic = (evt or {}).get("topic")
+                        if not topic:
+                            continue
                         for pattern, fn in self._subs:
-                            if _match(pattern, evt["topic"]):
+                            if _match(pattern, topic):
                                 try:
-                                    fn(evt["topic"], evt["payload"])
+                                    fn(topic, evt.get("payload"))
                                 except Exception as exc:
-                                    print(f"handler for {evt['topic']}: {exc}")
+                                    print(f"handler for {topic}: {exc}")
             except requests.RequestException as exc:
                 backoff = min(30.0, (backoff * 2) or 3.0)
                 print(f"bus connection lost ({exc}); retrying in {backoff:.0f}s")
+            except Exception as exc:                    # noqa: BLE001
+                # Nothing that arrives on a socket may end this thread. A
+                # card that stops listening carries on serving requests and
+                # looks perfectly healthy, so there is nothing to see.
+                backoff = min(30.0, (backoff * 2) or 3.0)
+                print(f"bus reader: {exc!r}; retrying in {backoff:.0f}s")
 
     # --- run ------------------------------------------------------------
     def run(self) -> None:

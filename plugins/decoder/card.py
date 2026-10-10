@@ -19,7 +19,10 @@ It follows the shape `plugins/spectrum` settled on, for the same reasons:
 * **Nothing tells a card that a tile was deleted**, so a listener that nobody
   has asked for in `IDLE_SECONDS` is closed. Without that, changing the input
   leaks the old one and the radio's audio stays locked against other
-  software.
+  software. Wants are counted per tile rather than per device, so Stop on one
+  tile can close the input at once while another tile on the same device
+  keeps it - waiting out the idle timer would hold the radio's audio against
+  WSJT-X for half a minute after the operator asked for it back.
 
 * **A failed input is not respun on every request.** Doing that means the
   caller only ever sees a brand new listener in its "starting" state and
@@ -62,7 +65,9 @@ MODES = [
 
 _lock = threading.Lock()
 _listeners: dict[str, "Listener"] = {}
-_wanted: dict[str, float] = {}
+# device -> {tile uid: when it last asked}. Per tile, not per device: the
+# question "may this input be closed" is "has every tile finished with it".
+_wanted: dict[str, dict[str, float]] = {}
 # PortAudio does not enjoy having its device list enumerated on one thread
 # while another opens a stream: on Windows that can block for a long time or
 # never come back. Everything touching the library goes through here.
@@ -251,10 +256,10 @@ def resolve_source(conf: dict) -> tuple[str, str]:
                 "Settings → Radio, or pick an input below.")
 
 
-def listener_for(device: str) -> Listener:
+def listener_for(device: str, uid: str = "") -> Listener:
     key = device or ""
     now = time.time()
-    _wanted[key] = now
+    _wanted.setdefault(key, {})[uid] = now
     li = _listeners.get(key)
     if li is None:
         li = _listeners[key] = Listener(key)
@@ -266,16 +271,43 @@ def listener_for(device: str) -> Listener:
     return li
 
 
+def release(device: str, uid: str) -> bool:
+    """This tile has finished with an input. True if it was closed.
+
+    Pressing Stop is the operator asking for the sound card back, usually so
+    that WSJT-X or fldigi can have it, so it is given back now rather than
+    when the idle timer next runs.
+    """
+    key = device or ""
+    _wanted.get(key, {}).pop(uid, None)
+    if _wanted.get(key):
+        return False                    # another tile is still listening
+    _wanted.pop(key, None)
+    li = _listeners.pop(key, None)
+    if li is None:
+        return False
+    li.stop()
+    print(f"closing {key or 'default input'}: stopped")
+    return True
+
+
 def _reap_idle() -> None:
     while True:
         time.sleep(5.0)
         now = time.time()
         for key in list(_listeners):
-            if now - _wanted.get(key, 0) > IDLE_SECONDS:
-                print(f"closing {key or 'default input'}: no tile has asked "
-                      f"for it in {IDLE_SECONDS:.0f}s")
-                _listeners.pop(key).stop()
-                _wanted.pop(key, None)
+            tiles = _wanted.get(key, {})
+            for uid, at in list(tiles.items()):
+                if now - at > IDLE_SECONDS:
+                    tiles.pop(uid, None)
+            if tiles:
+                continue
+            # Nobody is asking any more: a tile was deleted, a board was
+            # closed, or a page stopped polling without saying so.
+            print(f"closing {key or 'default input'}: no tile has asked "
+                  f"for it in {IDLE_SECONDS:.0f}s")
+            _listeners.pop(key).stop()
+            _wanted.pop(key, None)
 
 
 # ---------------------------------------------------------------- routes
@@ -288,7 +320,7 @@ def text():
         return {"text": "", "first": 0, "seq": 0, "status": "idle",
                 "error": note, "device": "", "hearing": False,
                 "mode": str(conf.get("mode") or "cw")}
-    li = listener_for(device)
+    li = listener_for(device, card.tile_uid())
     try:
         seq = int(request.args.get("since", "0"))
     except ValueError:
@@ -307,9 +339,29 @@ def clear():
     device, note = resolve_source(conf)
     if note:
         return {"ok": True, "seq": 0}
-    li = listener_for(device)
+    li = listener_for(device, card.tile_uid())
     li.clear()
     return {"ok": True, "seq": li.seq}
+
+
+@card.post("/stop")
+def stop():
+    """This tile has stopped decoding.
+
+    The page simply stops polling, which the reaper would notice eventually;
+    this says so immediately, because the usual reason to press Stop is to
+    give the sound card to another program.
+    """
+    conf = card.settings()
+    device, note = resolve_source(conf)
+    uid = card.tile_uid()
+    closed = release(device, uid) if not note else False
+    # Any other input this tile had open - it may have been switched while
+    # running - is released too, or stopping leaks whatever it was on before.
+    for other in list(_wanted):
+        if other != (device or ""):
+            release(other, uid)
+    return {"ok": True, "closed": closed}
 
 
 @card.get("/inputs")

@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Start and Stop on the decoder**, which releases the sound card rather
+  than just going quiet — the usual reason to stop decoding is to hand the
+  input to WSJT-X or fldigi, and waiting out a 30 second idle timer is not
+  handing it over. The state is kept on the tile, so a card left stopped is
+  still stopped tomorrow, and two tiles sharing one input are counted
+  separately: stopping one leaves the other listening.
 - **A decoder card, with CW working.** Pick a mode and an audio input and it
   reads the radio: a scrolling window of text, the speed and tone it is
   hearing, a lamp that is lit while there is a signal, and Clear. The input
@@ -264,6 +270,22 @@ versions follow [SemVer](https://semver.org/). The version of record is
   copy in JavaScript.
 
 ### Fixed
+- **Two requests at once started a card twice.** A board loading a tile makes
+  several at the same moment — the iframe, its settings, the card's own first
+  call — and every one goes through `Supervisor.ensure`. Two threads passing
+  the "is it running" check together each spawned a process: the second took
+  the port the first had been told to use, the host kept one process handle
+  and the other's port, and the tile sat on **Starting…** for ever while a
+  stray process held the sound card or the serial port. It presents as a card
+  that will not load, never as a race. Starting is now under a lock.
+- **Every card stopped hearing the bus about a minute after it started.** The
+  host ends each SSE stream after ~55 seconds on purpose and signs off with
+  an empty `event: reconnect` frame; the SDK read a topic out of it and threw
+  `KeyError`, which is not a `RequestException`, so it escaped the reader's
+  loop and ended the thread. The card went on serving requests and looked
+  perfectly healthy while receiving nothing ever again — including the
+  `card.settings_changed` it uses to notice its own tile being edited.
+  Nothing arriving on a socket can end that thread now.
 - **A card's own calls did not say which tile was asking**, so every one of
   them got the manifest defaults. `HD.card()` left the tile uid off the
   request and the proxy only forwards what it is given, so a per-tile setting
