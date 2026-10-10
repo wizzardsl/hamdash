@@ -14,6 +14,18 @@
   /* A band the operator set by hand, where the frequency says otherwise.
      Said quietly - it is allowed, it is just worth seeing. */
   .entry select.pinned { border-color: var(--accent); }
+  /* Says where the frequency in the box came from, and hands it back. It is
+     a button only when there is something to hand back, so it never invites
+     a press that would do nothing. */
+  .follow { font-size: 12px; color: var(--muted); display: inline-flex;
+            align-items: center; gap: 5px; }
+  .follow[hidden] { display: none; }
+  .follow .dot { width: 7px; height: 7px; border-radius: 50%;
+                 background: var(--signal); }
+  button.follow { cursor: pointer; color: var(--accent); background: none;
+                  border: 1px solid var(--rule); border-radius: var(--radius);
+                  padding: 3px 8px; font-family: inherit; }
+  button.follow:hover { border-color: var(--accent); }
   .entry input.mono { font-family: var(--mono); }
   .actions { display: flex; gap: 6px; margin: 10px 0; align-items: center; }
   .found { color: var(--muted); font-size: 12px; }
@@ -123,6 +135,8 @@
   <button class="btn btn-quiet" id="adif">Export ADIF</button>
   <button class="btn btn-quiet" id="import" title="Read a .adi or .adif file into the log. Contacts already here are updated, not duplicated.">Import ADIF</button>
   <input type="file" id="import-file" accept=".adi,.adif,.txt" hidden>
+  <span class="follow" id="following" hidden><span class="dot"></span><span id="following-rig"></span></span>
+  <button class="follow" id="refollow" type="button" hidden>Follow the radio</button>
   <span class="found" id="found"></span>
 </div>
 <p class="err" id="err"></p>
@@ -215,11 +229,13 @@ const $ = (s) => document.querySelector(s);
 let lookupTimer;
 let conf = {};
 
-// Most loggers guess the band from the frequency and let you override it.
-// So: typing a frequency sets the band, and choosing a band by hand sticks
-// until the frequency moves out of it - at which point the guess takes over
-// again, because a band that disagrees with the dial is a logged mistake.
-let bandPinned = false;
+// The dial, the band and the mode follow the radio while nobody has said
+// otherwise, so a tile with a rig behind it is always ready to log the
+// contact that is happening now. Typing in one of those boxes takes it over
+// - the operator is saying this QSO was not on the dial the rig is showing
+// - and it stays theirs until they log the contact or empty the box again.
+const mine = new Set();
+let rig = null;                       // the last radio.state we were sent
 
 function fillBands(names) {
   const el = $('#f-band');
@@ -229,32 +245,78 @@ function fillBands(names) {
   if (was) el.value = was;
 }
 
+// Taking a box over, and handing it back. Emptying it is the hand-back,
+// which is the obvious gesture and is also what the card used to do when it
+// only ever filled empty boxes.
+function claim(field) {
+  if ($(`#f-${field}`).value.trim()) mine.add(field);
+  else mine.delete(field);
+  sayFollowing();
+}
+
 function guessBand() {
   const want = HD.bandFor($('#f-freq').value);
   const el = $('#f-band');
   if (!want) {
     // A frequency that is on no band must not leave the last guess standing:
     // 15 MHz showing "2m" is a wrong band about to be written into the log.
-    // A band chosen by hand stays, and so does one the rig gave us when the
-    // box is empty - neither of those is a guess going stale.
-    if ($('#f-freq').value.trim() && !bandPinned) el.value = '';
-    el.classList.toggle('pinned', bandPinned && !!el.value);
+    // A band chosen by hand stays, and so does one the radio gave us when
+    // the box is empty - neither of those is a guess going stale.
+    if ($('#f-freq').value.trim() && !mine.has('band')) el.value = '';
+    el.classList.toggle('pinned', mine.has('band') && !!el.value);
     return;
   }
-  if (bandPinned && el.value && el.value !== want) {
+  if (mine.has('band') && el.value && el.value !== want) {
     // Their choice stands, but the frequency no longer agrees with it.
     el.classList.add('pinned');
     return;
   }
-  bandPinned = false;
+  mine.delete('band');
   el.classList.remove('pinned');
   if ([...el.options].some((o) => o.value === want)) el.value = want;
 }
 
-$('#f-freq').addEventListener('input', guessBand);
+// Put the radio into the boxes it still owns. This runs on every
+// radio.state, so it must do nothing surprising mid-contact.
+function follow() {
+  if (rig && rig.ok) {
+    if (!mine.has('freq') && rig.freq) {
+      $('#f-freq').value = (rig.freq / 1e6).toFixed(6);
+      guessBand();
+    }
+    if (!mine.has('band') && !$('#f-band').value) {
+      $('#f-band').value = rig.band || '';
+    }
+    // '?' is a backend saying it has not read the mode back yet, not a mode.
+    if (!mine.has('mode') && rig.mode && rig.mode !== '?') {
+      $('#f-mode').value = rig.mode;
+    }
+  }
+  sayFollowing();
+}
+
+function sayFollowing() {
+  const live = !!(rig && rig.ok);
+  const taken = ['freq', 'band', 'mode'].some((f) => mine.has(f));
+  $('#following').hidden = !live || taken;
+  $('#refollow').hidden = !live || !taken;
+  $('#following-rig').textContent =
+    `Following ${(rig && rig.rig) || 'the radio'}`;
+}
+
+$('#refollow').onclick = () => {
+  ['freq', 'band', 'mode'].forEach((f) => mine.delete(f));
+  $('#f-band').classList.remove('pinned');
+  follow();
+};
+
+$('#f-freq').addEventListener('input', () => { claim('freq'); guessBand(); });
+$('#f-mode').addEventListener('input', () => claim('mode'));
 $('#f-band').addEventListener('change', () => {
-  bandPinned = true;
+  if ($('#f-band').value) mine.add('band');
+  else mine.delete('band');
   guessBand();
+  sayFollowing();
 });
 
 // Something shaped like a callsign: an optional portable prefix, a prefix, a
@@ -287,11 +349,13 @@ $('#f-call').addEventListener('blur', (e) => {
 async function prefill(call) {
   try {
     const { qso, info } = await HD.card('logbook', `/api/prefill/${call}`);
-    ['grid:gridsquare', 'freq:freq', 'band:band', 'mode:mode'].forEach((pair) => {
-      const [field, key] = pair.split(':');
-      if (!$(`#f-${field}`).value && qso[key]) $(`#f-${field}`).value = qso[key];
-    });
-    guessBand();
+    // Only the grid. Prefill's band, mode and frequency are read from the
+    // radio, which this page is already following live - taking them from
+    // here as well would either fight that or, worse, look like the operator
+    // typed them and stop the boxes following at all.
+    if (!$('#f-grid').value && qso.gridsquare) {
+      $('#f-grid').value = qso.gridsquare;
+    }
     showPeek(call, info);
   } catch (e) { $('#err').textContent = e.message; }
 }
@@ -420,6 +484,11 @@ $('#save').onclick = async () => {
     const full = await HD.card('logbook', `/api/prefill/${qso.call || 'X'}`);
     await HD.card('logbook', '/api/save', { ...full.qso, ...clean(qso) });
     ['#f-call', '#f-grid', '#f-comment'].forEach((s) => { $(s).value = ''; });
+    // That contact is logged, so nothing about it is being protected any
+    // more: the boxes go back to the radio for the next one.
+    ['freq', 'band', 'mode'].forEach((f) => mine.delete(f));
+    $('#f-band').classList.remove('pinned');
+    follow();
     $('#found').textContent = '';
     hidePeek();
     $('#err').textContent = '';
@@ -808,23 +877,17 @@ async function refresh() {
 }
 
 HD.on('log.qso_added', refresh);
-HD.on('radio.state', (s) => {
-  if (!s.ok) return;
-  // Only into empty boxes: a frequency typed by hand is the operator saying
-  // this QSO was not on the dial the rig is showing now.
-  if (!$('#f-freq').value && s.freq) {
-    $('#f-freq').value = (s.freq / 1e6).toFixed(6);
-    guessBand();
-  }
-  if (!$('#f-band').value) $('#f-band').value = s.band || '';
-  if (!$('#f-mode').value) $('#f-mode').value = s.mode || '';
-});
+HD.on('radio.state', (s) => { rig = s; follow(); });
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
   try {
     fillBands((await HD.bands()).names || []);
   } catch { fillBands([]); }
   guessBand();
+  // The bus only speaks when something changes, and the radio may have been
+  // sitting on one frequency since long before this tile existed.
+  try { rig = await HD.radio.state(); } catch { /* no radio, no permission */ }
+  follow();
   if (conf.page_size !== undefined && conf.page_size !== '') {
     $('#page-size').value = String(conf.page_size);
   }

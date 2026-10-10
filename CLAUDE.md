@@ -269,6 +269,18 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   `HD.bands()`/`HD.bandFor()` rather than keeping a fourth copy;
   `tests/test_bands.py` fails on any module that declares its own `BANDS`.
   It imports nothing, so a card process may import it directly.
+- **The logbook's frequency, band and mode follow `radio.state`**, and the
+  whole question is what happens when the operator types. A set of field
+  names (`mine`) is what they have taken over for this contact; the rig
+  writes into everything else. It is given back by logging the contact or by
+  emptying the box, and a chip beside Log it says which radio is being
+  followed so a box that fills itself is never a mystery.
+- **`/api/prefill` reads the radio, so it must not write those boxes.** It
+  returns band, mode and frequency from the rig, not from the last QSO with
+  that station. Filling them from there as well is either a fight with the
+  live follow or - if it marks them as the operator's - boxes that silently
+  stop following something nobody touched. Prefill supplies the grid and the
+  station details; the dial supplies the dial.
 - **A guessed band must not go stale.** The logbook guesses from the
   frequency; a frequency on no band clears the guess rather than leaving the
   previous one, or 15 MHz reads "2m" and that is what gets logged. A band

@@ -366,12 +366,18 @@ one.
 
 ## The log
 
-The frequency box fills itself from the radio while it is empty, and the
-**Band** beside it follows what you type — it is a list of every band rather
-than a text box, so overriding it is a choice rather than a typo. A band you
-pick by hand sticks, with an accent border to say so, until the frequency
-moves out of it; then the dial wins again, because a band that disagrees with
-the frequency is a mistake about to be logged.
+With a radio under CAT control the frequency, band and mode follow the dial,
+so the pane is always ready to log the contact you are having — the chip
+beside **Log it** names the radio it is following. Type in one of those boxes
+and it is yours for this contact; the chip turns into **Follow the radio** to
+hand it back, and logging the contact hands all three back for the next one.
+So does emptying the box.
+
+**Band** is a list of every band rather than a text box, so overriding it is a
+choice rather than a typo. A band you pick by hand sticks, with an accent
+border to say so, until the frequency moves out of it; then the dial wins
+again, because a band that disagrees with the frequency is a mistake about to
+be logged.
 
 Typing a callsign fills in a panel above the table before the QSO is even
 finished: who they are, their country and state with a flag, how far and on

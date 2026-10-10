@@ -7,13 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
-- **A frequency on the logbook entry pane**, which the rig fills when it is
-  empty and which sets the band as you type it. The band is a dropdown of
-  every band rather than a text box, so an override is a choice from the list
-  and not a typo: pick one and it stays — shown with an accent border — until
-  the frequency moves out of it, at which point the dial wins again, because a
-  band that disagrees with the frequency is a logged mistake. A frequency on
-  no band clears the guess rather than leaving the last one standing.
+- **A frequency on the logbook entry pane, and it follows the radio.** With a
+  rig under CAT control the frequency, band and mode track the dial live, so
+  the pane is always ready to log the contact that is happening now — a chip
+  beside **Log it** names the radio it is following. Typing in one of those
+  boxes takes it over for that contact, the chip becomes **Follow the radio**
+  to hand it back, and logging the contact hands all three back by itself.
+  Emptying a box does the same.
+  The band is a dropdown of every band rather than a text box, so an override
+  is a choice from the list and not a typo: pick one and it stays — shown
+  with an accent border — until the frequency moves out of it, at which point
+  the dial wins again, because a band that disagrees with the frequency is a
+  logged mistake. A frequency on no band clears the guess rather than leaving
+  the last one standing.
 - **Up and down tuning on the rig card**, with a step picker beside the dial:
   1 Hz through 1 MHz, including the 9 kHz and 12.5 kHz channel steps. The
   arrow keys do the same unless you are typing in the frequency box. The step
