@@ -7,6 +7,21 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A decoder card, with CW working.** Pick a mode and an audio input and it
+  reads the radio: a scrolling window of text, the speed and tone it is
+  hearing, a lamp that is lit while there is a signal, and Clear. The input
+  can be **the radio's own**, so it follows you between rigs without the card
+  having its own idea of which sound card to use. The mode dropdown lists
+  RTTY, PSK31 and FT8 as well, disabled and labelled as not built: a dropdown
+  with one entry does not look like a choice, and leaving them out would make
+  the card look finished.
+  The decoding is `plugins/decoder/cw.py`, which takes samples and returns
+  text and knows nothing about sound cards - so `tests/test_cw.py` can drive
+  it with synthesised Morse at known speeds, tones and noise levels. It
+  finds the tone itself rather than being told, follows the operator's speed
+  from 6 to 45 WPM, and at the edge degrades the way a human does. Below
+  about 12 dB it prints nothing rather than filling the screen with letters
+  taken out of the noise. Off the air it copied a real CQ first time.
 - **Audio in and out on each radio.** Every rig entry can be given the sound
   devices it is wired to, picked from what the PC actually has — on a modern
   radio that is its own USB interface. The fields sit outside the
@@ -249,6 +264,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   copy in JavaScript.
 
 ### Fixed
+- **A card's own calls did not say which tile was asking**, so every one of
+  them got the manifest defaults. `HD.card()` left the tile uid off the
+  request and the proxy only forwards what it is given, so a per-tile setting
+  saved correctly, reloaded correctly, and then did nothing - the card never
+  saw it. The spectrum card's audio input had the same fault.
 - **The settings sheet's Save discarded radio edits.** Radios are saved
   through `/api/rigs` rather than `/api/config`, and Save only sent the
   latter — so editing a COM port, a baud rate or a radio's name and pressing

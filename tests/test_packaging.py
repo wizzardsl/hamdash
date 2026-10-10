@@ -84,19 +84,32 @@ class TestEveryCardImports(unittest.TestCase):
                 self.assertTrue(entry.exists(), f"{entry} is missing")
                 tree = ast.parse(entry.read_text(encoding="utf-8"))
                 for node in ast.walk(tree):
-                    if not isinstance(node, ast.ImportFrom) or node.level:
+                    # Both spellings. `import cw` beside the card is how the
+                    # decoder reaches its DSP, and it resolves for exactly
+                    # the same reason `from store import ...` does - which
+                    # is to say only because run_card arranges it.
+                    if isinstance(node, ast.ImportFrom):
+                        if node.level:
+                            continue
+                        tops = [(node.module or "").split(".")[0]]
+                    elif isinstance(node, ast.Import):
+                        tops = [a.name.split(".")[0] for a in node.names]
+                    else:
                         continue
-                    top = (node.module or "").split(".")[0]
-                    if not top:
-                        continue
-                    # Either a file beside the card - which only resolves
-                    # because run_card puts that directory on sys.path - or
-                    # something this interpreter can find on its own.
-                    beside = (manifest.parent / f"{top}.py").exists()
-                    found = beside or importlib.util.find_spec(top) is not None
-                    self.assertTrue(found,
-                                    f"{entry.name} imports {top!r}, which is "
-                                    f"neither beside it nor importable")
+                    for top in tops:
+                        if not top:
+                            continue
+                        # Either a file beside the card - which only
+                        # resolves because run_card puts that directory on
+                        # sys.path - or something this interpreter can find
+                        # on its own.
+                        beside = (manifest.parent / f"{top}.py").exists()
+                        found = (beside
+                                 or importlib.util.find_spec(top) is not None)
+                        self.assertTrue(
+                            found,
+                            f"{entry.name} imports {top!r}, which is "
+                            f"neither beside it nor importable")
 
 
 class TestBundlePaths(unittest.TestCase):

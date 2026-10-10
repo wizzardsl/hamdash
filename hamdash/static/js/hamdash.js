@@ -250,12 +250,23 @@
     },
     del: (p) => req('DELETE', p),
 
-    // this card's own backend, without hardcoding the mount path
+    // this card's own backend, without hardcoding the mount path.
+    //
+    // The tile uid rides along on every call. One card process serves every
+    // tile of its kind, so a request that does not say which tile is asking
+    // gets the manifest defaults - which is not an error, just the wrong
+    // answer: a per-tile setting appears to save (it does) and then does
+    // nothing, because the card never sees it. The proxy turns `?uid=` into
+    // X-Hamdash-Tile; this is the half of that which lives in the browser.
     card(id, path, body) {
       const cid = id || HD.cardId;
+      const at = HD.tileUid
+        ? path + (path.includes('?') ? '&' : '?')
+          + `uid=${encodeURIComponent(HD.tileUid)}`
+        : path;
       return body === undefined
-        ? req('GET', `/cards/${cid}${path}`)
-        : req('POST', `/cards/${cid}${path}`, body);
+        ? req('GET', `/cards/${cid}${at}`)
+        : req('POST', `/cards/${cid}${at}`, body);
     },
 
     // shared services, spelled out so cards read clearly

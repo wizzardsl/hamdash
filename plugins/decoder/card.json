@@ -1,0 +1,43 @@
+{
+  "id": "decoder",
+  "name": "Decoder",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Decode digital modes from the radio's audio. CW for now",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 5,
+  "h": 4,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": [
+    "radio"
+  ],
+  "subscribes": [
+    "radio.state"
+  ],
+  "settings": {
+    "mode": {
+      "type": "select",
+      "label": "Mode",
+      "options": [
+        "cw"
+      ],
+      "default": "cw",
+      "help": "Only CW decodes so far. The card's own dropdown lists what else is planned."
+    },
+    "source": {
+      "type": "string",
+      "label": "Audio input",
+      "default": "mock",
+      "help": "'radio' uses whatever sound device the radio in use is set to in Settings -> Radio, so it follows you between rigs. 'mock' synthesises Morse so the card works with no radio attached. Anything else is matched against the input's name, e.g. 'USB Audio CODEC'."
+    },
+    "wrap": {
+      "type": "bool",
+      "label": "Wrap long lines",
+      "default": true,
+      "help": "Off gives one long line per over, which some people prefer for reading a contest exchange."
+    }
+  }
+}

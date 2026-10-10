@@ -48,7 +48,7 @@ hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
-                    psk_reporter, web_embed, hello_card
+                    psk_reporter, decoder, web_embed, hello_card
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
 tests/              regression guards — js_api shape, bus namespace,
@@ -110,6 +110,12 @@ arrives as `?uid=` and `X-Hamdash-Tile`. Server side: `card.tile_uid()` and
 `card.settings(uid)`. Client side: `HD.tileUid`, `HD.settings()`,
 `HD.onSettings()`. Tile settings live on the tile in `layout.json`, not in
 `config.json`, so they travel with the tile.
+**`HD.card()` puts the uid on every call** - the proxy only forwards what it
+is given, and a request without one gets the manifest defaults. That is not
+an error, just the wrong answer: the setting saves, reloads, and does
+nothing, because the card never sees it. It had been missing since the
+helper was written, which is why the spectrum card's per-tile audio input
+had never taken effect.
 
 **6. Cards are spawned through `proc.card_command()`, never `sys.executable`
 directly.** From source that is the interpreter; frozen, `sys.executable` is
@@ -353,7 +359,8 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
 ## Audio cards
 
 `plugins/spectrum` is the first card that owns a hardware resource, and the
-shape it settled on is worth reusing:
+shape it settled on is worth reusing (`plugins/decoder` is the second and
+follows it):
 
 - **Poll, don't stream.** A card's own SSE works through the proxy, but it
   holds a host thread for its life (invariant 4). The card rings recent frames
@@ -370,6 +377,62 @@ shape it settled on is worth reusing:
   lock, or Windows blocks for a long time or forever.
 - **Mock by default**, like the rig. A card that needs hardware to show
   anything can't be developed or demonstrated.
+
+## Decoding
+
+`plugins/decoder/cw.py` is the DSP and imports nothing from the card: samples
+in, text out. That is what lets `tests/test_cw.py` drive it with synthesised
+Morse at known speeds, tones and noise levels, which matters more here than
+anywhere else in the tree - a decoder prints letters whether it is right or
+wrong, and on a real band you cannot tell a decoder fault from a bad fist,
+QRM or fading.
+
+- **Track the bin that is being keyed, not the loudest one.** A steady
+  carrier in the passband is louder than a CW signal for the half of the time
+  the CW signal is off, so a loudest-bin tracker locks onto the carrier and
+  then reads the keying of nothing. What makes CW CW is that it goes on and
+  off: the bin with the greatest swing between its loud and quiet moments
+  wins, which a carrier by definition does not have.
+- **The tone can only be found once the signal has started**, and that is
+  mid-letter by definition - so the first letter of every over was decoded at
+  whatever bin the first frame happened to like, and came out wrong. The
+  ring of recent per-bin levels is therefore *replayed* through the detector
+  the moment a bin is locked: the evidence that the tone is there at all is
+  the first letter, and without the replay that letter is the price of
+  finding it.
+- **The lock survives a gap between overs; decoding does not.** Dropping the
+  lock in a quiet moment costs the first letter of the next over. Carrying
+  on decoding through it fills the screen with E and T as noise crosses a
+  threshold left over from a signal that has stopped.
+- **Nothing is decided until the speed is known.** Marks and gaps go into one
+  pending list as durations and are segmented into letters only once enough
+  elements have been heard to trust the dot length. Deciding as they arrive
+  cannot work: the decoder starts out assuming 20 WPM, and at 8 WPM the gaps
+  *inside* the first letter are longer than its idea of a letter gap (C
+  arrives as T R), while at 40 every dash is shorter than its idea of a dash
+  (CQ arrives as HH).
+- **The dot length comes from the spread, not from an average.** A running
+  average cannot tell a dot from a dash on its own - it has to be told, by
+  the classification it exists to make. With both lengths present the short
+  cluster is the dots and the split is their geometric mean.
+- **Floor and peak are quantile trackers, not percentiles over a window.** A
+  window assumes a duty cycle and the duty cycle is whatever is being sent;
+  when a signal starts after a quiet minute the window is still mostly noise
+  and the threshold sits far too low, which reads a whole over as one long
+  dash. Stepping up by one rate and down by another sets the quantile by the
+  ratio of the two. Chasing the minimum instead looks obvious and is wrong:
+  the quiet frames of a single FFT bin of noise go very deep.
+- **The passband is 250-2700 Hz, not 250-1500.** It was the narrower one on
+  the assumption that a CW note sits near the usual 600-800 Hz sidetone. The
+  first signal this met off the air was at 2207 Hz - a receiver in SSB passes
+  the whole of it and the operator tunes wherever they like inside it - so
+  the assumption cost the one readable signal in the band.
+- **Noise alone looks like an 8 dB signal** in a single FFT bin, measured
+  rather than guessed, so the floor for calling something a signal is 12 dB
+  and the floor for locking onto a bin is 18.
+- Speeds from 6 to 45 WPM are tested. Above that an 8 ms analysis frame
+  starts to quantise a 25 ms dot, which is documented rather than pretended
+  about.
 
 ## Logbook sync
 
@@ -653,6 +716,14 @@ shape it settled on is worth reusing:
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
 - `cty.dat` for real DXCC, replacing the short PREFIX table.
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
+- The decoder's other modes. RTTY and PSK31 are the next two and are a
+  different shape of problem - both are continuous rather than keyed, so the
+  tone tracking and the speed estimate here do not carry over, but the card,
+  the polling and the text window do.
+- The decoder publishes nothing. A callsign it has copied would be worth
+  putting on the bus for the logbook and the map to pick up, but only once
+  it can say how sure it is: `lookup.result` is the "what are we looking at"
+  event and feeding it guesses would be worse than silence.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a
   pip-installable pywebview backend, Linux needs system GTK/WebKit packages

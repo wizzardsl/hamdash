@@ -42,7 +42,7 @@ run.py ──> hamdash/app.py            Flask: static shell, REST API, SSE bus,
              ├── services/           radio (rigctld), callsign, logbook, grid math
              ├── sdk/                what a card author imports
              └── static/             board, drag/resize, themes, card palette
-plugins/     rig_control, logbook, beacon_map, spectrum, path_map,
+plugins/     rig_control, logbook, beacon_map, spectrum, path_map, decoder,
              psk_reporter, web_embed, hello_card
 ```
 
@@ -460,8 +460,8 @@ Every entry also takes an **audio in** and **audio out** — the sound card that
 radio is wired to, which on a modern rig is its own USB interface. Those sit
 outside the backend fields on purpose: which sound card a radio uses has
 nothing to do with how its CAT is reached, so switching an entry from Hamlib
-to OmniRig keeps them. Nothing opens a stream yet; it is what digital-mode
-cards (a CW decoder, a waterfall tied to one radio) will use when they exist.
+to OmniRig keeps them. The **decoder** card is what reads it — set to
+*Radio's audio in*, it follows whichever rig is live.
 
 Devices are remembered **by name**, never by index, because PortAudio
 renumbers everything whenever a device is plugged in or Windows changes its
@@ -485,6 +485,35 @@ offering a second set of fields that would disagree with them.
 The **Hamlib** radio list comes from `rigctl -l`, so it is whatever your
 Hamlib supports rather than a copy here that would go stale. Without Hamlib
 installed the tab says so and takes a model number instead.
+
+## Decoding CW
+
+The `decoder` card reads digital modes out of the radio's audio. CW works;
+RTTY, PSK31 and FT8 are in the dropdown, disabled, so the card says what it
+is rather than looking finished.
+
+Pick the input at the top of the tile. **Radio's audio in** uses whatever
+sound device the rig in use is set to in Settings → Radio, which is the one
+worth choosing: it follows you when you switch radios. **Mock** synthesises
+Morse, so the card works with no radio attached. Anything else is a sound
+card by name.
+
+The lamp is lit while there is a signal to hear. Beside it are the speed and
+the tone the decoder has settled on, and the signal-to-noise ratio it is
+working with. **Clear** empties the window and leaves the speed estimate
+alone — clearing is about the screen, not the signal. Text newly arrived is
+shown in the accent colour for a few seconds so the live end is easy to find,
+and the window stays pinned to the bottom unless you scroll up, in which case
+it leaves you where you are reading.
+
+What to expect of it: a clear signal is copied cleanly from about 6 to 45
+words a minute, and it finds the tone and the speed by itself — there is
+nothing to tune. A marginal signal comes out the way a human copies one, with
+letters wrong. Below about 12 dB signal-to-noise it prints nothing at all,
+which is deliberate: a decoder that fills the screen with letters taken out
+of a dead band teaches you to ignore it. An unknown pattern is printed as the
+dots and dashes that were heard, `<-.-.-.>`, because a silent drop looks
+exactly like a quiet band.
 
 ## Logbook sync
 

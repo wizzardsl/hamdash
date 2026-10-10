@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  html, body { height: 100%; }
+  body { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+  .bar .spacer { flex: 1; }
+  select, button { font: inherit; font-size: 12px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 2px 6px; }
+  select { max-width: 15em; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  .read { font-family: var(--mono); font-size: 11px; color: var(--muted);
+          white-space: nowrap; }
+  .read b { color: var(--ink); font-weight: 600; }
+  /* Lit only while there is something to hear, so a quiet band and a card
+     that has stopped working do not look the same. */
+  .ear { width: 8px; height: 8px; border-radius: 50%; background: var(--rule);
+         flex: none; }
+  .ear.on { background: var(--signal); }
+
+  #out {
+    flex: 1; min-height: 40px; overflow-y: auto; overflow-x: auto;
+    font-family: var(--mono); font-size: 15px; line-height: 1.5;
+    letter-spacing: 0.06em; color: var(--ink); background: var(--bg);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 6px 8px; white-space: pre-wrap; word-break: break-word;
+  }
+  #out.nowrap { white-space: pre; word-break: normal; }
+  #out:empty::before { content: attr(data-empty); color: var(--muted);
+                       font-family: var(--sans, inherit); font-size: 12px; }
+  /* What has arrived in the last moment, so the eye can find the live end
+     of a block of text that is otherwise all the same. */
+  #out .new { color: var(--accent); }
+  .err { color: var(--alert); font-size: 12px; margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="ear" id="ear" title="Lit while a signal is being heard"></span>
+  <select id="mode" aria-label="Mode to decode"></select>
+  <select id="source" aria-label="Audio input" title="Where the audio comes from"></select>
+  <span class="spacer"></span>
+  <span class="read" id="read"></span>
+  <button id="clear" type="button" title="Empty the window. The speed estimate is kept.">Clear</button>
+</div>
+
+<div id="out" data-empty="Listening&#8230;"></div>
+<p class="err" id="err"></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'decoder';
+const $ = (s) => document.querySelector(s);
+
+let conf = {};
+let seq = 0;              // the next character we have not seen
+let fading = [];          // spans recently added, to un-highlight
+
+// Whether to keep the view pinned to the newest text. Pinned until the
+// operator scrolls up, because yanking the view back down while somebody is
+// reading what was sent a minute ago is worse than them having to scroll.
+let pinned = true;
+
+$('#out').addEventListener('scroll', () => {
+  const el = $('#out');
+  pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+});
+
+function append(text) {
+  if (!text) return;
+  const el = $('#out');
+  const span = document.createElement('span');
+  span.className = 'new';
+  span.textContent = text;
+  el.appendChild(span);
+  fading.push([span, Date.now()]);
+  if (pinned) el.scrollTop = el.scrollHeight;
+}
+
+// The highlight is a hint about what is live, not a permanent colour.
+setInterval(() => {
+  const now = Date.now();
+  fading = fading.filter(([span, at]) => {
+    if (now - at < 3000) return true;
+    span.classList.remove('new');
+    return false;
+  });
+}, 500);
+
+function readout(d) {
+  $('#ear').classList.toggle('on', !!d.hearing);
+  const bits = [];
+  if (d.wpm) bits.push(`<b>${d.wpm}</b> wpm`);
+  if (d.tone_hz) bits.push(`${Math.round(d.tone_hz)} Hz`);
+  if (d.snr_db) bits.push(`${Math.round(d.snr_db)} dB`);
+  $('#read').innerHTML = bits.join(' · ');
+  $('#err').textContent = d.error || '';
+}
+
+async function tick() {
+  let d;
+  try {
+    d = await HD.card('decoder', `/api/text?since=${seq}`);
+  } catch (e) {
+    $('#err').textContent = e.message;
+    return;
+  }
+  readout(d);
+  if (d.status === 'idle') {
+    seq = 0;
+    return;
+  }
+  // `first` is where the card's history actually starts. Behind it means we
+  // have been away longer than the card keeps text, and saying so beats a
+  // silent gap in the middle of somebody's over.
+  if (d.first > seq && seq !== 0) {
+    append('\n[…missed]\n');
+  }
+  if (d.text) {
+    append(d.text);
+    seq = d.first + d.text.length;
+  } else if (d.seq < seq) {
+    seq = d.seq;                       // the window was cleared under us
+  }
+}
+
+async function fillLists() {
+  let env = { inputs: [], modes: [] };
+  try {
+    env = await HD.card('decoder', '/api/inputs');
+  } catch { /* the selects stay as they are */ }
+  $('#mode').innerHTML = (env.modes || []).map((m) =>
+    `<option value="${m.id}"${m.ready ? '' : ' disabled'}>`
+    + `${m.name}${m.ready ? '' : ' — not built yet'}</option>`).join('');
+  $('#mode').value = conf.mode || 'cw';
+  $('#source').innerHTML = (env.inputs || []).map((i) =>
+    `<option value="${i.id}">${i.name}</option>`).join('');
+  const want = conf.source || 'mock';
+  if (![...$('#source').options].some((o) => o.value === want)) {
+    // A device that is saved but not present - unplugged, or this layout
+    // came from another machine. Kept and shown, rather than silently
+    // becoming whatever happens to be first in the list.
+    $('#source').insertAdjacentHTML('beforeend',
+      `<option value="${want}">${want} (not connected)</option>`);
+  }
+  $('#source').value = want;
+}
+
+function applyWrap() {
+  $('#out').classList.toggle('nowrap', conf.wrap === false);
+}
+
+$('#clear').onclick = async () => {
+  try {
+    const r = await HD.card('decoder', '/api/clear', {});
+    $('#out').textContent = '';
+    fading = [];
+    pinned = true;
+    seq = r.seq || 0;
+  } catch (e) { $('#err').textContent = e.message; }
+};
+
+$('#mode').onchange = async () => {
+  conf = { ...conf, mode: $('#mode').value };
+  try { await HD.saveSettings(conf); } catch { /* it applies now anyway */ }
+};
+
+$('#source').onchange = async () => {
+  conf = { ...conf, source: $('#source').value };
+  $('#out').textContent = '';
+  seq = 0;
+  try { await HD.saveSettings(conf); } catch { /* as above */ }
+};
+
+// The radio's audio input can change without this tile being touched -
+// another card switching rigs, or the setting being edited - and "Radio's
+// audio in" has to follow it rather than keep the device it started with.
+HD.on('radio.state', () => { fillLists(); });
+
+(async function boot() {
+  try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  HD.onSettings((v) => {
+    conf = v || {};
+    applyWrap();
+    fillLists();
+  });
+  applyWrap();
+  await fillLists();
+  tick();
+  // Twice a second. A character at 20 WPM takes about half of that, so the
+  // text arrives looking live without polling for the sake of it.
+  setInterval(tick, 500);
+})();
+</script>
+</body>
+</html>
