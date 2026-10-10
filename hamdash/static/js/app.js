@@ -462,6 +462,7 @@
   const BACKEND_LABEL = {
     mock: 'Simulated (no hardware)',
     omnirig: 'OmniRig',
+    flrig: 'flrig already running',
     hamlib: 'Hamlib (hamdash opens the port)',
     rigctld: 'rigctld already running',
   };
@@ -560,6 +561,11 @@
         <label>Host <input class="rig-host mono" value="${esc(rig.host || '127.0.0.1')}"></label>
         <label>Port <input class="rig-tcp mono" inputmode="numeric" value="${esc(rig.port || 4532)}"></label>
       </div>
+      <div class="grid" data-for="flrig"${rig.backend === 'flrig' ? '' : ' hidden'}>
+        <label>Host <input class="rig-fl-host mono" value="${esc(rig.host || '127.0.0.1')}"></label>
+        <label title="flrig's XML port, from its Config → Xcvr tab">Port
+          <input class="rig-fl-port mono" inputmode="numeric" value="${esc(rig.port || 12345)}"></label>
+      </div>
       <div class="grid">
         <label>Audio in
           <select class="rig-audio-in" title="${esc(rig.audio_in || 'none')}">${audioOptions('inputs', rig.audio_in)}</select>
@@ -595,6 +601,10 @@
       if (kind === 'rigctld') Object.assign(out, {
         host: sel('rig-host').value.trim(),
         port: Number(sel('rig-tcp').value) || 4532,
+      });
+      if (kind === 'flrig') Object.assign(out, {
+        host: sel('rig-fl-host').value.trim(),
+        port: Number(sel('rig-fl-port').value) || 12345,
       });
       // Not inside the backend branches: a radio's sound card has nothing to
       // do with how its CAT is reached, and changing backend must not throw

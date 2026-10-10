@@ -453,6 +453,7 @@ reaches it:
 |---|---|---|
 | **Simulated** | nothing | the board works with the shack powered down |
 | **OmniRig** | which slot, 1 or 2 | Windows. Needs `pip install pywin32` |
+| **flrig** | host and port | an flrig already running; default `127.0.0.1:12345` |
 | **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; needs Hamlib installed |
 | **rigctld** | host and port | a daemon you are already running |
 
@@ -481,6 +482,14 @@ An **OmniRig** entry has no port or baud, on purpose: OmniRig's own dialog
 owns those, and two programs cannot share a serial port — which is the reason
 to use it in the first place. The button opens OmniRig's settings rather than
 offering a second set of fields that would disagree with them.
+
+**flrig** is the same bargain and has the same fields: a host and the XML port
+from its *Config → Xcvr* tab, 12345 unless you changed it. flrig holds the
+serial port, so where it is running this is how to reach the radio. One thing
+to know: a radio's modes through flrig are its own names, filter width and
+all — an FT-890 has CW-W and CW-N rather than CW. hamdash logs that as CW and
+asks for CW-W when you pick CW, and if the radio has no mode resembling the
+one you asked for it says so rather than appearing to work.
 
 The **Hamlib** radio list comes from `rigctl -l`, so it is whatever your
 Hamlib supports rather than a copy here that would go stale. Without Hamlib

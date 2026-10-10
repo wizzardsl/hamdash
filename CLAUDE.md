@@ -366,6 +366,21 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   owns the rig type, port and baud, and two programs cannot share a serial
   port - that is the whole reason to use it. `configure()` opens their dialog
   rather than offering a second set of fields to disagree with it.
+- **flrig is XML-RPC on 127.0.0.1:12345**, and three of its habits matter.
+  `rig.get_vfo` returns a **string** of hertz. `rig.get_modes` returns the
+  radio's own names with the filter welded on - an FT-890 gives LSB, USB,
+  CW-W, CW-N, AM-W, AM-N, FM - so `_adif_mode` takes the width off for the
+  log (CW-N in a QSO record matches nobody else's) and `_rig_mode` puts it
+  back on to set one. And **`rig.set_mode` with a mode the radio does not
+  have returns success and does nothing**, verified against flrig 2.0.12, so
+  an unmatched mode is refused here with the list of what it offers rather
+  than silently leaving the radio where it was.
+  `system.multicall` exists but is slower than plain calls: ServerProxy keeps
+  the connection alive, so 60 singles took 17 ms against 29 ms for one
+  multicall. One lock around one proxy, because xmlrpc.client is not safe to
+  share between the polling thread and a request thread, and a transport
+  subclass to give it a timeout - the stdlib one has none, and the thread
+  waiting is one of the server's (invariant 4).
 - **Hamlib entries spawn their own `rigctld`** (`-m model -r port -t <free>`)
   and kill it when deselected: two rigctlds on one port is the same mistake as
   two programs. The model list comes from `rigctl -l`, never a copy here -

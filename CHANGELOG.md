@@ -7,6 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **flrig as a way into the radio.** A rig entry can be an flrig already
+  running — host and port, nothing else, because flrig owns the rig type and
+  the serial port exactly as OmniRig does. Worth having for the same reason:
+  where flrig is running, going through it is the only way to talk to the
+  radio at all.
+  Two things about its XML-RPC interface are not what you would guess, and
+  both were read off a running flrig rather than assumed. Frequencies come
+  back as **strings**. Modes are the **radio's own names** with the filter
+  width welded on — an FT-890 offers CW-W and CW-N, not CW — so the width is
+  taken off for the log and put back on when setting, and a mode the radio
+  does not have is refused with the list of what it does offer. It has to
+  be: `rig.set_mode` with a name the radio lacks returns success and changes
+  nothing.
 - **Start and Stop on the decoder**, which releases the sound card rather
   than just going quiet — the usual reason to stop decoding is to hand the
   input to WSJT-X or fldigi, and waiting out a 30 second idle timer is not

@@ -52,7 +52,17 @@ MODE_TO_OMNI = {v: k for k, v in OMNI_MODES.items()}
 PM_TX, PM_RX = 4194304, 2097152
 
 BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
-BACKENDS = ("mock", "omnirig", "hamlib", "rigctld")
+BACKENDS = ("mock", "omnirig", "flrig", "hamlib", "rigctld")
+
+# flrig's own default. It is one XML-RPC server per instance, so a
+# second flrig for a second radio is on a port the operator chose.
+FLRIG_PORT = 12345
+
+# How long any one call to it may take. flrig is on this machine and
+# answers in well under a millisecond; this is for when it has gone away
+# mid-call, because the thread waiting is one of the server's (invariant
+# 4) rather than one of ours.
+FLRIG_TIMEOUT = 2.0
 MAX_RIGS = 10
 
 
@@ -173,6 +183,185 @@ class RigctldBackend(Backend):
             except OSError:
                 pass
             self._sock = None
+
+
+class FlrigBackend(Backend):
+    """flrig, over the XML-RPC server it runs on 127.0.0.1:12345.
+
+    Worth having for the same reason as OmniRig: flrig already owns the
+    serial port, and two programs cannot share one. Where flrig is running
+    the choice is to go through it or to not talk to the radio at all.
+
+    Two things about its interface are not what you would guess, and both
+    were read off the running program rather than assumed:
+
+    * **Frequencies come back as strings.** `rig.get_vfo` answers
+      `'14199460'`, not an integer.
+    * **Modes are the radio's own names**, so an FT-890 offers LSB, USB,
+      CW-W, CW-N, AM-W, AM-N, FM - the width is welded onto the mode. Worse,
+      `rig.set_mode` with a name the radio does not have **returns success
+      and does nothing**: asking for PKTUSB leaves it on USB and says it
+      worked. So a mode is matched against `rig.get_modes` here, and an
+      unmatched one is refused with what the radio does offer.
+    """
+
+    kind = "flrig"
+
+    def __init__(self, host="127.0.0.1", port=FLRIG_PORT,
+                 timeout=FLRIG_TIMEOUT, **_) -> None:
+        self.host, self.port = host or "127.0.0.1", int(port or FLRIG_PORT)
+        self.timeout = timeout
+        # xmlrpc.client keeps one connection per proxy and is not safe to
+        # share: the polling thread and a request thread would interleave two
+        # calls on it. One lock, one proxy.
+        self._lock = threading.Lock()
+        self._rpc = None
+        self._modes: list[str] = []
+
+    def where(self) -> str:
+        return f"{self.host}:{self.port}"
+
+    def _proxy(self):
+        if self._rpc is None:
+            import xmlrpc.client
+
+            class _Transport(xmlrpc.client.Transport):
+                """The stdlib transport has no timeout, so a flrig that has
+                stopped answering would hold the caller for ever."""
+
+                def __init__(self, timeout):
+                    super().__init__()
+                    self._timeout = timeout
+
+                def make_connection(self, host):
+                    conn = super().make_connection(host)
+                    conn.timeout = self._timeout
+                    return conn
+
+            self._rpc = xmlrpc.client.ServerProxy(
+                f"http://{self.host}:{self.port}/",
+                transport=_Transport(self.timeout), allow_none=True)
+        return self._rpc
+
+    def _call(self, name: str, *args):
+        import xmlrpc.client
+        with self._lock:
+            try:
+                fn = self._proxy()
+                for part in name.split("."):
+                    fn = getattr(fn, part)
+                return fn(*args)
+            except xmlrpc.client.Fault as exc:
+                raise RigError(f"flrig refused {name}: {exc.faultString}")
+            except Exception as exc:                # noqa: BLE001 - reported
+                self.close()
+                raise RigError(
+                    f"no flrig at {self.where()} ({exc}). Start flrig, or "
+                    f"check its Config -> Xcvr -> XML port.")
+
+    # -- reading -----------------------------------------------------------
+    def state(self) -> dict:
+        try:
+            freq = int(float(self._call("rig.get_vfo")))
+            mode = str(self._call("rig.get_mode") or "")
+            ptt = bool(int(self._call("rig.get_ptt") or 0))
+        except (RigError, TypeError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "freq": freq, "mode": _adif_mode(mode),
+                "rig_mode": mode, "width": 0, "ptt": ptt,
+                "band": band_for(freq)}
+
+    def info(self) -> dict:
+        try:
+            return {"ok": True, "rig_type": str(self._call("rig.get_xcvr")),
+                    "version": str(self._call("main.get_version"))}
+        except RigError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def settle(self) -> dict:
+        """What Test shows: the state, plus which radio flrig is driving."""
+        st = self.state()
+        if not st.get("ok"):
+            return st
+        got = self.info()
+        if got.get("ok"):
+            st["rig_type"] = got["rig_type"]
+        return st
+
+    def modes(self) -> list[str]:
+        if not self._modes:
+            try:
+                got = self._call("rig.get_modes")
+            except RigError:
+                return []
+            self._modes = [str(m) for m in (got or [])]
+        return self._modes
+
+    # -- writing -----------------------------------------------------------
+    def set_freq(self, hz: int) -> None:
+        self._call("rig.set_frequency", float(int(hz)))
+
+    def set_mode(self, mode: str, width: int = 0) -> None:
+        want = _rig_mode(mode, self.modes())
+        if not want:
+            offers = ", ".join(self.modes()) or "nothing"
+            raise RigError(
+                f"flrig's radio has no mode like {mode!r}. It offers "
+                f"{offers}.")
+        self._call("rig.set_mode", want)
+
+    def set_ptt(self, on: bool) -> None:
+        # flrig's own help says this "waits for state change", so it is the
+        # one call here that can take a moment.
+        self._call("rig.set_ptt", 1 if on else 0)
+
+    def close(self) -> None:
+        rpc, self._rpc = self._rpc, None
+        if rpc is None:
+            return
+        try:
+            # ServerProxy keeps the HTTP connection open between calls, and
+            # ("close") is the documented way to reach the transport and let
+            # go of it. Without this, deselecting the rig leaves a socket on
+            # flrig until the process ends.
+            rpc("close")()
+        except Exception:                           # noqa: BLE001
+            pass
+
+
+def _adif_mode(mode: str) -> str:
+    """A radio's mode name as the rest of hamdash spells it.
+
+    An FT-890 calls its two CW filters CW-W and CW-N, and the log wants CW:
+    the width is a filter setting, not a different mode, and writing CW-N
+    into a QSO record would make it fail to match anybody else's log.
+    """
+    name = str(mode or "").strip().upper()
+    for suffix in ("-W", "-N", "-WIDE", "-NARR", "-U", "-L"):
+        if name.endswith(suffix) and name[:-len(suffix)] in MODES:
+            return name[:-len(suffix)]
+    return name
+
+
+def _rig_mode(mode: str, offered: list[str]) -> str:
+    """The name this radio knows for a mode, or "" if it has none.
+
+    Returning "" matters: `rig.set_mode` with a name the radio does not have
+    answers success and changes nothing, so the only way the operator finds
+    out is by looking at the radio.
+    """
+    want = str(mode or "").strip().upper()
+    if not want:
+        return ""
+    for name in offered:
+        if name.upper() == want:
+            return name
+    # CW -> CW-W: the first filter width the radio offers for that mode.
+    for name in offered:
+        base = name.upper().split("-")[0]
+        if base == want:
+            return name
+    return ""
 
 
 class HamlibBackend(RigctldBackend):
@@ -480,6 +669,8 @@ def make_backend(rig: dict):
         return OmniRigBackend(**rig)
     if kind == "hamlib":
         return HamlibBackend(**rig)
+    if kind == "flrig":
+        return FlrigBackend(**rig)
     if kind == "rigctld":
         return RigctldBackend(**rig)
     return MockBackend(**rig)
@@ -664,6 +855,9 @@ def clean_rig(raw: dict) -> dict:
     elif kind == "rigctld":
         out.update({"host": str(raw.get("host") or "127.0.0.1").strip(),
                     "port": int(raw.get("port") or 4532)})
+    elif kind == "flrig":
+        out.update({"host": str(raw.get("host") or "127.0.0.1").strip(),
+                    "port": int(raw.get("port") or FLRIG_PORT)})
     return out
 
 
