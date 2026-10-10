@@ -178,6 +178,28 @@ html, body {
   border-radius: var(--radius); padding: 6px 8px;
 }
 .sheet-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* One radio. The live one is marked by a stripe rather than by a colour, so
+   it reads at a glance without a legend. */
+.rig {
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 8px 10px; margin-bottom: 8px; background: var(--panel-2);
+}
+.rig.on { box-shadow: inset 3px 0 0 var(--accent); }
+.rig-top { display: flex; align-items: center; gap: 8px; }
+.rig-top input.rig-name { flex: 1; min-width: 0; }
+.rig .grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 6px 10px; margin-top: 7px;
+}
+.rig .grid label { margin: 0; }
+.rig .grid[hidden], .rig .row-btns[hidden] { display: none; }
+.rig .row-btns { margin-top: 8px; }
+.rig .btn { font-size: 12px; padding: 3px 9px; }
+.rig .live { color: var(--accent); font-size: 11px; white-space: nowrap; }
+.rig .said { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.rig .said.warn { color: var(--alert); }
+.rig .said.good { color: var(--signal); }
 .sheet h3 {
   font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--accent);

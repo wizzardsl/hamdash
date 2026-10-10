@@ -431,6 +431,30 @@ outage is remembered rather than retried into.
 in touch rather than simply blocking — is a tile setting, empty by default.
 Nothing is sent unless you fill it in.
 
+## Radios
+
+Settings → Radio is a list of up to ten, and each one picks how hamdash
+reaches it:
+
+| backend | what you set | notes |
+|---|---|---|
+| **Simulated** | nothing | the board works with the shack powered down |
+| **OmniRig** | which slot, 1 or 2 | Windows. Needs `pip install pywin32` |
+| **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; needs Hamlib installed |
+| **rigctld** | host and port | a daemon you are already running |
+
+**Test** asks one radio one question without taking the one you are using away
+from you. **Use this one** makes it live.
+
+An **OmniRig** entry has no port or baud, on purpose: OmniRig's own dialog
+owns those, and two programs cannot share a serial port — which is the reason
+to use it in the first place. The button opens OmniRig's settings rather than
+offering a second set of fields that would disagree with them.
+
+The **Hamlib** radio list comes from `rigctl -l`, so it is whatever your
+Hamlib supports rather than a copy here that would go stale. Without Hamlib
+installed the tab says so and takes a model number instead.
+
 ## Logbook sync
 
 Settings → Integrations → Logbook sync. Credentials there, then Pull or Push.

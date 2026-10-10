@@ -420,6 +420,255 @@
     syncNote(which, p.message, p.ok ? 'good' : 'warn');
   });
 
+  // ---- radios ---------------------------------------------------------
+  // The Radio tab is a list of rigs rather than one set of fields: a shack
+  // usually has more than one radio and more than one way into it. What the
+  // form shows depends on the backend, because the fields genuinely differ -
+  // OmniRig owns the port and the rig type itself, so offering them here
+  // would be a second place to set them and a second thing to disagree with.
+  let rigEnv = { rigs: [], active: '', max: 10, bauds: [], ports: [],
+                 backends: [], rigctld: '', rigctld_path: '' };
+  let rigModels = null;              // fetched once, on demand
+
+  const BACKEND_LABEL = {
+    mock: 'Simulated (no hardware)',
+    omnirig: 'OmniRig',
+    hamlib: 'Hamlib (hamdash opens the port)',
+    rigctld: 'rigctld already running',
+  };
+
+  async function loadRigs() {
+    try {
+      rigEnv = await HD.get('/api/rigs');
+    } catch (e) {
+      $('#rig-note').textContent = e.message;
+      return;
+    }
+    $('#s-rigctld-path').value = rigEnv.rigctld_path || '';
+    renderRigs();
+    rigNote();
+  }
+
+  function rigNote() {
+    const n = rigEnv.rigs.length;
+    $('#rig-count').textContent = `${n} of ${rigEnv.max}`;
+    $('#rig-add').disabled = n >= rigEnv.max;
+    const st = rigEnv.state || {};
+    $('#rig-note').textContent = st.ok
+      ? `Live: ${st.rig || 'radio'} \u2014 ${fmtRigState(st)}`
+      : (st.error || '');
+    $('#rig-note').className = 'sheet-note' + (st.ok ? '' : ' warn');
+    $('#rig-models-note').textContent = rigEnv.rigctld
+      ? `rigctld: ${rigEnv.rigctld}`
+      : 'Hamlib not found. OmniRig and simulated radios do not need it.';
+  }
+
+  const fmtRigState = (st) => [
+    st.rig_type, st.freq ? `${(st.freq / 1e6).toFixed(6)} MHz` : '',
+    st.mode && st.mode !== '?' ? st.mode : '', st.band,
+  ].filter(Boolean).join(' \u00b7 ') || 'answered';
+
+  const opt = (v, label, sel) =>
+    `<option value="${esc(v)}"${String(sel) === String(v) ? ' selected' : ''}>`
+    + `${esc(label)}</option>`;
+  const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderRigs() {
+    const box = $('#rig-list');
+    box.innerHTML = '';
+    rigEnv.rigs.forEach((rig, i) => box.appendChild(rigRow(rig, i)));
+  }
+
+  function rigRow(rig, i) {
+    const el = document.createElement('div');
+    el.className = 'rig' + (rig.id === rigEnv.active ? ' on' : '');
+    const live = rig.id === rigEnv.active;
+    el.innerHTML = `
+      <div class="rig-top">
+        <input class="rig-name" value="${esc(rig.name || '')}" aria-label="Name">
+        <select class="rig-backend" aria-label="Connection">
+          ${rigEnv.backends.map((b) => opt(b, BACKEND_LABEL[b] || b, rig.backend)).join('')}
+        </select>
+        ${live ? '<span class="live">in use</span>' : ''}
+      </div>
+      <div class="grid" data-for="omnirig"${rig.backend === 'omnirig' ? '' : ' hidden'}>
+        <label>OmniRig slot
+          <select class="rig-slot">${opt(1, 'Rig 1', rig.slot || 1)}${opt(2, 'Rig 2', rig.slot || 1)}</select>
+        </label>
+      </div>
+      <div class="grid" data-for="hamlib"${rig.backend === 'hamlib' ? '' : ' hidden'}>
+        <label>Radio <select class="rig-model"></select></label>
+        <label>Port
+          <select class="rig-port">${[''].concat(rigEnv.ports)
+            .map((p) => opt(p, p || 'choose\u2026', rig.port || '')).join('')}</select>
+        </label>
+        <label>Baud
+          <select class="rig-baud">${rigEnv.bauds
+            .map((b) => opt(b, b, rig.baud || 9600)).join('')}</select>
+        </label>
+        <label>Data bits
+          <select class="rig-data">${[7, 8].map((b) => opt(b, b, rig.data_bits || 8)).join('')}</select>
+        </label>
+        <label>Stop bits
+          <select class="rig-stop">${[1, 2].map((b) => opt(b, b, rig.stop_bits || 1)).join('')}</select>
+        </label>
+        <label>Parity
+          <select class="rig-parity">${['None', 'Even', 'Odd']
+            .map((b) => opt(b, b, rig.parity || 'None')).join('')}</select>
+        </label>
+        <label>Handshake
+          <select class="rig-hand">${['None', 'Hardware', 'XONXOFF']
+            .map((b) => opt(b, b, rig.handshake || 'None')).join('')}</select>
+        </label>
+      </div>
+      <div class="grid" data-for="rigctld"${rig.backend === 'rigctld' ? '' : ' hidden'}>
+        <label>Host <input class="rig-host mono" value="${esc(rig.host || '127.0.0.1')}"></label>
+        <label>Port <input class="rig-tcp mono" inputmode="numeric" value="${esc(rig.port || 4532)}"></label>
+      </div>
+      <div class="row-btns">
+        <button class="btn btn-quiet rig-test" type="button">Test</button>
+        <button class="btn btn-quiet rig-use" type="button"${live ? ' disabled' : ''}>Use this one</button>
+        <button class="btn btn-quiet rig-omni" type="button"${rig.backend === 'omnirig' ? '' : ' hidden'}>OmniRig settings\u2026</button>
+        <button class="btn btn-quiet rig-del" type="button">Remove</button>
+      </div>
+      <div class="said"></div>`;
+
+    const sel = (c) => el.querySelector(`.${c}`);
+    fillModels(sel('rig-model'), rig.model);
+
+    const read = () => {
+      const kind = sel('rig-backend').value;
+      const out = { id: rig.id, name: sel('rig-name').value, backend: kind };
+      if (kind === 'omnirig') out.slot = Number(sel('rig-slot').value);
+      if (kind === 'hamlib') Object.assign(out, {
+        model: Number(sel('rig-model').value) || 0,
+        port: sel('rig-port').value,
+        baud: Number(sel('rig-baud').value) || 0,
+        data_bits: Number(sel('rig-data').value),
+        stop_bits: Number(sel('rig-stop').value),
+        parity: sel('rig-parity').value,
+        handshake: sel('rig-hand').value,
+      });
+      if (kind === 'rigctld') Object.assign(out, {
+        host: sel('rig-host').value.trim(),
+        port: Number(sel('rig-tcp').value) || 4532,
+      });
+      return out;
+    };
+
+    const say = (msg, kind) => {
+      const n = el.querySelector('.said');
+      n.textContent = msg;
+      n.className = 'said' + (kind ? ` ${kind}` : '');
+    };
+
+    // Changing the backend changes which questions make sense, so the form
+    // follows at once rather than after a save.
+    sel('rig-backend').onchange = () => {
+      const kind = sel('rig-backend').value;
+      el.querySelectorAll('.grid[data-for]').forEach((g) => {
+        g.hidden = g.dataset.for !== kind;
+      });
+      el.querySelector('.rig-omni').hidden = kind !== 'omnirig';
+      rigEnv.rigs[i] = read();
+      say('');
+    };
+    el.querySelectorAll('input, select').forEach((f) => {
+      f.addEventListener('change', () => { rigEnv.rigs[i] = read(); });
+    });
+
+    sel('rig-test').onclick = async (e) => {
+      e.target.disabled = true;
+      say('asking\u2026');
+      try {
+        const r = await HD.post('/api/rigs/test', read());
+        say(r.ok ? fmtRigState(r) : (r.error || 'no answer'),
+            r.ok ? 'good' : 'warn');
+      } catch (err) { say(err.message, 'warn'); }
+      e.target.disabled = false;
+    };
+
+    sel('rig-use').onclick = async () => {
+      try {
+        await saveRigs(rig.id);
+        say('');
+      } catch (err) { say(err.message, 'warn'); }
+    };
+
+    sel('rig-omni').onclick = async () => {
+      say('opening OmniRig\u2026');
+      try {
+        const r = await HD.post('/api/rigs/omnirig/dialog',
+                                { slot: Number(sel('rig-slot').value) });
+        say(r.ok ? `OmniRig: ${r.rig_type || 'no rig'} \u2014 ${r.status || ''}`
+                 : (r.error || ''), r.ok ? 'good' : 'warn');
+      } catch (err) { say(err.message, 'warn'); }
+    };
+
+    sel('rig-del').onclick = async () => {
+      rigEnv.rigs.splice(i, 1);
+      try { await saveRigs(); } catch (err) { toast(err.message); }
+    };
+    return el;
+  }
+
+  function fillModels(el, chosen) {
+    if (!el) return;
+    if (!rigModels || !rigModels.ok) {
+      // No Hamlib, so no list to offer. A number still works, and saying
+      // where it comes from beats an empty dropdown that looks broken.
+      el.outerHTML = `<input class="rig-model mono" inputmode="numeric"
+        value="${esc(chosen || '')}" placeholder="Hamlib model number"
+        title="Install Hamlib and press Rescan to choose by name instead.">`;
+      return;
+    }
+    el.innerHTML = opt('', 'choose\u2026', chosen || '')
+      + rigModels.models.map((m) => opt(m.model, `${m.label} (${m.model})`,
+                                        chosen || '')).join('');
+  }
+
+  async function saveRigs(active) {
+    const body = { rigs: rigEnv.rigs, rigctld_path: $('#s-rigctld-path').value.trim() };
+    if (active !== undefined) body.active = active;
+    const r = await HD.put('/api/rigs', body);
+    rigEnv.rigs = r.rigs;
+    rigEnv.active = r.active;
+    rigEnv.state = r.state;
+    renderRigs();
+    rigNote();
+    return r;
+  }
+
+  $('#rig-add').onclick = async () => {
+    if (rigEnv.rigs.length >= rigEnv.max) return;
+    rigEnv.rigs.push({ name: 'New radio', backend: 'omnirig', slot: 1 });
+    try { await saveRigs(); } catch (e) { toast(e.message); }
+  };
+
+  $('#rig-rescan').onclick = async (e) => {
+    e.target.disabled = true;
+    $('#rig-models-note').textContent = 'asking Hamlib\u2026';
+    try {
+      await HD.put('/api/rigs', { rigs: rigEnv.rigs,
+                                  rigctld_path: $('#s-rigctld-path').value.trim() });
+      rigModels = await HD.get('/api/rigs/models');
+      await loadRigs();
+      $('#rig-models-note').textContent = rigModels.ok
+        ? `${rigModels.count} radios from Hamlib`
+        : rigModels.error;
+    } catch (err) { $('#rig-models-note').textContent = err.message; }
+    e.target.disabled = false;
+  };
+
+  // The live rig can change without the sheet being open - another card, or
+  // the radio being switched off - so keep the note honest.
+  HD.on('radio.state', (st) => {
+    if (!$('#settings-sheet').open) return;
+    rigEnv.state = st;
+    rigNote();
+  });
+
   // ---- secrets --------------------------------------------------------
   // A password field that shows the stored value - or a stand-in for it -
   // sends that value back on the next save. That is how the callsign lookup
@@ -512,9 +761,7 @@
     $('#s-op').value = config.station.operator || '';
     $('#s-units').value = config.units || 'km';
     $('#s-theme').value = config.theme || (themes[0] || {}).id || '';
-    $('#s-mock').checked = !!config.radio.mock;
-    $('#s-rig-host').value = config.radio.rigctld_host || '';
-    $('#s-rig-port').value = config.radio.rigctld_port || 4532;
+    loadRigs();
     const sy = config.logbook_sync || {};
     $('#s-lotw-user').value = sy.lotw_user || '';
     secretBox('#s-lotw-pass', 'logbook_sync.lotw_password');
@@ -676,11 +923,6 @@
       },
       units: $('#s-units').value,
       theme: $('#s-theme').value,
-      radio: {
-        mock: $('#s-mock').checked,
-        rigctld_host: $('#s-rig-host').value.trim(),
-        rigctld_port: Number($('#s-rig-port').value) || 4532,
-      },
       callsign_lookup: withSecret({
         provider: $('#s-lk-provider').value,
         account: $('#s-lk-account').value,

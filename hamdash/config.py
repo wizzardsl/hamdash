@@ -38,7 +38,11 @@ DEFAULTS = {
     "theme": "night-watch",
     "grid_cols": 12,
     "row_px": 80,
-    "radio": {"rigctld_host": "127.0.0.1", "rigctld_port": 4532, "mock": True},
+    # One entry per radio, up to rigs.MAX_RIGS, with `active` naming the live
+    # one. rigctld_host/port survive from the single-rig shape so an upgrade
+    # keeps working; services.rigs.ensure_rigs turns them into an entry.
+    "radio": {"rigctld_host": "127.0.0.1", "rigctld_port": 4532, "mock": True,
+              "rigs": [], "active": "", "rigctld_path": ""},
     "callsign_lookup": {"provider": "auto", "user": "", "password": "",
                         "account": "", "cache_days": 30},
     "logbook_sync": {"lotw_user": "", "lotw_password": "",
@@ -90,9 +94,18 @@ def default_home() -> Path:
 
 
 def _merge(base: dict, over: dict) -> dict:
-    out = dict(base)
+    """`over` on top of `base`, without either sharing anything.
+
+    `dict(base)` is shallow, so a default that is a list or a dict - like
+    `radio.rigs` - came back as *the same object* every time. Two Configs in
+    one process then shared it, and appending a radio to one added it to the
+    other and to DEFAULTS itself, where it outlived both.
+    """
+    out = json.loads(json.dumps(base))
     for k, v in (over or {}).items():
-        out[k] = _merge(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v
+        out[k] = (_merge(out[k], v)
+                  if isinstance(v, dict) and isinstance(out.get(k), dict)
+                  else json.loads(json.dumps(v)))
     return out
 
 

@@ -21,7 +21,8 @@ from .services import grid as gridlib
 from .services.callsign import Lookup
 from .services.logbook import Logbook
 from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
-from .services.radio import MODES, Rig
+from .services.radio import MODES
+from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes
 
 HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
@@ -37,8 +38,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     cards = registry.discover(cfg.plugin_dirs)
     sup = Supervisor(host_url, home=str(cfg.home))
-    rig = Rig(cfg.data["radio"]["rigctld_host"], cfg.data["radio"]["rigctld_port"],
-              mock=cfg.data["radio"].get("mock", True))
+    rigsvc.ensure_rigs(cfg)
+    rig = rigsvc.RigManager(cfg)
     rig.start_polling(hz=2)
     log = Logbook(cfg.db_path)
     look = _make_lookup(cfg)
@@ -329,15 +330,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     source="host")
         return jsonify({"uid": uid, "values": values})
 
-    @app.get("/api/config")
-    def get_config():
+    def _safe_config() -> dict:
         """Config without the secrets.
 
         They used to come back as the literal "***", which the settings form
-        loaded into the field and saved straight back - so opening settings and
-        pressing Save replaced the password with three asterisks. Secrets now
-        leave as empty, and `secrets_set` says which ones exist so the form can
-        show that without knowing them.
+        loaded into the field and saved straight back - so opening settings
+        and pressing Save replaced the password with three asterisks. Secrets
+        now leave as empty, and `secrets_set` says which ones exist so the
+        form can show that without knowing them.
+
+        Used for the bus as well as the endpoint. `config.changed` is in
+        `bus.ALWAYS`, so it reaches every card page there is; publishing
+        `cfg.data` raw put the operator's QRZ password in all of them.
         """
         safe = json.loads(json.dumps(cfg.data))
         which = {}
@@ -348,7 +352,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             which[f"{section}.{key}"] = bool((block.get(key) or "").strip())
             block[key] = ""
         safe["secrets_set"] = which
-        return jsonify(safe)
+        return safe
+
+    @app.get("/api/config")
+    def get_config():
+        return jsonify(_safe_config())
 
     @app.put("/api/config")
     def put_config():
@@ -391,7 +399,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             # silently using the old one is the kind of trap that costs an hour.
             look = _make_lookup(cfg)
         cfg.save()
-        BUS.publish("config.changed", cfg.data, source="host")
+        BUS.publish("config.changed", _safe_config(), source="host")
         return jsonify(ok=True)
 
     @app.get("/api/themes")
@@ -442,6 +450,77 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             return jsonify(rig.set_ptt(on))
         except Exception as exc:
             return jsonify(error=str(exc)), 502
+
+    # ---------------- the radios themselves -----------------------------
+    # Separate from /api/radio/*, which is "talk to the live one". These are
+    # "which radios exist and which is live", and are the board's own: a card
+    # should not be able to point the operator's rig at a different port.
+    @app.get("/api/rigs")
+    def rigs_list():
+        c = cfg.data.get("radio", {})
+        exe = rigsvc.find_rigctld(c.get("rigctld_path", ""))
+        return jsonify({
+            "rigs": rig.rigs(), "active": c.get("active", ""),
+            "max": rigsvc.MAX_RIGS, "backends": list(rigsvc.BACKENDS),
+            "bauds": rigsvc.BAUDS, "ports": rigsvc.serial_ports(),
+            "rigctld": exe, "rigctld_path": c.get("rigctld_path", ""),
+            "state": rig.state(),
+        })
+
+    @app.put("/api/rigs")
+    def rigs_save():
+        body = request.get_json(silent=True) or {}
+        incoming = body.get("rigs")
+        if not isinstance(incoming, list):
+            return jsonify(error="rigs must be a list"), 400
+        if len(incoming) > rigsvc.MAX_RIGS:
+            return jsonify(error=f"at most {rigsvc.MAX_RIGS} radios"), 400
+        c = cfg.data.setdefault("radio", {})
+        c["rigs"] = [rigsvc.clean_rig(r) for r in incoming]
+        if "rigctld_path" in body:
+            c["rigctld_path"] = str(body.get("rigctld_path") or "").strip()
+        want = body.get("active")
+        cfg.save()
+        # Re-open whichever is live: its settings may be what just changed.
+        state = rig.select(want if want is not None else c.get("active", ""))
+        BUS.publish("config.changed", _safe_config(), source="host")
+        return jsonify({"ok": True, "rigs": c["rigs"],
+                        "active": c.get("active", ""), "state": state})
+
+    @app.post("/api/rigs/select")
+    def rigs_select():
+        want = (request.get_json(silent=True) or {}).get("id", "")
+        return jsonify(rig.select(str(want)))
+
+    @app.post("/api/rigs/test")
+    def rigs_test():
+        """Open one, ask it one question, close it again."""
+        body = request.get_json(silent=True) or {}
+        return jsonify(rig.test(rigsvc.clean_rig(body)))
+
+    @app.get("/api/rigs/models")
+    def rigs_models():
+        """Every rig Hamlib supports, asked of Hamlib."""
+        return jsonify(rigsvc.hamlib_models(
+            cfg.data.get("radio", {}).get("rigctld_path", "")))
+
+    @app.post("/api/rigs/omnirig/dialog")
+    def rigs_omnirig_dialog():
+        """Open OmniRig's own settings window.
+
+        The rig type, port and baud rate live there, and two programs cannot
+        share a serial port - so this opens theirs rather than offering a
+        second set of fields that would disagree with it.
+        """
+        slot = int((request.get_json(silent=True) or {}).get("slot") or 1)
+        try:
+            back = rigsvc.OmniRigBackend(slot=slot)
+            back.configure()
+            return jsonify({"ok": True, **back.info()})
+        except rigsvc.RigError as exc:
+            return jsonify(ok=False, error=str(exc)), 502
+        except Exception as exc:                    # noqa: BLE001 - reported
+            return jsonify(ok=False, error=str(exc)), 502
 
     @app.get("/api/radio/modes")
     @guard("radio")

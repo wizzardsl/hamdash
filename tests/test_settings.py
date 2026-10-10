@@ -91,5 +91,34 @@ class TestLayoutLoading(unittest.TestCase):
         self.assertTrue(all("uid" in t and "card" in t for t in tiles))
 
 
+class TestDefaultsAreNotShared(unittest.TestCase):
+    """A default that is a list or a dict must not be the same object every
+    time. `dict(base)` is shallow, so `radio.rigs` came back as one list
+    shared by every Config in the process - appending a radio to one added it
+    to the others and to DEFAULTS itself, where it outlived them all. One
+    Config hides it; the tests and `--run-card` do not."""
+
+    def test_two_configs_do_not_share_a_list(self):
+        from hamdash.config import DEFAULTS, _merge
+        a, b = _merge(DEFAULTS, {}), _merge(DEFAULTS, {})
+        a["radio"]["rigs"].append({"id": "x"})
+        self.assertEqual(b["radio"]["rigs"], [])
+
+    def test_merging_does_not_edit_the_defaults(self):
+        from hamdash.config import DEFAULTS, _merge
+        got = _merge(DEFAULTS, {})
+        got["radio"]["rigs"].append({"id": "x"})
+        got["station"]["callsign"] = "CHANGED"
+        self.assertEqual(DEFAULTS["radio"]["rigs"], [])
+        self.assertNotEqual(DEFAULTS["station"].get("callsign"), "CHANGED")
+
+    def test_a_value_from_the_file_is_copied_too(self):
+        from hamdash.config import DEFAULTS, _merge
+        mine = {"radio": {"rigs": [{"id": "a"}]}}
+        got = _merge(DEFAULTS, mine)
+        got["radio"]["rigs"].append({"id": "b"})
+        self.assertEqual(len(mine["radio"]["rigs"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

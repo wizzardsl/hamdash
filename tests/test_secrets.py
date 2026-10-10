@@ -10,6 +10,7 @@ Run with:  python -m unittest discover -s tests
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from hamdash.app import create_app
@@ -97,6 +98,39 @@ class TestSecretsAreWriteOnly(unittest.TestCase):
         got = self.client.get("/api/config").get_json()
         self.assertEqual(got["callsign_lookup"]["provider"], "hamqth")
         self.assertEqual(self.stored("callsign_lookup", "password"), "lookuppass")
+
+
+class TestTheBusNeverCarriesASecret(unittest.TestCase):
+    """`config.changed` is in `bus.ALWAYS`, so it reaches every card page
+    there is - a card cannot opt out of receiving it. It used to publish
+    `cfg.data` raw, which put the operator's QRZ password in every iframe on
+    the board."""
+
+    def setUp(self):
+        self.cfg, self.client = a_host()
+
+    def published(self):
+        seen = []
+        with mock.patch("hamdash.app.BUS.publish",
+                        side_effect=lambda t, p, **k: seen.append((t, p))):
+            self.client.put("/api/config", json={"station": {"operator": "S"}})
+        return [p for t, p in seen if t == "config.changed"]
+
+    def test_a_config_change_publishes_no_secret(self):
+        for payload in self.published():
+            for section, key in SECRETS:
+                with self.subTest(secret=f"{section}.{key}"):
+                    self.assertEqual((payload.get(section) or {}).get(key), "")
+
+    def test_it_still_says_which_are_set(self):
+        for payload in self.published():
+            self.assertTrue(payload.get("secrets_set", {})
+                            .get("callsign_lookup.password"))
+
+    def test_the_stored_secret_is_untouched_by_publishing(self):
+        self.published()
+        self.assertEqual(self.cfg.data["callsign_lookup"]["password"],
+                         "lookuppass")
 
 
 class TestPastedCredentials(unittest.TestCase):

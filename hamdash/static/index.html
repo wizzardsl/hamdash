@@ -194,10 +194,27 @@
   </section>
 
   <section class="tab-panel" data-panel="radio" role="tabpanel" hidden>
-    <label class="row"><input type="checkbox" id="s-mock"> Use a simulated rig (no hardware)</label>
-    <label>rigctld host <input id="s-rig-host" class="mono" spellcheck="false"></label>
-    <label>rigctld port <input id="s-rig-port" class="mono" inputmode="numeric"></label>
-    <p class="sheet-note">Radio changes take effect when HamDash restarts.</p>
+    <div id="rig-list"></div>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="rig-add" type="button">Add a radio</button>
+      <span class="sheet-note" id="rig-count"></span>
+    </div>
+    <p class="sheet-note" id="rig-note"></p>
+
+    <h3>Hamlib</h3>
+    <label>Path to rigctld
+      <input id="s-rigctld-path" class="mono" spellcheck="false"
+             placeholder="found automatically if it is on PATH"></label>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="rig-rescan" type="button">Rescan for radios</button>
+      <span class="sheet-note" id="rig-models-note"></span>
+    </div>
+    <p class="sheet-note">Only needed for <strong>Hamlib</strong> radios, where
+      hamdash starts <code>rigctld</code> for the model and port you choose.
+      The list of supported radios comes from Hamlib itself, so it is whatever
+      your version supports rather than a copy here that would go stale.
+      <strong>OmniRig</strong> radios need none of this: OmniRig owns the port
+      and the rig type, which is why those fields disappear for it.</p>
   </section>
   </div>
 

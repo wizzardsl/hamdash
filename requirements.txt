@@ -4,3 +4,4 @@ waitress>=3.0        # production-ish WSGI server, works on Windows too
 pywebview>=5.0       # optional: only needed for the native desktop window
 numpy>=1.26          # spectrum card: FFT
 sounddevice>=0.4     # spectrum card: audio capture (PortAudio)
+pywin32>=306; sys_platform == "win32"   # optional: only needed for the OmniRig rig backend

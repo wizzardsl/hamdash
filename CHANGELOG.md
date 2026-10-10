@@ -7,6 +7,20 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Several radios, three ways of reaching one.** Settings → Radio is a list
+  of up to ten rigs rather than one set of fields, each with a backend:
+  **OmniRig** (Windows), **Hamlib** (hamdash starts `rigctld` for a model and
+  a port you pick), **rigctld** already running, or a simulated rig. Test any
+  entry without taking the radio you are using away from you, and switch
+  which one is live with a press. What the form shows follows the backend,
+  because the fields genuinely differ — an OmniRig entry is a slot number and
+  nothing else, since OmniRig owns the port and the rig type, and offering
+  them twice would be two places to disagree.
+  The Hamlib model list comes from `rigctl -l`, so it is whatever your Hamlib
+  supports rather than a copy here that would go stale; without Hamlib
+  installed the card says so and takes a model number instead.
+  An existing `radio.rigctld_host`/`mock` config becomes entries rather than
+  being dropped.
 - **A PSK Reporter card.** Who is hearing whom, on the same map machinery as
   the path card — a world that repeats, the azimuthal projection, greyline,
   aurora, absorption and ionosondes — with the filters their own map has:
@@ -194,6 +208,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   both now bundled in the frozen build.
 
 ### Fixed
+- **`config.changed` published every secret to every card.** It carried
+  `cfg.data` raw, and that topic is in `bus.ALWAYS` — a card cannot opt out of
+  receiving it — so the operator's QRZ password, LoTW password and WRL key
+  reached every iframe on the board. It is redacted the same way `/api/config`
+  is now, and a test asserts the bus never carries one.
+- **Config defaults were shared between `Config` objects.** The merge copied
+  the top level only, so a default that is a list — `radio.rigs` — came back
+  as the same object every time: appending a radio to one Config added it to
+  the others and to `DEFAULTS` itself, where it outlived them both. One
+  Config in the app hides it; two in a test or a card process do not.
 - **A card that was slow to start never recovered.** `_wait_ready` gave up
   after twelve seconds, said "no response" and stopped looking; the card would
   bind its port a moment later and serve perfectly while the board went on

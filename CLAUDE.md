@@ -132,6 +132,11 @@ pipe from the supervisor) is left alone.
 
 ## Secrets
 
+- **`config.changed` is redacted too.** It used to publish `cfg.data` raw,
+  and that topic is in `bus.ALWAYS` - a card cannot opt out of it - so every
+  password reached every iframe on the board. `_safe_config()` serves the
+  endpoint and the bus alike; `tests/test_secrets.py` asserts the bus never
+  carries one.
 - `config.SECRETS` lists them, and `/api/config` never sends one. It used to
   substitute the literal `"***"` so the form had something to show - the form
   loaded that into the field and the next Save wrote `***` back as the
@@ -158,6 +163,10 @@ pipe from the supervisor) is left alone.
   has conflicting dependencies takes only itself down. Keep it that way.
 - Shared services are opt-in. A card that wants to ignore the bus and the
   logbook and just draw a waterfall must stay viable.
+- **`_merge` deep-copies.** `dict(base)` is shallow, so a default that is a
+  list - `radio.rigs` - came back as the same object for every `Config` in the
+  process, and appending to one appended to `DEFAULTS` itself. One Config in
+  the app hides it; two in a test or a card process do not.
 - `permissions` in `card.json` gates `/api/radio/*`, `/api/log*`,
   `/api/lookup/*`. Enforced properly for a card's *server* calls (token);
   matched on `Referer` for a card's *page* calls, which is a speed bump, not a
@@ -244,6 +253,43 @@ README and is guesswork as a result.
   has toasts and `<dialog class="sheet">`.
 - Buttons built from nested spans need an explicit `aria-label`. The menu's
   six checkboxes computed an empty accessible name until they got one.
+
+## Radios
+
+`radio.rigs` is a list of up to `rigs.MAX_RIGS` entries with `radio.active`
+naming the live one; `services/rigs.py` holds the backends and the manager.
+`services/radio.py` keeps only `band_for`, `MODES` and `RigError`.
+
+- **OmniRig is COM, and COM is per-apartment.** `CoInitialize` has to be
+  called on the thread that uses an object, and an object made on one thread
+  is not usable from another. Waitress hands each request to a different pool
+  thread, so dispatching OmniRig inside a handler fails with "CoInitialize
+  has not been called" or "marshalled for a different thread" - intermittently,
+  depending on which thread served it, which is worse than never. Every
+  OmniRig call goes through `_ComThread` via `com_call`, and **each operation
+  crosses once with all the COM inside**: `Rig1` is itself a property, so even
+  reaching for the object counts, and routing the reads but not the reach was
+  the first version of this bug.
+- **`ST_ONLINE` is 4, and Status 3 is "not responding"** - read off OmniRig's
+  type library, not guessed. The obvious guess of 3-for-online reports a
+  silent radio as working. `StatusStr` is OmniRig's own words and beats
+  anything invented here: "Port is busy" names the other program.
+- **A fresh Dispatch reports "not responding" for a second or two** while
+  OmniRig does its first poll. `SETTLE` covers it: a press (Test, selecting a
+  rig) waits via `settle()`, the polling path never blocks and just reports
+  what it sees.
+- **An OmniRig entry is a slot number and nothing else.** OmniRig's own dialog
+  owns the rig type, port and baud, and two programs cannot share a serial
+  port - that is the whole reason to use it. `configure()` opens their dialog
+  rather than offering a second set of fields to disagree with it.
+- **Hamlib entries spawn their own `rigctld`** (`-m model -r port -t <free>`)
+  and kill it when deselected: two rigctlds on one port is the same mistake as
+  two programs. The model list comes from `rigctl -l`, never a copy here -
+  model numbers mean different radios between releases.
+- `PM_UNKNOWN` (1) is what OmniRig returns before it has read a value back.
+  Reporting that as "receiving" is inventing an answer; `ptt_known` says so.
+- pywin32 is optional and imported inside the COM thread, so nothing outside
+  Windows pays for it and a missing install names the fix.
 
 ## Audio cards
 
