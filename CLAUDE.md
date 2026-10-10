@@ -44,7 +44,7 @@ hamdash/proc.py     one OS process per python card, health, restart, reap
 hamdash/registry.py reads card.json from plugins/ and <home>/cards/
 hamdash/windows.py  native pop-out windows (pywebview js_api bridge)
 hamdash/config.py   config.json, layout.json, tile settings, search paths
-hamdash/services/   radio/rigs, callsign, logbook, bands, grid math
+hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
@@ -288,6 +288,37 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   lands on a different band, which is the point at which the operator's
   choice has become wrong rather than deliberate.
 
+- **A sound device is stored by name, never by index.** PortAudio indices
+  shuffle whenever something is plugged in, a Bluetooth headset wakes or
+  Windows changes its default, so a saved index silently becomes a different
+  device - which presents as "the decoder is deaf", not as a settings
+  problem. `services/audio.py` lists them, `plugins/spectrum` already stored
+  names for the same reason, and `audio_in`/`audio_out` survive `clean_rig`
+  for every backend because the sound card has nothing to do with the CAT.
+  They ride on `radio.state` too: a decoder card asks what the radio is doing
+  and the answer has to include which audio is its own.
+- **Enumerating sound devices can block, and a waitress thread is scarce.**
+  PortAudio on Windows takes seconds, or hangs on a driver that is
+  misbehaving. So `audio.devices()` probes on a worker thread, waits on it
+  with `ENUM_TIMEOUT`, caches the answer and serves a stale one rather than
+  nothing. A probe that lands late must not overwrite a newer answer or
+  release a caller waiting on a newer probe - hence the generation counter.
+  Once one is wedged inside PortAudio no second can start (it holds the
+  lock), so the message stops saying "try Rescan" and names the driver.
+- **Windows lists one sound card several times, two different ways.** Once
+  per host API (MME, DirectSound, WASAPI, WDM-KS), which is folded because
+  the stored value is a name and those rows all select the same thing; and
+  again truncated, because MME cannot return a name longer than 31
+  characters - "Microphone (4- USB Audio Device" and
+  "...Device)" are one device differing by a bracket. Names can also contain
+  a literal CRLF (Bluetooth headsets), so `id` keeps the raw name for
+  matching and `name` is cleaned for the dropdown.
+- **The settings sheet's Save must send the radios too.** They live on
+  `/api/rigs`, not `/api/config`; Save sent only the latter, so an edited COM
+  port was discarded unless the operator pressed Test or Use this one, which
+  save as a side effect. And `saveRigs` refuses to send until the list has
+  been read, because an empty `rigEnv.rigs` is a perfectly good instruction
+  to delete every radio.
 - **OmniRig is COM, and COM is per-apartment.** `CoInitialize` has to be
   called on the thread that uses an object, and an object made on one thread
   is not usable from another. Waitress hands each request to a different pool

@@ -7,6 +7,18 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Audio in and out on each radio.** Every rig entry can be given the sound
+  devices it is wired to, picked from what the PC actually has — on a modern
+  radio that is its own USB interface. The fields sit outside the
+  backend-specific ones, because which sound card a radio is wired to has
+  nothing to do with how its CAT is reached, so switching an entry between
+  OmniRig and Hamlib keeps them. Devices are stored **by name**: PortAudio
+  indices shuffle whenever anything is plugged in, and an index would quietly
+  become a different device. A device that is not present stays selected and
+  says `(not connected)` rather than silently becoming whatever is first in
+  the list. The pair rides along on `radio.state`, so a digital-mode card can
+  ask one question — what is the radio doing — and get the audio with it.
+  Nothing opens a stream yet; this is the groundwork for decoder cards.
 - **A frequency on the logbook entry pane, and it follows the radio.** With a
   rig under CAT control the frequency, band and mode track the dial live, so
   the pane is always ready to log the contact that is happening now — a chip
@@ -237,6 +249,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   copy in JavaScript.
 
 ### Fixed
+- **The settings sheet's Save discarded radio edits.** Radios are saved
+  through `/api/rigs` rather than `/api/config`, and Save only sent the
+  latter — so editing a COM port, a baud rate or a radio's name and pressing
+  Save threw the edit away unless the operator happened to press Test or Use
+  this one first, which saved as a side effect. Save now sends both.
 - **`config.changed` published every secret to every card.** It carried
   `cfg.data` raw, and that topic is in `bus.ALWAYS` — a card cannot opt out of
   receiving it — so the operator's QRZ password, LoTW password and WRL key

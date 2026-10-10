@@ -201,6 +201,18 @@
     </div>
     <p class="sheet-note" id="rig-note"></p>
 
+    <h3>Sound devices</h3>
+    <div class="row-btns">
+      <button class="btn btn-quiet" id="audio-rescan" type="button">Rescan for sound devices</button>
+      <span class="sheet-note" id="audio-note"></span>
+    </div>
+    <p class="sheet-note">Each radio can be given its own audio in and out —
+      the sound card it is wired to, which on a modern rig is usually its own
+      USB interface. Nothing uses it yet; it is what digital-mode cards (a CW
+      decoder, a waterfall tied to one radio) will open when they are built.
+      Devices are remembered <strong>by name</strong>, so they survive the
+      renumbering Windows does whenever something is plugged in.</p>
+
     <h3>Hamlib</h3>
     <label>Path to rigctld
       <input id="s-rigctld-path" class="mono" spellcheck="false"

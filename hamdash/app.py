@@ -22,6 +22,7 @@ from .services.callsign import Lookup
 from .services.logbook import Logbook
 from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
 from .services.radio import MODES
+from .services import audio as audiosvc
 from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes
@@ -466,6 +467,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             "bauds": rigsvc.BAUDS, "ports": rigsvc.serial_ports(),
             "rigctld": exe, "rigctld_path": c.get("rigctld_path", ""),
             "state": rig.state(),
+            # Cached, so opening the sheet does not wait on PortAudio; the
+            # Rescan button asks again.
+            "audio": audiosvc.devices(),
         })
 
     @app.put("/api/rigs")
@@ -487,6 +491,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         BUS.publish("config.changed", _safe_config(), source="host")
         return jsonify({"ok": True, "rigs": c["rigs"],
                         "active": c.get("active", ""), "state": state})
+
+    @app.get("/api/audio/devices")
+    def audio_devices():
+        """The PC's sound devices, for assigning one to a radio.
+
+        Enumeration happens off this thread with a timeout (see
+        `services/audio.py`): PortAudio on Windows can take seconds or hang
+        outright, and a waitress thread is not something to spend on a
+        driver that may never answer.
+        """
+        fresh = request.args.get("refresh") in ("1", "true", "yes")
+        return jsonify(audiosvc.devices(refresh=fresh))
 
     @app.post("/api/rigs/select")
     def rigs_select():

@@ -456,6 +456,19 @@ reaches it:
 | **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; needs Hamlib installed |
 | **rigctld** | host and port | a daemon you are already running |
 
+Every entry also takes an **audio in** and **audio out** — the sound card that
+radio is wired to, which on a modern rig is its own USB interface. Those sit
+outside the backend fields on purpose: which sound card a radio uses has
+nothing to do with how its CAT is reached, so switching an entry from Hamlib
+to OmniRig keeps them. Nothing opens a stream yet; it is what digital-mode
+cards (a CW decoder, a waterfall tied to one radio) will use when they exist.
+
+Devices are remembered **by name**, never by index, because PortAudio
+renumbers everything whenever a device is plugged in or Windows changes its
+default — a stored index would quietly become a different sound card. One
+that is not present stays selected and is marked `(not connected)`, so a
+config carried from another machine is visible rather than silently changed.
+
 **Test** asks one radio one question without taking the one you are using away
 from you. **Use this one** makes it live.
 

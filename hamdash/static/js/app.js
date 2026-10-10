@@ -429,6 +429,35 @@
   let rigEnv = { rigs: [], active: '', max: 10, bauds: [], ports: [],
                  backends: [], rigctld: '', rigctld_path: '' };
   let rigModels = null;              // fetched once, on demand
+  let audioEnv = { ok: false, inputs: [], outputs: [], error: '' };
+  // Until the list has been fetched, rigEnv.rigs is [] - which is a perfectly
+  // good instruction to delete every radio. Saving must know the difference
+  // between "none configured" and "not read yet".
+  let rigsLoaded = false;
+
+  // A device that is saved but no longer present - the rig interface is
+  // unplugged, or this config came from another machine - still has to be
+  // the selected option, or opening the sheet would silently change the
+  // setting to whatever happened to be first.
+  function audioOptions(side, chosen) {
+    const rows = audioEnv[side] || [];
+    const known = rows.some((d) => d.id === chosen);
+    return opt('', 'none', chosen || '')
+      + (chosen && !known
+        ? opt(chosen, `${chosen} (not connected)`, chosen) : '')
+      + rows.map((d) => opt(d.id, d.default ? `${d.name} (default)` : d.name,
+                            chosen || '')).join('');
+  }
+
+  function audioNote() {
+    const n = audioEnv.inputs.length + audioEnv.outputs.length;
+    $('#audio-note').textContent = audioEnv.ok
+      ? `${audioEnv.inputs.length} in, ${audioEnv.outputs.length} out`
+        + (audioEnv.stale ? ' (last known)' : '')
+      : (audioEnv.error || 'no sound devices found');
+    $('#audio-note').className = 'sheet-note'
+      + (audioEnv.ok && n ? '' : ' warn');
+  }
 
   const BACKEND_LABEL = {
     mock: 'Simulated (no hardware)',
@@ -440,13 +469,18 @@
   async function loadRigs() {
     try {
       rigEnv = await HD.get('/api/rigs');
+      rigsLoaded = true;
     } catch (e) {
       $('#rig-note').textContent = e.message;
       return;
     }
     $('#s-rigctld-path').value = rigEnv.rigctld_path || '';
+    // Served with the rigs, from the host's cache, so opening the sheet
+    // never waits on PortAudio.
+    if (rigEnv.audio) audioEnv = rigEnv.audio;
     renderRigs();
     rigNote();
+    audioNote();
   }
 
   function rigNote() {
@@ -526,6 +560,14 @@
         <label>Host <input class="rig-host mono" value="${esc(rig.host || '127.0.0.1')}"></label>
         <label>Port <input class="rig-tcp mono" inputmode="numeric" value="${esc(rig.port || 4532)}"></label>
       </div>
+      <div class="grid">
+        <label>Audio in
+          <select class="rig-audio-in" title="${esc(rig.audio_in || 'none')}">${audioOptions('inputs', rig.audio_in)}</select>
+        </label>
+        <label>Audio out
+          <select class="rig-audio-out" title="${esc(rig.audio_out || 'none')}">${audioOptions('outputs', rig.audio_out)}</select>
+        </label>
+      </div>
       <div class="row-btns">
         <button class="btn btn-quiet rig-test" type="button">Test</button>
         <button class="btn btn-quiet rig-use" type="button"${live ? ' disabled' : ''}>Use this one</button>
@@ -554,6 +596,11 @@
         host: sel('rig-host').value.trim(),
         port: Number(sel('rig-tcp').value) || 4532,
       });
+      // Not inside the backend branches: a radio's sound card has nothing to
+      // do with how its CAT is reached, and changing backend must not throw
+      // the audio away.
+      out.audio_in = sel('rig-audio-in').value;
+      out.audio_out = sel('rig-audio-out').value;
       return out;
     };
 
@@ -629,6 +676,7 @@
   }
 
   async function saveRigs(active) {
+    if (!rigsLoaded) return null;             // nothing was read, so nothing
     const body = { rigs: rigEnv.rigs, rigctld_path: $('#s-rigctld-path').value.trim() };
     if (active !== undefined) body.active = active;
     const r = await HD.put('/api/rigs', body);
@@ -644,6 +692,21 @@
     if (rigEnv.rigs.length >= rigEnv.max) return;
     rigEnv.rigs.push({ name: 'New radio', backend: 'omnirig', slot: 1 });
     try { await saveRigs(); } catch (e) { toast(e.message); }
+  };
+
+  $('#audio-rescan').onclick = async (e) => {
+    e.target.disabled = true;
+    $('#audio-note').textContent = 'asking the sound system\u2026';
+    try {
+      // Save first: re-rendering the rows from a fresh device list would
+      // otherwise discard anything edited and not yet saved.
+      await saveRigs();
+      audioEnv = await HD.get('/api/audio/devices', { refresh: 1 });
+      renderRigs();
+    } catch (err) { audioEnv = { ok: false, inputs: [], outputs: [],
+                                 error: err.message }; }
+    audioNote();
+    e.target.disabled = false;
   };
 
   $('#rig-rescan').onclick = async (e) => {
@@ -934,6 +997,14 @@
         'qrz_api_key', '#s-qrz-key'),
         'wrl_api_key', '#s-wrl-key'),
     });
+    // Radios live on their own endpoint, so Save has to send them as well -
+    // without this, editing a COM port and pressing Save threw the edit away
+    // unless the operator happened to press Test or Use this one first.
+    try {
+      await saveRigs();
+    } catch (e) {
+      throw new Error(`Radios: ${e.message}`);
+    }
     config = await HD.get('/api/config');
     // The boxes now hold a stored secret again, not the text just typed.
     secretBox('#s-lk-pass', 'callsign_lookup.password');

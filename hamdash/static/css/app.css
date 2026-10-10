@@ -192,7 +192,12 @@ html, body {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 6px 10px; margin-top: 7px;
 }
-.rig .grid label { margin: 0; }
+.rig .grid label { margin: 0; min-width: 0; }
+/* A <select> is as wide as its widest option, and Windows device names run
+   to eighty characters - one Bluetooth headset pushed the whole rig row into
+   a horizontal scrollbar. The grid column decides the width; the name is on
+   the tooltip when it will not fit. */
+.rig .grid select, .rig .grid input { max-width: 100%; }
 .rig .grid[hidden], .rig .row-btns[hidden] { display: none; }
 .rig .row-btns { margin-top: 8px; }
 .rig .btn { font-size: 12px; padding: 3px 9px; }

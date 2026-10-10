@@ -93,7 +93,25 @@ class TestCleaningAnEntry(unittest.TestCase):
         got = rigs.clean_rig({"id": "x", "name": "FT-900", "backend": "omnirig",
                               "slot": 2, "port": "COM3", "baud": 9600})
         self.assertEqual(got, {"id": "x", "name": "FT-900",
-                               "backend": "omnirig", "slot": 2})
+                               "backend": "omnirig", "slot": 2,
+                               "audio_in": "", "audio_out": ""})
+
+    def test_the_sound_card_survives_every_backend(self):
+        """Which sound card a radio is wired to has nothing to do with how
+        its CAT is reached, and changing backend must not throw it away."""
+        for kind in rigs.BACKENDS:
+            with self.subTest(backend=kind):
+                got = rigs.clean_rig({"backend": kind,
+                                      "audio_in": "USB Audio CODEC",
+                                      "audio_out": "Speakers (USB)"})
+                self.assertEqual(got["audio_in"], "USB Audio CODEC")
+                self.assertEqual(got["audio_out"], "Speakers (USB)")
+
+    def test_a_device_is_trimmed_and_bounded(self):
+        got = rigs.clean_rig({"backend": "mock", "audio_in": "  mic  ",
+                              "audio_out": "x" * 400})
+        self.assertEqual(got["audio_in"], "mic")
+        self.assertEqual(len(got["audio_out"]), 120)
 
     def test_a_bad_slot_falls_back_to_one(self):
         self.assertEqual(rigs.clean_rig({"backend": "omnirig", "slot": 9})["slot"], 1)
@@ -167,6 +185,25 @@ class TestTheManager(unittest.TestCase):
         st = self.man.state()
         self.assertEqual(st["rig_id"], self.cfg.data["radio"]["active"])
         self.assertTrue(st["rig"])
+
+    def test_the_state_carries_the_sound_cards(self):
+        """A decoder card asks one question - what is the radio doing - and
+        the answer has to include which sound card is its audio, or it would
+        have to track the active rig itself and could disagree about it."""
+        rig = next(r for r in self.cfg.data["radio"]["rigs"]
+                   if r["id"] == self.cfg.data["radio"]["active"])
+        rig["audio_in"] = "Microphone (USB Audio CODEC)"
+        rig["audio_out"] = "Speakers (USB Audio CODEC)"
+        st = self.man.state()
+        self.assertEqual(st["audio_in"], "Microphone (USB Audio CODEC)")
+        self.assertEqual(st["audio_out"], "Speakers (USB Audio CODEC)")
+
+    def test_a_rig_with_no_audio_says_so_rather_than_omitting_it(self):
+        """A missing key reads as "the host is too old to know", an empty
+        one as "nothing chosen"; a card has to be able to tell them apart."""
+        st = self.man.state()
+        self.assertEqual(st["audio_in"], "")
+        self.assertEqual(st["audio_out"], "")
 
     def test_selecting_a_rig_that_cannot_open_reports_it(self):
         """Rather than leaving the old one live and looking like it worked."""

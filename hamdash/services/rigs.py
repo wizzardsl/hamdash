@@ -32,6 +32,7 @@ import time
 import uuid
 
 from ..bus import BUS
+from . import audio
 from .radio import MODES, RigError, band_for         # noqa: F401 - re-exported
 
 # OmniRig's own enums, read from its type library rather than assumed. Worth
@@ -606,6 +607,13 @@ def ensure_rigs(cfg) -> None:
         if not r.get("id"):
             r["id"] = new_id()
             changed = True
+        # An absent sound device and one deliberately set to nothing are the
+        # same thing, so say so rather than leaving a card to tell null from
+        # "" and guess which means "this host is too old to know".
+        for key in ("audio_in", "audio_out"):
+            if key not in r:
+                r[key] = ""
+                changed = True
 
     if not radio.get("active") or not any(r.get("id") == radio.get("active")
                                           for r in rigs):
@@ -627,12 +635,20 @@ def clean_rig(raw: dict) -> dict:
 
     Keeping a stale COM port on an OmniRig entry would be a field the UI
     hides and the operator still believes in.
+
+    Sound devices are the exception: they are kept whatever the backend,
+    because which sound card a radio is wired to has nothing to do with how
+    its CAT is reached. A shack with the rig on OmniRig and the audio on a
+    SignaLink is the ordinary case, and switching backend must not throw the
+    audio away.
     """
     kind = raw.get("backend")
     kind = kind if kind in BACKENDS else "mock"
     out = {"id": str(raw.get("id") or new_id())[:32],
            "name": str(raw.get("name") or "").strip()[:60] or "Radio",
-           "backend": kind}
+           "backend": kind,
+           "audio_in": audio.clean_device(raw.get("audio_in")),
+           "audio_out": audio.clean_device(raw.get("audio_out"))}
     if kind == "omnirig":
         out["slot"] = 2 if int(raw.get("slot") or 1) == 2 else 1
     elif kind == "hamlib":
@@ -709,8 +725,15 @@ class RigManager:
 
     def state(self) -> dict:
         rig = self.active()
+        # The sound devices ride along with the state rather than being
+        # looked up from config by whoever wants them: a decoder card asks
+        # one question - what is the radio doing - and the answer has to
+        # include which sound card is its audio, or it would have to track
+        # the active rig itself and could disagree about it.
         base = {"rig_id": self._active, "rig": (rig or {}).get("name", ""),
                 "backend": (rig or {}).get("backend", ""),
+                "audio_in": (rig or {}).get("audio_in", ""),
+                "audio_out": (rig or {}).get("audio_out", ""),
                 "mock": (rig or {}).get("backend") == "mock"}
         if self._error:
             return {**base, "ok": False, "error": self._error}
@@ -744,7 +767,8 @@ class RigManager:
             while not self._stop.wait(1.0 / hz):
                 st = self.state()
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
-                       st.get("ok"), st.get("rig_id"))
+                       st.get("ok"), st.get("rig_id"),
+                       st.get("audio_in"), st.get("audio_out"))
                 if key != last:
                     last = key
                     BUS.publish("radio.state", st, source="radio")
