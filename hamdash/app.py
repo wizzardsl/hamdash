@@ -457,6 +457,38 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         except Exception as exc:
             return jsonify(error=str(exc)), 502
 
+    @app.get("/api/radio/meters")
+    @guard("radio")
+    def radio_meters():
+        """The S-meter, or the power and SWR while transmitting.
+
+        Its own endpoint rather than part of the state: a needle changes on
+        every read and `radio.state` is published on change, so putting
+        them together would wake every card on the board twice a second.
+        Whoever draws a meter polls for it.
+        """
+        return jsonify(rig.meters())
+
+    @app.post("/api/radio/vfo")
+    @guard("radio")
+    def radio_vfo():
+        b = request.get_json(silent=True) or {}
+        try:
+            if b.get("swap"):
+                return jsonify(rig.swap_vfo())
+            return jsonify(rig.set_vfo(b.get("which", "A")))
+        except Exception as exc:
+            return jsonify(error=str(exc)), 502
+
+    @app.post("/api/radio/split")
+    @guard("radio")
+    def radio_split():
+        on = bool((request.get_json(silent=True) or {}).get("on"))
+        try:
+            return jsonify(rig.set_split(on))
+        except Exception as exc:
+            return jsonify(error=str(exc)), 502
+
     # ---------------- the radios themselves -----------------------------
     # Separate from /api/radio/*, which is "talk to the live one". These are
     # "which radios exist and which is live", and are the board's own: a card

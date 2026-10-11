@@ -21,11 +21,20 @@ class FakeFlrig:
     """Answers the handful of calls the backend makes, in flrig's types."""
 
     def __init__(self, freq="14199460", mode="USB", ptt=0,
-                 modes=None, xcvr="FT-890"):
+                 modes=None, xcvr="FT-890", vfo_b="14300000", ab="A",
+                 split=0, smeter="8", sunits="S 1", dbm="-118",
+                 pwr="7", swr="0", maxpwr=0):
+        # The types are the live ones: flrig answers a frequency, a meter
+        # and the S-units as *strings*, and split and maxpwr as ints.
         self.values = {
-            "rig.get_vfo": freq, "rig.get_mode": mode, "rig.get_ptt": ptt,
+            "rig.get_vfo": freq, "rig.get_vfoA": freq, "rig.get_vfoB": vfo_b,
+            "rig.get_AB": ab, "rig.get_split": split,
+            "rig.get_mode": mode, "rig.get_ptt": ptt,
             "rig.get_modes": list(modes if modes is not None else FT890_MODES),
             "rig.get_xcvr": xcvr, "main.get_version": "2.0.12",
+            "rig.get_smeter": smeter, "rig.get_Sunits": sunits,
+            "rig.get_DBM": dbm, "rig.get_pwrmeter": pwr,
+            "rig.get_swrmeter": swr, "rig.get_maxpwr": maxpwr,
         }
         self.sent = []
 
@@ -62,7 +71,9 @@ class TestReadingIt(unittest.TestCase):
 
     def test_rubbish_is_reported_rather_than_raised(self):
         fake = FakeFlrig()
-        fake.values["rig.get_vfo"] = "not a number"
+        # The dial is read off vfoA now, not `get_vfo`: A and B are both
+        # wanted, and the one in use is whichever `get_AB` names.
+        fake.values["rig.get_vfoA"] = "not a number"
         st = a_backend(fake).state()
         self.assertFalse(st["ok"])
         self.assertIn("not a number", st["error"])

@@ -7,6 +7,24 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **The rig card shows both VFOs, split, and a meter.** VFO A and B side by
+  side with the live one lit, click either to switch, A&#8646;B to exchange
+  what they hold, and a Split button that marks which VFO is actually
+  transmitting — the one setting that silently puts you on a different
+  frequency from the one on the dial. The meter is the radio's: signal
+  while receiving, power and SWR while transmitting.
+  **What the card offers comes from the rig, not from the backend's name.**
+  OmniRig has no meters at all, and whether a given OmniRig rig file has
+  two VFOs is a property of that file, so it is asked rather than assumed
+  and a control nobody can use is not drawn.
+  flrig is asked for the S-units and the dBm rather than a scale being
+  invented here — it has the radio's own meter table. Where a radio will
+  not say what full power is (the FT-890 does not) the bar says how hard it
+  is working and no number pretends to be watts.
+  Verified on an FT-890 through flrig: both VFOs read, switching moves the
+  dial and the band, split reports back through flrig, a swap exchanges A
+  and B and leaves the live VFO alone, and the radio was returned exactly
+  as found.
 - **The spots card can watch the Reverse Beacon Network, and a DX cluster,
   over telnet.** Both are live connections rather than polls: one socket held
   open, spots arriving as they happen. The point of RBN is the one question

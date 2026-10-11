@@ -35,6 +35,46 @@
   .tuner button:active:not([disabled]) { background: var(--accent); color: var(--bg); }
   .tuner button[disabled] { opacity: .4; cursor: default; }
   .tuner select { font-size: 12px; padding: 3px 5px; }
+
+  /* The two VFOs. The live one is the dial; the other is there to be
+     glanced at and switched to, which is the whole of working split. */
+  .vfos { display: flex; gap: 6px; margin-top: 8px; }
+  .vfos[hidden] { display: none; }        /* an author display beats [hidden] */
+  .vfo { flex: 1; text-align: left; font: inherit; cursor: pointer;
+         color: var(--muted); background: var(--panel-2);
+         border: 1px solid var(--rule); border-radius: var(--radius);
+         padding: 3px 7px; line-height: 1.25; }
+  .vfo:hover:not([disabled]) { border-color: var(--accent); }
+  .vfo[disabled] { cursor: default; }
+  .vfo .tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .vfo .hz { font-family: var(--mono); font-size: 13px; display: block; }
+  .vfo.live { color: var(--ink); border-color: var(--accent); }
+  .vfo.live .tag { color: var(--accent); }
+  /* Which VFO transmits, when they are not the same one. Split is the one
+     setting that silently puts you on a different frequency to the one on
+     the dial, so it is said in words rather than left to a lit button. */
+  .vfo.tx-on .tag::after { content: ' · TX'; color: var(--alert); }
+  .vfo-acts { display: flex; flex-direction: column; gap: 4px; }
+  .vfo-acts button { font-size: 11px; padding: 2px 7px; }
+  .vfo-acts button.on { background: var(--accent); color: var(--bg);
+                        border-color: var(--accent); }
+
+  /* The meter. One bar: signal while receiving, power while transmitting,
+     because the radio has one needle and so does this. */
+  .meter { margin-top: 9px; }
+  .meter[hidden] { display: none; }
+  .meter .scale { display: flex; justify-content: space-between;
+                  font-size: 9px; color: var(--muted); margin-bottom: 1px; }
+  .meter .bar { height: 9px; border: 1px solid var(--rule);
+                border-radius: var(--radius); overflow: hidden;
+                background: var(--panel-2); }
+  .meter .fill { height: 100%; width: 0; background: var(--accent);
+                 transition: width .08s linear; }
+  .meter.tx .fill { background: var(--alert); }
+  .meter .read { font-size: 11px; color: var(--muted); margin-top: 2px;
+                 display: flex; gap: 8px; }
+  .meter .read b { color: var(--ink); font-family: var(--mono);
+                   font-weight: 600; }
 </style>
 </head>
 <body>
@@ -54,6 +94,25 @@
   <button class="btn" id="tune">Tune</button>
   <select id="mode"></select>
   <button class="btn ptt" id="ptt">Transmit</button>
+</div>
+
+<div class="vfos" id="vfos" hidden>
+  <button class="vfo" id="vfo-a" aria-label="Select VFO A">
+    <span class="tag">VFO A</span><span class="hz" id="hz-a">--</span>
+  </button>
+  <button class="vfo" id="vfo-b" aria-label="Select VFO B">
+    <span class="tag">VFO B</span><span class="hz" id="hz-b">--</span>
+  </button>
+  <span class="vfo-acts">
+    <button class="btn btn-quiet" id="split" title="Transmit on the other VFO">Split</button>
+    <button class="btn btn-quiet" id="swap" title="Exchange what A and B hold">A&#8646;B</button>
+  </span>
+</div>
+
+<div class="meter" id="meter" hidden>
+  <div class="scale" id="m-scale"></div>
+  <div class="bar"><div class="fill" id="m-fill"></div></div>
+  <div class="read" id="m-read"></div>
 </div>
 
 <div class="mem" id="mem"></div>
@@ -98,6 +157,102 @@ function setPtt(on) {
   holding = on ? setInterval(() => {
     HD.radio.ptt(true).catch(() => { /* the host's watchdog has it */ });
   }, 2000) : null;
+  // The meter changes meaning when the radio does - signal one way, power
+  // the other - and is watched harder during a transmission.
+  if (metering && HD.visible) startMetering();
+}
+
+// What the rig can actually do, from the host rather than guessed from the
+// backend's name: OmniRig has no meters at all, and whether a given rig
+// file has two VFOs is a property of that file. A control nobody can use is
+// not shown.
+function can(what) { return (live && live.features || []).includes(what); }
+
+function paintVfos(s) {
+  const show = can('vfo') && (s.vfo || s.freq_a || s.freq_b);
+  $('#vfos').hidden = !show;
+  if (!show) return;
+  const live_ = s.vfo || 'A';
+  // Which VFO is transmitting: the other one, when split is on. That is
+  // the thing about split worth saying - the dial is not where you are
+  // being heard.
+  const txOn = s.split ? (live_ === 'A' ? 'B' : 'A') : live_;
+  [['a', 'A'], ['b', 'B']].forEach(([id, name]) => {
+    const hz = name === 'A' ? s.freq_a : s.freq_b;
+    $(`#hz-${id}`).textContent = hz ? HD.fmtHz(hz) : '--';
+    const b = $(`#vfo-${id}`);
+    b.classList.toggle('live', live_ === name);
+    b.classList.toggle('tx-on', s.split && txOn === name);
+    // Nothing to select when the radio never told us that VFO's frequency
+    // (rigctld cannot always read the one it is not on).
+    b.disabled = !hz;
+  });
+  $('#split').hidden = !can('split');
+  $('#split').classList.toggle('on', !!s.split);
+  $('#split').setAttribute('aria-pressed', String(!!s.split));
+  $('#swap').hidden = !can('swap');
+}
+
+// ---- the meter -------------------------------------------------------
+// Polled, not pushed: a needle changes on every read, and radio.state is
+// published on change, so carrying meters on the bus would wake every card
+// on the board twice a second for a number only this tile draws.
+let metering = null;
+
+const S_SCALE = ['1', '3', '5', '7', '9', '+20', '+40', '+60'];
+const P_SCALE = ['0', '', '50', '', '100%'];
+
+function paintMeter(m) {
+  const box = $('#meter');
+  if (!m || m.ok === false) { box.hidden = true; return; }
+  const tx = !!m.tx;
+  box.hidden = false;
+  box.classList.toggle('tx', tx);
+  const pct = tx ? m.power_pct : m.s_pct;
+  // A meter that did not answer is not a zero. Hide it rather than draw a
+  // flat bar, which reads as a dead band instead of as no reading.
+  if (pct === undefined || pct === null) { box.hidden = true; return; }
+  $('#m-fill').style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  $('#m-scale').innerHTML = (tx ? P_SCALE : S_SCALE)
+    .map((t) => `<span>${t}</span>`).join('');
+  const bits = [];
+  if (tx) {
+    // Watts only where the radio said what full scale is. Otherwise the
+    // bar says how hard it is working and no number pretends to be watts.
+    bits.push(m.power_w !== undefined
+      ? `<b>${m.power_w}</b> W` : `<b>${Math.round(pct)}</b>% power`);
+    if (m.swr) bits.push(`SWR <b>${m.swr}</b>`);
+  } else {
+    if (m.s_units) bits.push(`<b>${m.s_units}</b>`);
+    if (m.s_dbm !== undefined && m.s_dbm !== null) bits.push(`${m.s_dbm} dBm`);
+  }
+  if (m.mock) bits.push('simulated');
+  $('#m-read').innerHTML = bits.join(' ');
+}
+
+function meterPace() {
+  // Faster while transmitting: power and SWR are what you watch a tune-up
+  // with. Slower at rest, because this is a request per tick through the
+  // proxy and a host thread for each one.
+  return transmitting ? 250 : 500;
+}
+
+function startMetering() {
+  clearInterval(metering);
+  if (!(can('smeter') || can('power'))) { $('#meter').hidden = true; return; }
+  let busy = false;
+  const tick = async () => {
+    // Don't stack requests on a radio that is answering slowly, and don't
+    // poll at all for a tile nobody is looking at - a background tab stays
+    // loaded, so it would otherwise keep asking for ever.
+    if (busy || HD.hidden) return;
+    busy = true;
+    try { paintMeter(await HD.radio.meters()); }
+    catch { /* the state line already says when the rig is unreachable */ }
+    finally { busy = false; }
+  };
+  metering = setInterval(tick, meterPace());
+  tick();
 }
 
 function stepHz() {
@@ -127,6 +282,7 @@ function paint(s) {
     $('#err').textContent = s.error || 'rig unavailable';
     $('#state').textContent = 'offline';
     $('#state').className = 'state';
+    $('#vfos').hidden = $('#meter').hidden = true;
     return;
   }
   // The host says when it took a transmission off the air, so the operator
@@ -145,6 +301,7 @@ function paint(s) {
   // keys the rig - this card, another program, the rig's own PTT - moves
   // the button, because `radio.state` is what moves it.
   setPtt(!!s.ptt);
+  paintVfos(s);
   if ($('#mode').value !== s.mode && [...$('#mode').options].some(o => o.value === s.mode)) {
     $('#mode').value = s.mode;
   }
@@ -211,8 +368,23 @@ async function boot() {
     $('#mem').appendChild(b);
   });
 
+  $('#vfo-a').onclick = () => HD.radio.vfo('A').then(paint).catch(fail);
+  $('#vfo-b').onclick = () => HD.radio.vfo('B').then(paint).catch(fail);
+  $('#swap').onclick = () => HD.radio.swapVfo().then(paint).catch(fail);
+  // Asked for the opposite of what the radio says, not of what this page
+  // last drew - the same rule the Transmit button is built on.
+  $('#split').onclick = () =>
+    HD.radio.split(!(live && live.split)).then(paint).catch(fail);
+
   paint(await HD.radio.state());
   HD.on('radio.state', paint);
+  startMetering();
+  // A hidden tab keeps running, so it is told. Without this a stacked rig
+  // tile polls the radio for ever from behind another card.
+  HD.onVisible((shown) => {
+    if (shown) startMetering();
+    else { clearInterval(metering); metering = null; }
+  });
 }
 
 function fail(e) { $('#err').textContent = e.message; }

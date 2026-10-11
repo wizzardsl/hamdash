@@ -27,6 +27,7 @@ import shutil
 import queue
 import socket
 import subprocess
+import math
 import threading
 import time
 import uuid
@@ -50,6 +51,31 @@ OMNI_MODES = {
 }
 MODE_TO_OMNI = {v: k for k, v in OMNI_MODES.items()}
 PM_TX, PM_RX = 4194304, 2097152
+# VFO and split, from the same type library (OmniRig.exe carries it; reading
+# it creates no object and opens no port). The AA/AB/BA/BB forms are
+# (receive, transmit) pairs, which is how OmniRig says "split" on a radio
+# whose CAT has no separate split flag - so AB and BA *are* split, and a
+# reader that only looks at `Split` reports a split radio as simplex.
+PM_VFOAA, PM_VFOAB, PM_VFOBA, PM_VFOBB = 128, 256, 512, 1024
+PM_VFOA, PM_VFOB = 2048, 4096
+PM_VFOEQUAL, PM_VFOSWAP = 8192, 16384
+PM_SPLITON, PM_SPLITOFF = 32768, 65536
+PM_FREQA, PM_FREQB = 4, 8
+# Which VFO is receiving, for each value `Vfo` can take.
+OMNI_VFO = {PM_VFOA: "A", PM_VFOB: "B", PM_VFOAA: "A", PM_VFOAB: "A",
+            PM_VFOBA: "B", PM_VFOBB: "B"}
+OMNI_SPLIT_VFO = {PM_VFOAB, PM_VFOBA}
+
+# What a backend can be asked for beyond frequency and mode. A card draws
+# from this rather than from the backend's name: OmniRig has no meters at
+# all (its interface has no such property), and a rig file may not support
+# a second VFO, so "it is an OmniRig" does not answer the question.
+F_VFO = "vfo"               # two VFOs, and which is in use
+F_SPLIT = "split"           # split transmit
+F_SWAP = "swap"             # exchange A and B
+F_SMETER = "smeter"         # a receive signal meter
+F_POWER = "power"           # a transmit power meter
+F_SWR = "swr"
 
 BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200]
 BACKENDS = ("mock", "omnirig", "flrig", "hamlib", "rigctld")
@@ -92,6 +118,52 @@ PTT_DROP_NOTICE = 30.0
 MAX_RIGS = 10
 
 
+def _as_float(v):
+    """A meter reading, or None. flrig answers `'7'`, Hamlib `'0.142'`, and
+    a radio that cannot measure answers something that is neither - None is
+    "it did not say", which a card draws as nothing rather than as zero."""
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+# ---- the S-meter scale -------------------------------------------------
+# flrig's own help calls its meter "0...9...+60", and the numbers agree with
+# it: a deflection of 8 on this FT-890 is what flrig itself reports as
+# "S 1". So S0 sits at 0, S9 at the half way mark, and the top half is the
+# 60 dB above S9 that a meter scale gives far less room to than S-units.
+# Where a backend will tell us the S-units itself, that answer is used
+# instead of this - flrig does, and its own radio tables beat any curve.
+S9_PCT = 50.0
+S_UNIT_DB = 6.0
+
+
+def _s_units_for(pct: float) -> str:
+    """A 0-100 meter deflection as "S 6" or "S 9+20"."""
+    pct = max(0.0, min(100.0, float(pct)))
+    if pct <= S9_PCT:
+        return f"S {int(pct / (S9_PCT / 9))}"
+    over = (pct - S9_PCT) / (S9_PCT / 60)
+    return f"S 9+{int(round(over / 10) * 10)}"
+
+
+def _pct_for_db(db: float) -> float:
+    """Hamlib's STRENGTH is dB relative to S9. That is a real scale, so it
+    converts properly rather than being drawn as a raw number."""
+    db = float(db)
+    if db <= 0:
+        return max(0.0, S9_PCT + db * (S9_PCT / (9 * S_UNIT_DB)))
+    return min(100.0, S9_PCT + db * (S9_PCT / 60.0))
+
+
+def _s_units_for_db(db: float) -> str:
+    db = float(db)
+    if db >= 0:
+        return f"S 9+{int(round(db / 10) * 10)}" if db >= 5 else "S 9"
+    return f"S {max(0, int(round(9 + db / S_UNIT_DB)))}"
+
+
 def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
@@ -101,9 +173,28 @@ class Backend:
     """What every rig can be asked. Nothing above this layer knows which."""
 
     kind = "none"
+    # What this backend can do beyond frequency and mode. The default is
+    # "nothing extra", so a backend grows a control only by claiming it and
+    # a card never offers a button that cannot work.
+    features: frozenset = frozenset()
 
     def state(self) -> dict:
         raise NotImplementedError
+
+    def meters(self, tx: bool) -> dict:
+        """The needles. Separate from `state` on purpose.
+
+        A meter changes on every read, and `radio.state` is published on
+        change - putting them together would turn an event into a 2 Hz
+        firehose waking every card on the board. So the card that draws
+        them polls for them (the shape the audio cards settled on) and the
+        bus keeps carrying only what actually changed.
+
+        `tx` says which meters are meaningful, and it is not a detail: a
+        radio has one physical meter, so asking for transmit power while
+        receiving returns the S-meter reading. See `FlrigBackend.meters`.
+        """
+        return {}
 
     def set_freq(self, hz: int) -> None:
         raise RigError(f"{self.kind} cannot set the frequency")
@@ -114,8 +205,26 @@ class Backend:
     def set_ptt(self, on: bool) -> None:
         raise RigError(f"{self.kind} cannot key the transmitter")
 
+    def set_vfo(self, which: str) -> None:
+        raise RigError(f"{self.kind} cannot choose a VFO")
+
+    def set_split(self, on: bool) -> None:
+        raise RigError(f"{self.kind} cannot set split")
+
+    def swap_vfo(self) -> None:
+        raise RigError(f"{self.kind} cannot swap the VFOs")
+
     def close(self) -> None:
         pass
+
+
+def _vfo_name(which) -> str:
+    """'a', 'VFOB', 'B' -> 'A'/'B'. Anything else is refused by name."""
+    got = str(which or "").strip().upper()
+    got = got[-1] if got.startswith("VFO") else got
+    if got not in ("A", "B"):
+        raise RigError(f"there is no VFO {which!r}; it is A or B")
+    return got
 
 
 class MockBackend(Backend):
@@ -123,16 +232,41 @@ class MockBackend(Backend):
     hardware, or it cannot be developed or demonstrated."""
 
     kind = "mock"
+    features = frozenset({F_VFO, F_SPLIT, F_SWAP, F_SMETER, F_POWER, F_SWR})
 
     def __init__(self, **_) -> None:
-        self._f = {"freq": 14074000, "mode": "USB", "width": 3000, "ptt": False}
+        self._f = {"mode": "USB", "width": 3000, "ptt": False}
+        # A and B are kept, and the dial is whichever one is in use.
+        # Selecting a VFO and swapping them are different operations:
+        # selecting changes which is live, swapping exchanges what they
+        # hold and leaves the live one alone.
+        self._vfo = "A"
+        self._freq = {"A": 14074000, "B": 14200000}
+        self._split = False
 
     def state(self) -> dict:
-        return {"ok": True, "mock": True, **self._f,
-                "band": band_for(self._f["freq"])}
+        freq = self._freq[self._vfo]
+        return {"ok": True, "mock": True, "freq": freq, **self._f,
+                "band": band_for(freq), "vfo": self._vfo,
+                "freq_a": self._freq["A"], "freq_b": self._freq["B"],
+                "split": self._split}
+
+    def meters(self, tx: bool) -> dict:
+        """A needle that moves, because one that does not cannot be told
+        from a broken one while the card is being built."""
+        wobble = math.sin(time.time() * 2.0)
+        if tx:
+            # Nothing is transmitting, so this is openly made up - but it
+            # has to be shaped like the real thing to lay out against.
+            return {"power_pct": round(72 + 8 * wobble, 1),
+                    "power_w": round(72 + 8 * wobble, 1),
+                    "swr": round(1.3 + 0.15 * wobble, 2), "mock": True}
+        s = 34 + 18 * wobble            # about S6, breathing
+        return {"s_pct": round(s, 1), "s_units": _s_units_for(s),
+                "s_dbm": round(-127 + s * 0.9), "mock": True}
 
     def set_freq(self, hz: int) -> None:
-        self._f["freq"] = int(hz)
+        self._freq[self._vfo] = int(hz)
 
     def set_mode(self, mode: str, width: int = 0) -> None:
         self._f["mode"] = mode.upper()
@@ -141,11 +275,21 @@ class MockBackend(Backend):
     def set_ptt(self, on: bool) -> None:
         self._f["ptt"] = bool(on)
 
+    def set_vfo(self, which: str) -> None:
+        self._vfo = _vfo_name(which)
+
+    def set_split(self, on: bool) -> None:
+        self._split = bool(on)
+
+    def swap_vfo(self) -> None:
+        self._freq["A"], self._freq["B"] = self._freq["B"], self._freq["A"]
+
 
 class RigctldBackend(Backend):
     """The rigctld text protocol over TCP, for a daemon already running."""
 
     kind = "rigctld"
+    features = frozenset({F_VFO, F_SPLIT, F_SMETER, F_POWER, F_SWR})
 
     def __init__(self, host="127.0.0.1", port=4532, timeout=2.0, **_) -> None:
         self.host, self.port, self.timeout = host, int(port), timeout
@@ -182,6 +326,14 @@ class RigctldBackend(Backend):
             return out[1:]
         return out
 
+    def _maybe(self, line: str) -> list[str]:
+        """A command whose absence is not a failure. Hamlib refuses what a
+        rig cannot do, and a radio with one VFO is not a broken radio."""
+        try:
+            return self._cmd(line)
+        except RigError:
+            return []
+
     def state(self) -> dict:
         try:
             freq = int(float(self._cmd("f")[0]))
@@ -189,9 +341,62 @@ class RigctldBackend(Backend):
             ptt = int(float(self._cmd("t")[0]))
         except (RigError, IndexError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
-        return {"ok": True, "freq": freq, "mode": m[0] if m else "?",
-                "width": int(float(m[1])) if len(m) > 1 else 0,
-                "ptt": bool(ptt), "band": band_for(freq)}
+        out = {"ok": True, "freq": freq, "mode": m[0] if m else "?",
+               "width": int(float(m[1])) if len(m) > 1 else 0,
+               "ptt": bool(ptt), "band": band_for(freq)}
+
+        vfo = self._maybe("v")
+        which = (vfo[0] if vfo else "").strip().upper()
+        if which.startswith("VFO"):
+            which = which[3:]
+        if which in ("A", "B"):
+            out["vfo"] = which
+            out["freq_" + which.lower()] = freq
+            # Hamlib has no "read the other VFO" that works everywhere;
+            # `get_vfo_info` does where it is supported, and where it is
+            # not the other VFO is simply not reported. A missing number is
+            # better than the dial's number labelled as the other VFO.
+            other = "B" if which == "A" else "A"
+            got = self._maybe(f"\\get_vfo_info VFO{other}")
+            for line in got:
+                if line.lower().startswith("freq:"):
+                    try:
+                        out["freq_" + other.lower()] = int(float(
+                            line.split(":", 1)[1]))
+                    except ValueError:
+                        pass
+        split = self._maybe("s")
+        if split:
+            try:
+                out["split"] = bool(int(float(split[0])))
+            except ValueError:
+                pass
+        return out
+
+    def meters(self, tx: bool) -> dict:
+        """Hamlib levels. STRENGTH is dB relative to S9 - a real scale, so
+        it becomes real S-units rather than a bare number."""
+        out: dict = {}
+        if tx:
+            # RFPOWER_METER is 0..1 of full scale; the _WATTS form is
+            # Hamlib 4.x and not every rig has it.
+            pwr = _as_float((self._maybe("l RFPOWER_METER") or [""])[0])
+            if pwr is not None:
+                out["power_pct"] = round(pwr * 100.0, 1)
+            watts = _as_float(
+                (self._maybe("l RFPOWER_METER_WATTS") or [""])[0])
+            if watts:
+                out["power_w"] = round(watts, 1)
+            swr = _as_float((self._maybe("l SWR") or [""])[0])
+            if swr:
+                out["swr"] = round(swr, 2)
+            return out
+        db = _as_float((self._maybe("l STRENGTH") or [""])[0])
+        if db is not None:
+            out["s_pct"] = round(_pct_for_db(db), 1)
+            out["s_units"] = _s_units_for_db(db)
+            out["s_db9"] = db
+        return out
 
     def set_freq(self, hz: int) -> None:
         self._cmd(f"F {int(hz)}")
@@ -201,6 +406,13 @@ class RigctldBackend(Backend):
 
     def set_ptt(self, on: bool) -> None:
         self._cmd(f"T {1 if on else 0}")
+
+    def set_vfo(self, which: str) -> None:
+        self._cmd(f"V VFO{_vfo_name(which)}")
+
+    def set_split(self, on: bool) -> None:
+        # Hamlib wants to be told which VFO transmits, not just "on".
+        self._cmd(f"S {1 if on else 0} VFOB")
 
     def close(self) -> None:
         if self._sock:
@@ -232,6 +444,7 @@ class FlrigBackend(Backend):
     """
 
     kind = "flrig"
+    features = frozenset({F_VFO, F_SPLIT, F_SWAP, F_SMETER, F_POWER, F_SWR})
 
     def __init__(self, host="127.0.0.1", port=FLRIG_PORT,
                  timeout=FLRIG_TIMEOUT, **_) -> None:
@@ -288,14 +501,63 @@ class FlrigBackend(Backend):
     # -- reading -----------------------------------------------------------
     def state(self) -> dict:
         try:
-            freq = int(float(self._call("rig.get_vfo")))
+            a = int(float(self._call("rig.get_vfoA")))
+            b = int(float(self._call("rig.get_vfoB")))
+            which = str(self._call("rig.get_AB") or "A").strip().upper()[:1]
+            split = bool(int(self._call("rig.get_split") or 0))
             mode = str(self._call("rig.get_mode") or "")
             ptt = bool(int(self._call("rig.get_ptt") or 0))
         except (RigError, TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
+        if which not in ("A", "B"):
+            which = "A"
+        # The dial is whichever VFO is in use, so it is read off A and B
+        # rather than asked for separately - `rig.get_vfo` would be a
+        # seventh call for a number we already have.
+        freq = a if which == "A" else b
         return {"ok": True, "freq": freq, "mode": _adif_mode(mode),
                 "rig_mode": mode, "width": 0, "ptt": ptt,
-                "band": band_for(freq)}
+                "band": band_for(freq), "vfo": which,
+                "freq_a": a, "freq_b": b, "split": split}
+
+    def meters(self, tx: bool) -> dict:
+        """What the needle says - and only what it can honestly say.
+
+        **The power meter reads the S-meter while receiving.** A radio has
+        one meter; flrig reads the same value for both, so `get_pwrmeter`
+        answered 5-8 on an FT-890 that was doing nothing but listening.
+        Drawn at rest that is "7 watts" out of a silent transmitter, which
+        is a wrong answer that looks like a right one. So which meters are
+        read follows the PTT, and the other ones are not reported at all
+        rather than reported as zero.
+        """
+        try:
+            if tx:
+                out = {"power_pct": _as_float(self._call("rig.get_pwrmeter"))}
+                # An SWR below 1 is not a reading. It is physically the
+                # floor of the scale, so a radio answering 0 is saying it
+                # does not measure it - the FT-890 does exactly that, with
+                # 78% showing on the power meter beside it. Drawn as "SWR
+                # 0" that is a perfect match into an open circuit.
+                swr = _as_float(self._call("rig.get_swrmeter"))
+                if swr is not None and swr >= 1.0:
+                    out["swr"] = round(swr, 2)
+                # Watts only where the radio says what full scale is; the
+                # FT-890 answers 0, so it gets a bar and no false number.
+                top = _as_float(self._call("rig.get_maxpwr"))
+                if top and out.get("power_pct") is not None:
+                    out["power_w"] = round(out["power_pct"] * top / 100.0, 1)
+                return out
+            pct = _as_float(self._call("rig.get_smeter"))
+            # flrig knows its own radio's meter curve, so its S-units beat
+            # anything computed here. `_s_units_for` is the fallback.
+            units = str(self._call("rig.get_Sunits") or "").strip()
+            dbm = _as_float(self._call("rig.get_DBM"))
+            return {"s_pct": pct, "s_dbm": dbm,
+                    "s_units": units or (_s_units_for(pct)
+                                         if pct is not None else "")}
+        except (RigError, TypeError, ValueError) as exc:
+            return {"error": str(exc)}
 
     def info(self) -> dict:
         try:
@@ -340,6 +602,16 @@ class FlrigBackend(Backend):
         # flrig's own help says this "waits for state change", so it is the
         # one call here that can take a moment.
         self._call("rig.set_ptt", 1 if on else 0)
+
+    def set_vfo(self, which: str) -> None:
+        # "sets & verifies vfo in use A or B", in flrig's own words.
+        self._call("rig.set_AB", _vfo_name(which))
+
+    def set_split(self, on: bool) -> None:
+        self._call("rig.set_split", 1 if on else 0)
+
+    def swap_vfo(self) -> None:
+        self._call("rig.swap")
 
     def close(self) -> None:
         rpc, self._rpc = self._rpc, None
@@ -564,6 +836,11 @@ class OmniRigBackend(Backend):
     """
 
     kind = "omnirig"
+    # OmniRig's interface has no meter of any kind - it is a CAT
+    # abstraction, not a receiver - so a card must not draw an empty
+    # S-meter for it. What VFO and split it can really do is per rig file
+    # and comes back on the state; this is the most it ever offers.
+    features = frozenset({F_VFO, F_SPLIT, F_SWAP})
     # OmniRig starts polling when it starts, so a Dispatch that has only just
     # launched it reports "not responding" for a moment. Reading that as a
     # dead radio is wrong, and it is the first thing anyone would see.
@@ -600,15 +877,34 @@ class OmniRigBackend(Backend):
         return cls._shared
 
     def _read(self) -> dict:
-        """The whole of a state read, in one apartment visit."""
+        """The whole of a state read, in one apartment visit.
+
+        Everything the state needs is reached here, including the VFO and
+        split, because `Rig1` is itself a property: crossing once per value
+        is the bug this file already carries a note about.
+
+        **What a rig can do is asked, not assumed.** OmniRig drives whatever
+        its rig file describes, and plenty have one VFO or no split, so
+        `IsParamWriteable` answers it - offering a Split button that the
+        radio will ignore is worse than not offering one.
+        """
         r = getattr(self._server(), f"Rig{self.slot}")
         status, says = int(r.Status), str(r.StatusStr)
         kind = str(r.RigType or "")
         if status != ST_ONLINE:
             return {"online": False, "status": says, "rig_type": kind}
+        can = []
+        if r.IsParamWriteable(PM_VFOA) and r.IsParamWriteable(PM_VFOB):
+            can.append(F_VFO)
+        if r.IsParamWriteable(PM_SPLITON):
+            can.append(F_SPLIT)
+        if r.IsParamWriteable(PM_VFOSWAP):
+            can.append(F_SWAP)
         return {"online": True, "status": says, "rig_type": kind,
                 "freq": int(r.Freq or 0), "mode": int(r.Mode or 0),
-                "tx": int(r.Tx or 0)}
+                "tx": int(r.Tx or 0), "vfo": int(r.Vfo or 0),
+                "split": int(r.Split or 0), "can": can,
+                "freq_a": int(r.FreqA or 0), "freq_b": int(r.FreqB or 0)}
 
     # --- outside ---------------------------------------------------------
     def state(self) -> dict:
@@ -632,11 +928,25 @@ class OmniRigBackend(Backend):
         tx = got["tx"]
         # PM_UNKNOWN means OmniRig has not read it back yet. Calling that
         # "receiving" would be inventing an answer.
-        return {"ok": True, "freq": got["freq"],
-                "mode": OMNI_MODES.get(got["mode"], "?"), "width": 0,
-                "ptt": tx == PM_TX, "ptt_known": tx in (PM_TX, PM_RX),
-                "band": band_for(got["freq"]), "status": got["status"],
-                "rig_type": got["rig_type"]}
+        out = {"ok": True, "freq": got["freq"],
+               "mode": OMNI_MODES.get(got["mode"], "?"), "width": 0,
+               "ptt": tx == PM_TX, "ptt_known": tx in (PM_TX, PM_RX),
+               "band": band_for(got["freq"]), "status": got["status"],
+               "rig_type": got["rig_type"], "features": got["can"]}
+        if got["freq_a"]:
+            out["freq_a"] = got["freq_a"]
+        if got["freq_b"]:
+            out["freq_b"] = got["freq_b"]
+        if got["vfo"] in OMNI_VFO:
+            out["vfo"] = OMNI_VFO[got["vfo"]]
+        # Split is two answers in one: the flag, and the cross VFO forms -
+        # AB means receive on A and transmit on B, which is split however
+        # the `Split` property happens to read on that radio.
+        if got["split"] in (PM_SPLITON, PM_SPLITOFF):
+            out["split"] = got["split"] == PM_SPLITON
+        if got["vfo"] in OMNI_SPLIT_VFO:
+            out["split"] = True
+        return out
 
     def settle(self, seconds: float = 4.0) -> dict:
         """Wait out OmniRig's first poll, for an answer somebody asked for.
@@ -670,6 +980,15 @@ class OmniRigBackend(Backend):
 
     def set_ptt(self, on: bool) -> None:
         self._set("Tx", PM_TX if on else PM_RX)
+
+    def set_vfo(self, which: str) -> None:
+        self._set("Vfo", PM_VFOA if _vfo_name(which) == "A" else PM_VFOB)
+
+    def set_split(self, on: bool) -> None:
+        self._set("Split", PM_SPLITON if on else PM_SPLITOFF)
+
+    def swap_vfo(self) -> None:
+        self._set("Vfo", PM_VFOSWAP)
 
     def configure(self) -> None:
         """Open OmniRig's own dialog. The port and rig type live there."""
@@ -968,6 +1287,10 @@ class RigManager:
             return {**base, "ok": False,
                     "error": "No radio selected. Add one in Settings -> Radio."}
         out = {**base, **self._backend.state()}
+        # What the card may offer. A backend says what it can do in
+        # general; OmniRig refines it per rig file, because one rig file
+        # has two VFOs and the next does not.
+        out.setdefault("features", sorted(self._backend.features))
         # Why the radio stopped transmitting, so the card can say rather than
         # the transmission just ending. It expires: a message about something
         # that happened ten minutes ago, still on screen, reads as a fault
@@ -992,6 +1315,31 @@ class RigManager:
 
     def set_mode(self, mode: str, width: int = 0) -> dict:
         return self._do(lambda b, m, w: b.set_mode(m, w), mode, width)
+
+    def set_vfo(self, which: str) -> dict:
+        return self._do(lambda b, v: b.set_vfo(v), which)
+
+    def set_split(self, on: bool) -> dict:
+        return self._do(lambda b, v: b.set_split(v), on)
+
+    def swap_vfo(self) -> dict:
+        return self._do(lambda b: b.swap_vfo())
+
+    def meters(self) -> dict:
+        """The needles, for whoever is drawing them.
+
+        Which ones are read follows the radio's own PTT rather than what
+        hamdash last did, because something else may be keying it.
+        """
+        if self._error or not self._backend:
+            return {"ok": False, "error": self._error or "no radio selected"}
+        st = self._backend.state()
+        if not st.get("ok"):
+            return {"ok": False,
+                    "error": st.get("error", "the radio is not answering")}
+        tx = bool(st.get("ptt"))
+        got = self._backend.meters(tx)
+        return {"ok": "error" not in got, "tx": tx, **got}
 
     def set_ptt(self, on: bool) -> dict:
         """Key or unkey, and start (or refresh) the watchdog.
@@ -1068,7 +1416,9 @@ class RigManager:
                 st = self._watch_ptt(self.state())
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
                        st.get("ok"), st.get("rig_id"),
-                       st.get("audio_in"), st.get("audio_out"))
+                       st.get("audio_in"), st.get("audio_out"),
+                       st.get("vfo"), st.get("freq_a"), st.get("freq_b"),
+                       st.get("split"))
                 if key != last:
                     last = key
                     BUS.publish("radio.state", st, source="radio")

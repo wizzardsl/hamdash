@@ -302,6 +302,15 @@
       mode: (mode, width) => HD.post('/api/radio/mode', { mode, width: width || 0 }),
       ptt: (on) => HD.post('/api/radio/ptt', { on: !!on }),
       modes: () => HD.get('/api/radio/modes'),
+      // The needles. Their own call rather than part of the state, because
+      // a meter changes on every read and `radio.state` is published on
+      // change - whoever draws one polls for it.
+      meters: () => HD.get('/api/radio/meters'),
+      // Choosing a VFO and swapping the two are different operations: the
+      // first changes which is live, the second exchanges what they hold.
+      vfo: (which) => HD.post('/api/radio/vfo', { which }),
+      swapVfo: () => HD.post('/api/radio/vfo', { swap: true }),
+      split: (on) => HD.post('/api/radio/split', { on: !!on }),
     },
     lookup: (call) => HD.get(`/api/lookup/${encodeURIComponent(call)}`),
 

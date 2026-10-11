@@ -448,6 +448,73 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   freq-then-mode put a 7.037000 CW spot on 7.037700, mode-then-freq lands on
   7.037000. The spots card's tune and the rig card's memory buttons both
   order it that way.
+## Meters and VFOs
+
+- **A radio has one meter, so the power meter reads the S-meter while
+  receiving.** `rig.get_pwrmeter` answered 5-8 on an FT-890 doing nothing
+  but listening, tracking `get_smeter` sample for sample - they are the
+  same ADC. Drawn at rest that is "7 watts" out of a silent transmitter,
+  which is a wrong answer that looks like a right one. So which meters are
+  read follows the radio's **own** PTT (not what hamdash last did - some
+  other program may be keying it), and the ones that cannot be meaningful
+  are not read at all rather than read and zeroed.
+- **Ask flrig for the S-units; do not invent a scale.** `rig.get_Sunits`
+  ("returns S-meter in S units 0...9...+60", its own words) and
+  `rig.get_DBM` both exist and are not in the obvious place - a method list
+  filtered for "meter" or "smeter" misses them, which is how the first pass
+  came to be about to compute its own. flrig has the radio's meter table;
+  this file has a straight line. `_s_units_for` is the fallback only, and
+  it is checked against flrig's own answer: deflection 8 is "S 1" both
+  ways. Hamlib's `STRENGTH` is dB relative to S9, which is a real scale and
+  converts properly.
+- **A meter that did not answer is not a zero.** `_as_float` returns None
+  for "it did not say", and the card draws nothing rather than a flat bar -
+  a bar pinned at the bottom reads as a dead band, which sends you looking
+  at the antenna rather than at the rig that never answered.
+- **An SWR below 1 is not a reading.** 1.0 is the floor of the scale, so a
+  radio answering 0 is saying it does not measure it - the FT-890 does
+  exactly that, measured with 78% showing on the power meter beside it.
+  Drawn as "SWR 0" that is a perfect match into an open circuit, which is
+  the most reassuring possible way to be wrong.
+- **flrig's `tune` does nothing on a radio with no ATU.** The FT-890 never
+  keyed; the proof is that `get_ptt` stayed 0 throughout, which is also why
+  a power meter reading of 0 must never be taken as "the meter works and
+  there is no output". A carrier for testing comes from CW plus PTT.
+- **`rig.set_vfoA` wants a double**, like `set_frequency`, and refuses an
+  int with `Fault -1: 'type error'`. Nothing in the tree calls it - tuning
+  goes through `set_frequency` - but it is the obvious thing to reach for
+  when adding "tune the other VFO".
+- **Watts are not invented.** The FT-890 answers 0 to `get_maxpwr`, so
+  there is no full scale to convert a deflection with: it gets a bar and a
+  percentage, and `power_w` only appears where the radio said what full
+  scale is. `get_power` is the *setting* in watts and is a different
+  question from what the meter reads.
+- **Meters are not on `radio.state`.** A needle changes on every read and
+  the state is published on change, so carrying them would turn an event
+  into a 2 Hz firehose waking every card on the board for a number one tile
+  draws. `/api/radio/meters` is polled by whoever draws one - the shape the
+  audio cards settled on - and the polling stops when the tile is hidden
+  (invariant 5b). VFO and split *are* discrete and event-worthy, so they
+  ride on the state and are in the publish key.
+- **Choosing a VFO and swapping the two are different operations.**
+  Choosing changes which is live and leaves both alone; swapping exchanges
+  what they hold and leaves the live one alone. Writing one as the other
+  makes two buttons do one thing. Confirmed on the FT-890: after a swap
+  `get_AB` still said `A`.
+- **What a rig can do is asked, not assumed.** `Backend.features` says what
+  a backend offers at all, and OmniRig refines it per rig file through
+  `IsParamWriteable` - one rig file has two VFOs and the next does not, and
+  a Split button the radio will ignore is worse than no button.
+  **OmniRig has no meters of any kind**: its interface (read from the type
+  library) has no such property, because it is CAT control and not a
+  receiver. A card must not draw an empty S-meter for it.
+- **OmniRig's VFO constants are read from its type library**, like
+  `ST_ONLINE` before them - `OmniRig.exe` carries it, and loading a typelib
+  creates no object and opens no port. The catch: `Vfo` can be `PM_VFOAB`
+  or `PM_VFOBA`, which are (receive, transmit) pairs - that **is** split,
+  however the `Split` property happens to read on that radio, so a reader
+  that only looks at `Split` reports a split radio as simplex.
+
 - **flrig is XML-RPC on 127.0.0.1:12345**, and three of its habits matter.
   `rig.get_vfo` returns a **string** of hertz. `rig.get_modes` returns the
   radio's own names with the filter welded on - an FT-890 gives LSB, USB,
@@ -948,11 +1015,21 @@ the live service.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
 - `cty.dat` for real DXCC, replacing the short PREFIX table.
-- Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
+- Rig depth: sharing the rig with WSJT-X. VFO A/B, split and the meters
+  are done; RIT/XIT and the sub-receiver are not.
 - PTT is proven through flrig on an FT-890, into a dummy load, operator
   present: `set_ptt` keys and unkeys, the card's button does both, the
   watchdog takes an unheld transmission off the air in about six seconds,
   and a clean exit unkeys. Not proven on OmniRig or Hamlib.
+- VFOs, split and the meters are proven the same way: both VFOs read,
+  selecting one moves the dial and the band, a swap exchanges A and B and
+  leaves the live one alone, split reports back through flrig, the S-meter
+  tracks real signals (and reads a true 0 on a dummy load), and keying CW
+  showed 78% on the power meter. The radio was returned exactly as found
+  every time. **Not proven on OmniRig or Hamlib** - OmniRig's VFO and split
+  are written from its type library and its `IsParamWriteable`, and
+  Hamlib's `\get_vfo_info` and `l STRENGTH` paths have never run against a
+  rigctld (neither rigctl nor rigctld is installed on this machine).
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,

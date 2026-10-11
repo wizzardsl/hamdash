@@ -527,6 +527,27 @@ reaches it:
 | **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; needs Hamlib installed |
 | **rigctld** | host and port | a daemon you are already running |
 
+### Two VFOs, split, and the meter
+
+The rig card shows **VFO A and B side by side** with the live one lit. Click
+either to switch to it; **A⇄B** exchanges what the two hold without changing
+which is live. **Split** transmits on the other one and marks it `TX`,
+because split is the one setting that silently puts you on a different
+frequency from the one on the dial.
+
+Below them is **the radio's meter**: signal strength while receiving, power
+and SWR while transmitting. It is one bar because the radio has one needle.
+
+What appears depends on what the radio can actually do, which hamdash asks
+rather than assumes — OmniRig has no meters at all (it is CAT control, not a
+receiver), and whether a particular OmniRig rig file has two VFOs is a
+property of that file. A control nobody can use is not drawn.
+
+Where a radio will not say what full power is — the FT-890 does not — the bar
+shows how hard it is working and no number claims to be watts. S-units come
+from flrig itself, which knows its radio's meter table, rather than from a
+scale invented here.
+
 Every entry also takes an **audio in** and **audio out** — the sound card that
 radio is wired to, which on a modern rig is its own USB interface. Those sit
 outside the backend fields on purpose: which sound card a radio uses has
