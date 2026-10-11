@@ -181,8 +181,33 @@ class TestNotHoldingAServerThread(unittest.TestCase):
                                         "outputs": [], "error": ""})
         with mock.patch.object(audio, "_probe", probe):
             audio.devices()
+            self._settle()
             audio.devices(refresh=True)
         self.assertEqual(probe.call_count, 2)
+
+    def test_a_rescan_during_a_probe_does_not_start_a_second_one(self):
+        """The other half of the same rule, and the reason the test above
+        has to wait: PortAudio is behind one lock, so a second probe would
+        only queue behind the first."""
+        probe = mock.Mock(return_value={"ok": True, "inputs": [],
+                                        "outputs": [], "error": ""})
+        with mock.patch.object(audio, "_probe", probe):
+            audio.devices()
+            audio.devices(refresh=True)         # no wait: still in flight
+        self.assertLessEqual(probe.call_count, 2)
+
+    def _settle(self):
+        """Wait for the probe thread to finish.
+
+        Without this the test is a race: `devices(refresh=True)` will not
+        start a second probe while the first is still running - deliberately,
+        because they share one PortAudio lock - so on a loaded machine the
+        refresh was a no-op and the count came back 1. It failed on one CI
+        runner out of six.
+        """
+        worker = audio._worker
+        if worker:
+            worker.join(timeout=5)
 
 
 class TestStoringADevice(unittest.TestCase):
