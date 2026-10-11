@@ -101,6 +101,20 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TestTheFlagsCarryTheirLicence(unittest.TestCase):
+    """180 MIT-licensed SVGs are redistributed here, and MIT asks that the
+    notice travel with them. Leaflet and proj4 already keep theirs beside
+    the files; the flags had none until somebody looked."""
+
+    def test_the_notice_ships_with_them(self):
+        notice = FLAGS / "FLAG-ICONS-LICENSE.txt"
+        self.assertTrue(notice.exists(),
+                        "the flags are redistributed without their licence")
+        said = notice.read_text(encoding="utf-8")
+        self.assertIn("MIT License", said)
+        self.assertIn("Copyright", said)
+
+
 class TestWholeBlocks(unittest.TestCase):
     """Each country gets its whole ITU call-sign block, not the prefixes
     somebody happened to need.

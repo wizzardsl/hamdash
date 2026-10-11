@@ -21,6 +21,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   spell them differently and the cluster sends none at all.
 
 ### Fixed
+- **The Falklands and Cameroon have flags now**, so their prefixes are in
+  the table rather than deliberately blank. They were waiting on a flag file
+  rather than on knowing the answer.
+- **The bundled flags ship with their licence.** 180 MIT-licensed SVGs were
+  being redistributed without the notice that MIT asks travel with them.
+  Leaflet and proj4 already kept theirs; the flags do now, and the README
+  says what is bundled and under what.
 - **Countries are recognised from their whole callsign block.** The prefix
   table held whichever prefixes somebody had needed along the way — Germany
   twelve of its eighteen letters, Sweden four of thirteen — so ordinary

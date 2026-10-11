@@ -1145,7 +1145,9 @@ the live service.
   caught `fk` the moment VP8 was added. That is also why VP8 and Cameroon
   are deliberately *unflagged* rather than pointed at a neighbour: the
   Falklands have their own flag, so flying the Union Jack would be a wrong
-  answer read as fact, and no flag already means "not known".
+  answer read as fact, and no flag already means "not known". Both have
+  their flag now and both prefixes are in; the rule is what matters, not
+  those two entries.
 - **A country gets its whole ITU block, not the prefixes somebody needed.**
   That was the actual shape of the problem: Germany had twelve of its
   eighteen letters, Sweden four of thirteen, Japan three of ten. Forty-five
@@ -1167,6 +1169,11 @@ the live service.
   answer; until then, check against live traffic rather than trusting it.
 - A flag answers "where is this person", so DXCC entities collapse: GM/GW/GI
   all fly `gb`, KL7 and KH6 fly `us`. Places with their own flag keep it.
+- **What is bundled keeps its licence beside it.** Leaflet and proj4 already
+  did; the 180 flag SVGs did not, and MIT asks that the notice travel with
+  copies - `flags/FLAG-ICONS-LICENSE.txt` now does, with a test. The README's
+  licence section lists all of it, because somebody redistributing a build is
+  redistributing those too.
 - Flags are bundled (`static/flags/*.svg`, flag-icons, MIT). Not a CDN: it
   would leak which countries the operator works, and break offline.
 

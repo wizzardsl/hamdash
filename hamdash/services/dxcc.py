@@ -52,12 +52,13 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     "9Y": ("Trinidad and Tobago", "tt", "FK90"),
     "ZF": ("Cayman Islands", "ky", "EK99"),
     "C6": ("Bahamas", "bs", "FL15"), "VP9": ("Bermuda", "bm", "FM72"),
-    # VP8 (Falklands, South Georgia) is deliberately absent: the flag set
-    # bundled here has no `fk`, and `tests/test_dxcc.py` refuses a code with
-    # no file because that is a broken image beside somebody's callsign.
-    # Mapping it to `gb` instead would be worse - the Falklands have their
-    # own flag, and a wrong one is read as fact. No flag means "not known",
-    # which is what it is until the file is added.
+    # Both of these waited on a flag file rather than on knowing the answer:
+    # the set had no `fk` or `cm`, and a code with no svg is a broken image
+    # beside somebody's callsign. Pointing VP8 at `gb` in the meantime would
+    # have been worse - the Falklands have their own flag and a wrong one is
+    # read as fact.
+    "VP8": ("Falkland Islands", "fk", "GD18"),
+    "TJ": ("Cameroon", "cm", "JJ53"),
     "OX": ("Greenland", "gl", "GP60"),
     # South America
     "PY": ("Brazil", "br", "GG66"),

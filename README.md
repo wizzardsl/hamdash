@@ -134,6 +134,17 @@ sandbox. **Install cards you trust, and read them first.**
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Hamlib, which the Hamlib backend runs as a
-separate program, is GPL and is **not** bundled: `tools/get_hamlib.py`
-fetches it from the Hamlib project on request.
+MIT — see [LICENSE](LICENSE).
+
+Bundled with it, each keeping its own licence beside the files:
+
+| | |
+|---|---|
+| [Leaflet](https://leafletjs.com) and [proj4js](https://proj4js.org) | BSD-2 — `hamdash/static/vendor/` |
+| [flag-icons](https://github.com/lipis/flag-icons) | MIT — `hamdash/static/flags/` |
+| Natural Earth coastlines and boundaries | public domain, simplified into `vendor/world.js` and `vendor/borders.js` |
+
+Hamlib is **not** bundled: `rigctl` and `rigctld` are GPL and hamdash is MIT,
+so shipping them would put their licence and a source offer on every release.
+`tools/get_hamlib.py` fetches them from the Hamlib project on request, and
+hamdash runs `rigctld` as a separate program.
