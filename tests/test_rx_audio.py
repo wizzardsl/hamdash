@@ -12,9 +12,20 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-import numpy as np
-
 CARD = Path(__file__).resolve().parent.parent / "plugins" / "rx_audio"
+
+# numpy belongs to this card, not to the host, and CI installs only what
+# the host needs - the same reason `test_cw.py` guards its import. Only
+# the DSP half is skipped: the tests that read the card's source are about
+# which route may open the sound card, and they must keep running
+# everywhere, because that is the half that was actually wrong.
+try:
+    import numpy as np
+    HAVE_NUMPY = True
+except ImportError:                                     # pragma: no cover
+    HAVE_NUMPY = False
+
+needs_numpy = unittest.skipUnless(HAVE_NUMPY, "numpy is not installed")
 
 
 def _load(name):
@@ -27,7 +38,7 @@ def _load(name):
     return mod
 
 
-dsp = _load("dsp")
+dsp = _load("dsp") if HAVE_NUMPY else None
 
 
 def tone(hz, rate, secs=0.5):
@@ -47,6 +58,7 @@ def db(x, ref):
     return 20 * np.log10(max(x, 1e-12) / max(ref, 1e-12))
 
 
+@needs_numpy
 class TestItDoesNotFold(unittest.TestCase):
     """The one thing a decimator must get right."""
 
@@ -112,6 +124,7 @@ class TestItDoesNotFold(unittest.TestCase):
                 self.assertGreater(kept, -1.0, f"{hz} Hz down {kept:.1f} dB")
 
 
+@needs_numpy
 class TestItDoesNotClick(unittest.TestCase):
     def test_the_filter_carries_its_tail_between_blocks(self):
         """Filtering each block from zeros clicks every boundary - at 50
@@ -152,6 +165,7 @@ class TestItDoesNotClick(unittest.TestCase):
                         f"{total} samples out for {expected} expected")
 
 
+@needs_numpy
 class TestRatesItCannotDivideEvenly(unittest.TestCase):
     def test_44100_gets_a_whole_number_factor(self):
         """Resampling to hit a round number would cost quality and code.
