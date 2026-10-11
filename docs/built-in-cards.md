@@ -37,6 +37,50 @@ Two things about it are worth knowing if you write something similar:
 It needs `numpy` and `sounddevice`, both in `requirements.txt` and both in the
 frozen build.
 
+## Receive audio
+
+Plays the radio's receive audio in the tile. On the same machine that is
+a convenience; on another machine on your network it is the thing that
+makes the board usable from the sofa, since the rig control card already
+works from anywhere the board is reachable.
+
+| setting | |
+|---|---|
+| **Audio input** | `rig` follows the audio input set on the active radio, which is usually what you want. `mock` is a test tone, so the card works with no radio attached. Otherwise part of an input's name. |
+| **Quality** | Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s and 12000 leaves headroom at 192. |
+| **Buffer** | How much audio to hold back against network jitter. 120 ms is comfortable on a LAN; raise it on patchy Wi-Fi if you hear dropouts. |
+
+Audio cannot start without a click - every browser requires it - so the
+tile waits on a **Listen** button. The readout beside it shows the delay,
+the dropout count and the bandwidth, which is what tells you whether a
+bigger buffer would help.
+
+**Stop really does let go of the sound card**, immediately, because the
+usual reason to press it is to give the input to another program. The
+card also lets go when its tab is hidden, and after 20 seconds if a tile
+disappears without saying so.
+
+One input can only be open once. If a spectrum or decoder tile is already
+using the radio's audio, this card will say so and name the likely
+culprit rather than just failing.
+
+### Listening from another machine
+
+The board binds to `127.0.0.1` by default. `--host` changes that:
+
+```bash
+python run.py --host 192.168.1.50 --port 8765
+```
+
+> **There is no authentication of any kind.** Anyone who can reach that
+> address can key your transmitter, retune the radio, delete log entries
+> and overwrite your configuration. On a network you do not fully
+> control, put it behind a VPN such as Tailscale or an SSH tunnel rather
+> than opening the port.
+
+Transmitting from the browser is not supported. A microphone needs a
+secure context, which means HTTPS with a certificate; receiving has no
+such restriction.
 ## Decoding CW
 
 The `decoder` card reads digital modes out of the radio's audio. CW works;

@@ -1,0 +1,282 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Receive audio</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { margin: 0; font: 13px var(--sans); color: var(--ink);
+         background: var(--bg); }
+  .wrap { padding: 8px; display: flex; flex-direction: column; gap: 8px;
+          height: 100vh; box-sizing: border-box; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row[hidden] { display: none; }   /* author display beats UA [hidden] */
+  button.play { min-width: 76px; }
+  input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+
+  /* The level meter: the one thing that says "audio is actually moving"
+     before you have turned the volume up. */
+  .meter { height: 8px; border: 1px solid var(--rule);
+           border-radius: var(--radius); overflow: hidden; flex: 1;
+           background: var(--panel-2); }
+  .meter i { display: block; height: 100%; width: 0;
+             background: var(--signal); transition: width .08s linear; }
+  .meter.hot i { background: var(--alert); }
+
+  .note { color: var(--muted); font-size: 11px; margin: 0;
+          overflow-wrap: anywhere; }
+  .note.warn { color: var(--alert); }
+  .link { display: flex; gap: 10px; font-size: 11px; color: var(--muted);
+          font-family: var(--mono); }
+  .link[hidden] { display: none; }
+  .link b { font-weight: 600; color: var(--ink); }
+  .link.bad b { color: var(--alert); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <button class="play" id="go">Listen</button>
+    <button class="play" id="stop" hidden>Stop</button>
+    <div class="meter" id="meter"><i></i></div>
+  </div>
+  <div class="row">
+    <span class="note">Volume</span>
+    <input type="range" id="vol" min="0" max="100" value="70"
+           aria-label="Volume">
+    <span class="note" id="volnum">70</span>
+  </div>
+
+  <div class="link" id="link" hidden>
+    <span>delay <b id="lat">—</b></span>
+    <span>dropouts <b id="drops">0</b></span>
+    <span><b id="kbps">—</b></span>
+  </div>
+
+  <p class="note" id="status">Starting…</p>
+</div>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'rx_audio';
+const $ = (s) => document.querySelector(s);
+
+let conf = {};
+let ctx = null, gain = null;
+let running = false, timer = null;
+let nextAt = 0, lastSeq = 0, lastDraw = 0;
+let clockOffset = 0, bestRtt = Infinity;
+let st = null;
+
+function fresh() {
+  return { lat: [], drops: 0, bytes: 0, t0: performance.now(), played: 0 };
+}
+st = fresh();
+
+const med = (a) => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.floor(s.length / 2)];
+};
+
+function prebufBlocks(blockMs) {
+  const ms = Math.max(40, Number(conf.buffer_ms) || 120);
+  return Math.max(2, Math.round(ms / (blockMs || 20)));
+}
+
+async function pull() {
+  if (!running) return;
+  const t0 = performance.now();
+  let r;
+  try {
+    r = await HD.cardRaw('rx_audio', `/api/pcm?since=${lastSeq}`);
+    if (!r.ok) throw new Error(`audio request failed (${r.status})`);
+  } catch (e) {
+    say(String(e.message || e), true);
+    return schedule();
+  }
+  const rtt = performance.now() - t0;
+  const buf = await r.arrayBuffer();
+
+  const head = +r.headers.get('X-Head-Seq');
+  const first = +r.headers.get('X-First-Seq');
+  const last = +r.headers.get('X-Last-Seq');
+  const rate = +r.headers.get('X-Rate');
+  const blockN = +r.headers.get('X-Block-N');
+  const blockMs = 1000 * blockN / rate;
+  const capturedAt = parseFloat(r.headers.get('X-Captured-At')) * 1000;
+  const serverNow = parseFloat(r.headers.get('X-Server-Now')) * 1000;
+  meter(parseFloat(r.headers.get('X-Peak')) || 0);
+
+  // Offset from the exchange with the SMALLEST round trip, the way NTP
+  // does it: the error is at most half the trip, so the quickest one is
+  // the most trustworthy. Without this the delay reading is biased by
+  // whatever the first poll happened to cost.
+  if (serverNow && rtt < bestRtt) {
+    bestRtt = rtt;
+    clockOffset = (Date.now() - rtt / 2) - serverNow;
+  }
+
+  const want = prebufBlocks(blockMs);
+  // Live audio tracks the head; it never plays catch-up. Anything still
+  // in the ring behind us is simply late, and playing it would make the
+  // delay permanent rather than momentary.
+  if (head - lastSeq > want * 4) {
+    if (st.played) st.drops++;
+    lastSeq = Math.max(0, head - want);
+    nextAt = 0;
+    return schedule();
+  }
+
+  if (buf.byteLength) {
+    st.bytes += buf.byteLength;
+    if (lastSeq && first > lastSeq + 1) st.drops++;
+    lastSeq = last;
+
+    // One AudioBuffer for everything this poll brought, not one per
+    // block: the player's own cost is what decides whether it keeps up
+    // once the network is no longer the bottleneck.
+    const pcm = new Int16Array(buf);
+    const ab = ctx.createBuffer(1, pcm.length, rate);
+    const ch = ab.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+    const src = ctx.createBufferSource();
+    src.buffer = ab;
+    src.connect(gain);
+
+    const prebuf = want * blockN / rate;
+    if (nextAt < ctx.currentTime + 0.002) {
+      if (st.played) st.drops++;          // the player ran dry
+      nextAt = ctx.currentTime + prebuf;
+    }
+    src.start(nextAt);
+
+    const playAtPage = Date.now() + (nextAt - ctx.currentTime) * 1000;
+    st.lat.push(playAtPage - (capturedAt + clockOffset));
+    if (st.lat.length > 200) st.lat.shift();
+    nextAt += pcm.length / rate;
+    st.played += pcm.length / blockN;
+  }
+  paintLink();
+  schedule();
+}
+
+function schedule() {
+  if (running) timer = setTimeout(pull, 40);
+}
+
+function meter(peak) {
+  const pct = Math.min(100, Math.round(Math.sqrt(peak) * 100));
+  $('#meter').firstElementChild.style.width = pct + '%';
+  $('#meter').classList.toggle('hot', peak > 0.95);
+}
+
+function paintLink() {
+  if (performance.now() - lastDraw < 500) return;
+  lastDraw = performance.now();
+  const secs = (performance.now() - st.t0) / 1000;
+  const m = med(st.lat);
+  $('#lat').textContent = m === null ? '—' : `${Math.round(m)} ms`;
+  $('#drops').textContent = st.drops;
+  $('#kbps').textContent = secs > 1
+    ? `${Math.round(st.bytes * 8 / secs / 1000)} kbit/s` : '—';
+  $('#link').classList.toggle('bad', st.drops > 0);
+}
+
+function say(text, warn) {
+  $('#status').textContent = text;
+  $('#status').className = 'note' + (warn ? ' warn' : '');
+}
+
+async function start() {
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  if (!gain) {
+    gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    setVolume();
+  }
+  await ctx.resume();
+  st = fresh();
+  nextAt = 0; bestRtt = Infinity; clockOffset = 0;
+  // Start at the live edge. Asking for everything the ring holds is
+  // right for a waterfall and wrong for audio: it hands over seconds of
+  // backlog and every block of it is permanent delay.
+  try {
+    lastSeq = (await HD.card('rx_audio', '/api/info')).seq;
+  } catch (e) { lastSeq = 0; }
+  running = true;
+  $('#go').hidden = true; $('#stop').hidden = false; $('#link').hidden = false;
+  say('Listening.');
+  pull();
+}
+
+async function stop(quiet) {
+  running = false;
+  clearTimeout(timer);
+  $('#go').hidden = false; $('#stop').hidden = true; $('#link').hidden = true;
+  meter(0);
+  if (!quiet) say('Stopped.');
+  // Tell the card now rather than letting the reaper notice in 20 s: the
+  // reason to press Stop is usually to give the sound card to another
+  // program, and "in twenty seconds" is not that.
+  try { await HD.card('rx_audio', '/api/stop', {}); } catch (e) { /* gone */ }
+}
+
+function setVolume() {
+  const v = +$('#vol').value;
+  $('#volnum').textContent = v;
+  // Perceived loudness is nearer the square of the slider than the
+  // slider, so a linear control spends its top third doing nothing.
+  if (gain) gain.gain.value = (v / 100) ** 2;
+  try { localStorage.setItem('rx_audio.vol', v); } catch (e) { /* private */ }
+}
+
+$('#go').onclick = start;
+$('#stop').onclick = () => stop();
+$('#vol').oninput = setVolume;
+
+// A hidden tab keeps running so switching back is instant - which for
+// this card would mean holding the radio's sound card and somebody's
+// bandwidth with nobody listening (invariant 5b).
+HD.onVisible((on) => { if (!on && running) stop(true); });
+window.addEventListener('pagehide', () => { if (running) stop(true); });
+
+HD.onSettings((v) => { conf = v || {}; });
+
+(async () => {
+  try {
+    const v = localStorage.getItem('rx_audio.vol');
+    if (v !== null) $('#vol').value = v;
+  } catch (e) { /* private window */ }
+  setVolume();
+  try { conf = await HD.settings(); } catch (e) { conf = {}; }
+  poll();
+})();
+
+// Status while not listening: whether the input opened at all, and what
+// to do if it did not. Audio cannot start without a click, so the card
+// has to be honest about sitting there waiting for one.
+async function poll() {
+  try {
+    const i = await HD.card('rx_audio', '/api/info');
+    if (!running) {
+      const what = i.device === 'mock' ? 'a test tone'
+        : (i.device || 'the default input');
+      if (i.status === 'error') {
+        say(`${i.error}${i.hint ? ' — ' + i.hint : ''}`, true);
+      } else if (i.status === 'idle') {
+        // Idle means the input is not open, which is the point: a card
+        // nobody is listening to must not be holding the sound card.
+        say(`Press Listen to hear ${what}.`);
+      } else if (i.status === 'running') {
+        say(`Ready — ${what} at ${i.rate} Hz. Press Listen.`);
+      } else {
+        say(`${i.status}…`);
+      }
+    }
+  } catch (e) { /* host restarting */ }
+  setTimeout(poll, running ? 5000 : 2000);
+}
+</script>
+</body>
+</html>

@@ -294,7 +294,7 @@ Load it and the rest follows — theme, events, settings, units:
 
 | | |
 |---|---|
-| **your card** | `HD.card('my_card', '/api/state')`, `HD.cardId`, `HD.tileUid` |
+| **your card** | `HD.card('my_card', '/api/state')`, `HD.cardRaw(id, path)`, `HD.cardPath(path)`, `HD.cardId`, `HD.tileUid` |
 | **settings** | `HD.settings()`, `HD.saveSettings(v)`, `HD.onSettings(fn)` |
 | **radio** | `HD.radio.state() .freq(hz) .mode(m, w) .ptt(on) .modes() .meters() .vfo(a) .swapVfo() .split(on)` |
 | **log** | `HD.log.recent(n) .add(qso) .remove(id) .stats()` |
@@ -307,8 +307,18 @@ Load it and the rest follows — theme, events, settings, units:
 | **raw** | `HD.get`, `HD.post`, `HD.put`, `HD.del`, `HD.postText` |
 | **odds** | `HD.fmtHz(hz)`, `HD.bearingName(deg)`, `HD.flag(iso)`, `HD.openExternal(url)` |
 
-**`HD.card()` puts the tile uid on every call**, which is what makes per-tile
-settings work. Reach your own API through it rather than with `fetch`.
+**`HD.card()` puts the tile uid on every call**, which is what makes
+per-tile settings work. Reach your own API through it rather than with
+`fetch`.
+
+It parses the reply as JSON. When your card serves something else - audio,
+an image, a file - use **`HD.cardRaw(id, path)`**, which makes the same
+call with the same uid and hands back the `Response`, so you can take
+`arrayBuffer()` or `blob()` off it. For a URL you are not fetching at all,
+such as an `<img src>` pointing at your own card, **`HD.cardPath(path)`**
+adds the uid and nothing else. All three exist so nothing has to hand-roll
+the uid, which is the part that is easy to leave out and silently wrong:
+the call works, and the card answers about the wrong tile.
 
 **Distance is formatted in one place.** Use `HD.fmtDistance`; never print
 `km` yourself, and listen for `hamdash:units` if you hold a rendered string.

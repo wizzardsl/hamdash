@@ -59,8 +59,6 @@ docs/card-template/ a card that runs, plus a CLAUDE.md for building one
 tests/              regression guards — js_api shape, bus namespace,
                     packaging/spec drift, release notes, layout agreement
 tests/js/           the board's layout model, under `node --test`
-spikes/             throwaway code kept for its answer; NOT loaded by the
-                    app - registry reads plugins/ and <home>/cards/ only
 tools/              release_notes.py (release notes), smoke_frozen.py (build check)
 hamdash.spec        PyInstaller build definition — onedir, see invariant 7
 .github/workflows/  ci.yml (tests), build.yml (frozen apps), release.yml (on tag)
@@ -742,6 +740,69 @@ follows it):
 - **Mock by default**, like the rig. A card that needs hardware to show
   anything can't be developed or demonstrated.
 
+## Receive audio, and operating from another machine
+
+`plugins/rx_audio` plays the radio's receive audio in the browser, which
+is what makes the board usable from another PC on the network. It moves
+audio the way the other audio cards move data - ring it, number it, serve
+everything after a sequence number, and let the page poll - because a
+stream holds a server thread for its life (invariant 4).
+
+**That polling is enough, which is the finding that shaped everything
+else.** Measured over 60 s against a real USB sound card: 50 blocks a
+second delivered against 50 produced, ratio 0.999, **nothing dropped**,
+31 ms from capture to the browser having it, 235 kbit/s. So there is no
+WebRTC here and no `aiortc` - which matters beyond this card, because a
+frozen card runs inside the hamdash binary (invariant 6), so a card's
+dependency is in every build including those of people who never install
+it. Reach for a new transport only if a measurement says this one failed.
+
+- **Live audio tracks the head; it never plays catch-up.** “Everything
+  since N” is right for a waterfall, which wants the history. A page that
+  asks *audio* for it is handed the whole ring, plays it end to end and is
+  permanently that far behind the radio - measured at 8.2 s, with no
+  dropouts and nothing reporting an error, because nothing had failed.
+  Rescheduling what is queued is not enough either: the stale blocks are
+  still in the ring and still get fetched, which pinned the delay at a
+  perfectly steady 570 ms. Throw the backlog away and rejoin live.
+- **Asking is not wanting.** The page polls for a status line whether or
+  not anybody is listening. That poll went through the same “open it if
+  it is not open” helper as the audio, so pressing Stop handed the sound
+  card back for about two seconds and then took it again. Nothing looks
+  wrong - the audio does stop - but the only reason to press Stop is to
+  give the device to another program. `look()` reports without opening;
+  `tap_for()` opens. `tests/test_rx_audio.py` pins which route uses which.
+- **Decimate with a real filter, and let the cutoff and the tap count
+  agree.** A receiver's audio is ~3 kHz wide, so sending 48 kHz is four
+  times the bandwidth for nothing. The first filter here was 63 taps
+  cutting at 0.90 of the output Nyquist, which sounds thorough and put
+  the stopband edge at 6.7 kHz when the Nyquist was 6.0 - measured only
+  14 dB down at 6 kHz, so the hiss above it came back into the speech
+  band barely attenuated. A Hamming sinc needs about 3.3/N of the sample
+  rate to roll off, so the two numbers are one decision: 0.72 and 95 taps
+  put the passband at 4.3 kHz and the stopband exactly at 6.0.
+  **A folding decimator does not sound broken, it sounds like a noisier
+  radio**, which is why `dsp.py` imports nothing from the card and is
+  driven with tones at known frequencies - the same reason `cw.py` is.
+  One test asserts the naive box average *does* fold, so the others
+  cannot quietly stop testing anything.
+- **Whole-number decimation only, and report the rate produced.** The USB
+  interface here runs at 44100, so asking for 12000 gives 14700 (44100/3)
+  rather than resampling. A browser's AudioBuffer takes any rate, so an
+  odd one costs nothing; resampling would cost quality and code.
+- **The filter carries its tail and its phase between blocks.** Filtering
+  each block from zeros clicks every boundary - at 50 blocks a second
+  that is a 50 Hz buzz laid over the audio - and dropping the decimation
+  phase makes blocks come out a sample long or short, which is a player
+  that drifts and glitches every few minutes with nothing in the log.
+- **Remote means unauthenticated.** Nothing in the host checks who is
+  asking, so binding the board to the LAN (`--host`) gives anyone who can
+  route to it the transmitter, the logbook and the config. This card
+  makes remote operating attractive, which makes that gap matter more
+  than it did. It is the next thing to build.
+- Transmit is not here. `getUserMedia` needs a secure context, so a
+  microphone means HTTPS with a certificate or a tailnet - receive has no
+  such restriction, which is why it is the half that shipped first.
 ## Decoding
 
 `plugins/decoder/cw.py` is the DSP and imports nothing from the card: samples
@@ -1394,24 +1455,22 @@ the live service.
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"
   event and feeding it guesses would be worse than silence.
-- **Remote operation over the LAN.** Spiked and measured, not built:
-  `spikes/remote_audio/FINDINGS.md`. The transport question is answered -
-  the radio's receive audio reaches a browser by ordinary polling at 50
-  blocks/s with 0 dropped, 40 ms arrival lag and 192 kbit/s, with no new
-  dependency, no new open port and no held thread - so **WebRTC and
-  aiortc are not needed**, which matters because a frozen card runs
-  inside the hamdash binary and a card's dependency is every build's.
-  Control is already done: the board is a web app and `/api/radio/*`
-  never cared where a request came from. What is NOT answered: transmit
-  (`getUserMedia` needs a secure context, so a mic means HTTPS or a
-  tailnet), sharing one capture device with the spectrum card, a proper
-  anti-alias filter on the decimation, and real network jitter. And
-  **the host has no authentication of any kind**, which is a nicety
-  until it is remote control of a transmitter, and then it is not.
-- `--host` binds the board off localhost and is undocumented on purpose
-  for now: with no auth, anyone who can route to it can key the rig,
-  delete QSOs and overwrite config. Document it with that caveat, or
-  add auth first.
+- **Remote operation: receive is done, transmit is not.**
+  `plugins/rx_audio` plays the radio's audio in a browser and control was
+  always there (the board is a web app and `/api/radio/*` never cared
+  where a request came from), so listening and operating from another
+  machine on the LAN works now. What is left: **authentication**, which
+  this makes urgent rather than optional - `--host` binds the board off
+  localhost and anyone who can route to it can key the rig, delete QSOs
+  and overwrite config, so it stays undocumented until there is a lock on
+  it. Then transmit, which needs a microphone, which needs a secure
+  context, which means HTTPS or a tailnet.
+- **Sharing one sound card between cards is not solved.** If a spectrum
+  or decoder tile already holds the radio's input, `rx_audio` cannot open
+  it too - PortAudio on Windows will not reliably give one capture device
+  to two openers. The card says so and names the likely culprit rather
+  than failing blankly, but the real answer is one capture fanned out to
+  several consumers, and that is a change to three cards.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a
   pip-installable pywebview backend, Linux needs system GTK/WebKit packages

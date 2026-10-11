@@ -285,14 +285,30 @@
     // nothing, because the card never sees it. The proxy turns `?uid=` into
     // X-Hamdash-Tile; this is the half of that which lives in the browser.
     card(id, path, body) {
-      const cid = id || HD.cardId;
-      const at = HD.tileUid
+      return body === undefined
+        ? req('GET', `/cards/${id || HD.cardId}${HD.cardPath(path)}`)
+        : req('POST', `/cards/${id || HD.cardId}${HD.cardPath(path)}`, body);
+    },
+
+    // The same call for something that is not JSON, returning the raw
+    // Response so the caller can take arrayBuffer() or blob() off it.
+    // HD.card parses every reply, so without this a card serving audio,
+    // an image or a file had to hand-roll `fetch` - and hand-roll the uid
+    // with it, which is the part that is easy to leave out and silently
+    // wrong (invariant 5).
+    cardRaw(id, path) {
+      return fetch(`/cards/${id || HD.cardId}${HD.cardPath(path)}`);
+    },
+
+    // The path a call to this card's own backend should use: the tile uid
+    // on every one. Exposed because anything building a URL for itself -
+    // an <img src>, an <audio src> - needs the same treatment and cannot
+    // go through HD.card.
+    cardPath(path) {
+      return HD.tileUid
         ? path + (path.includes('?') ? '&' : '?')
           + `uid=${encodeURIComponent(HD.tileUid)}`
         : path;
-      return body === undefined
-        ? req('GET', `/cards/${cid}${at}`)
-        : req('POST', `/cards/${cid}${at}`, body);
     },
 
     // shared services, spelled out so cards read clearly

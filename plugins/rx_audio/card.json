@@ -1,0 +1,37 @@
+{
+  "id": "rx_audio",
+  "name": "Receive audio",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Listen to the radio's receive audio in the browser, including from another machine on the network",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 3,
+  "h": 2,
+  "min_w": 2,
+  "min_h": 2,
+  "permissions": ["radio"],
+  "subscribes": ["radio.state"],
+  "settings": {
+    "device": {
+      "type": "string",
+      "label": "Audio input",
+      "default": "mock",
+      "help": "'rig' follows the audio input set on the active radio, which is usually what you want. 'mock' is a test tone, so the card works with no radio attached. Otherwise part of an input's name, e.g. 'USB Audio CODEC' - the card lists what it can see."
+    },
+    "rate": {
+      "type": "select",
+      "label": "Quality",
+      "options": ["8000", "12000", "16000", "24000"],
+      "default": "12000",
+      "help": "Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s; 12000 leaves headroom and costs 192. Higher is only worth it on a wired network."
+    },
+    "buffer_ms": {
+      "type": "number",
+      "label": "Buffer (ms)",
+      "default": 120,
+      "help": "How much audio to hold before playing, to ride out network jitter. Lower is more responsive; raise it if you hear dropouts. 120 ms is comfortable on a LAN, 300+ on patchy Wi-Fi."
+    }
+  }
+}

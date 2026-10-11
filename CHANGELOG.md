@@ -6,6 +6,22 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **Hear the radio in the browser, including from another machine.** A
+  new **Receive audio** card plays the receiver's audio in a tile, which
+  is what was missing for operating from another PC on the network — the
+  rig control card already worked from anywhere the board was reachable.
+  Measured against a real sound card: nothing dropped over a minute, 31 ms
+  from the radio to the browser, 235 kbit/s. It uses ordinary polling, so
+  there is no new dependency and nothing new is bundled into the build.
+  Stop genuinely releases the sound card, so it can be handed to another
+  program. **Note that the board still has no authentication** — see the
+  warning in the docs before binding it to a network.
+- `HD.cardRaw()` and `HD.cardPath()` for cards that serve something other
+  than JSON. `HD.card()` parses every reply, so audio, images or files
+  previously meant hand-rolling `fetch` — and hand-rolling the tile uid
+  with it, which is easy to leave out and silently wrong.
+
 ### Fixed
 - **Every card got about fifteen times faster to talk to.** A card
   request was 34.5 ms at the median and 43.7 ms at the 95th percentile;
