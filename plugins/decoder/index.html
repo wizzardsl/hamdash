@@ -152,7 +152,7 @@ async function setRunning(on, { save = true } = {}) {
 }
 
 async function tick() {
-  if (!running) return;
+  if (!running || HD.hidden) return;
   let d;
   try {
     d = await HD.card('decoder', `/api/text?since=${seq}`);
@@ -206,6 +206,16 @@ function applyWrap() {
 }
 
 $('#run').onclick = () => setRunning(!running);
+
+// Behind another tab, the sound card goes back - the same release Stop does,
+// without changing what Stop is set to, so coming back resumes rather than
+// needing a press. Without this a decoder parked on a background tab holds
+// the radio's audio against WSJT-X for as long as the board is open.
+HD.onVisible((on) => {
+  if (!running) return;
+  if (on) { seq = 0; tick(); }
+  else HD.card('decoder', '/api/stop', {}).catch(() => {});
+});
 
 $('#clear').onclick = async () => {
   try {

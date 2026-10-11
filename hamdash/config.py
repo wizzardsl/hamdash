@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent
@@ -109,6 +110,104 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
+# --------------------------------------------------------------- stacking
+# A tile is a box on the grid holding one or more cards, shown one at a time
+# behind a tab strip. A plain tile is the same thing with one card in it, so
+# there is one shape in the file and one code path rather than two:
+#
+#   {"uid": "t1", "x": 0, "y": 0, "w": 5, "h": 4, "active": "t1",
+#    "cards": [{"uid": "t1", "card": "logbook", "settings": {}},
+#              {"uid": "a9f", "card": "spots",  "settings": {}}]}
+#
+# **A card keeps its uid wherever it goes.** Per-instance state hangs off it
+# (invariant 5) - the spectrum's audio input, the decoder's source, a
+# web_embed's URL - so docking a card into a stack or pulling it back out
+# must not change it, or the operator's settings disappear at the exact
+# moment they are rearranging the board.
+#
+# **A tile's own uid is the uid of the card it was born with**, which is what
+# lets every existing layout upgrade without rewriting a single id: a flat
+# tile becomes a stack of one and nothing keyed on that uid notices. The two
+# meanings stay distinct afterwards - pull that first card out and the tile
+# keeps the uid while the card takes its own elsewhere - so they are looked
+# up by different methods: `tile()` finds a card, `stack()` finds its box.
+
+# What each may carry. Anything else is dropped, so a hand-edited or older
+# file cannot smuggle through a field that something later reads as geometry.
+ENTRY_KEYS = ("uid", "card", "settings", "title", "url")
+STACK_KEYS = ("uid", "x", "y", "w", "h", "active", "cards", "popped",
+              "pop_w", "pop_h", "on_top", "from_stack")
+
+
+def new_uid() -> str:
+    return uuid.uuid4().hex[:7]
+
+
+def _entry(raw) -> dict | None:
+    """One card in a tile, or None if it is not one."""
+    if not isinstance(raw, dict) or not raw.get("card"):
+        return None
+    out = {k: raw[k] for k in ENTRY_KEYS if k in raw}
+    out["card"] = str(out["card"])
+    out["uid"] = str(out.get("uid") or "") or new_uid()
+    out["settings"] = dict(out.get("settings") or {})
+    return out
+
+
+def normalise_tile(raw) -> dict | None:
+    """One tile from the file in the stack shape, or None if it is not one.
+
+    Reads both the old flat tile and the new stack, because a layout written
+    by an older hamdash is what every upgrade starts from.
+    """
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get("cards"), list):
+        entries = [e for e in (_entry(c) for c in raw["cards"]) if e]
+    else:
+        one = _entry(raw)                       # the old flat shape
+        entries = [one] if one else []
+    if not entries:
+        return None
+
+    out = {k: raw[k] for k in STACK_KEYS if k in raw and k != "cards"}
+    out["cards"] = entries
+    out["uid"] = str(out.get("uid") or "") or entries[0]["uid"]
+    # An `active` naming a card that is not here is worse than none at all:
+    # the board draws an empty box under a working tab strip.
+    if out.get("active") not in [e["uid"] for e in entries]:
+        out["active"] = entries[0]["uid"]
+    out["popped"] = bool(out.get("popped"))
+    for key, fallback in (("x", 0), ("y", 0), ("w", 4), ("h", 3)):
+        try:
+            out[key] = int(out.get(key, fallback))
+        except (TypeError, ValueError):
+            out[key] = fallback
+    return out
+
+
+def normalise_layout(tiles) -> list[dict]:
+    """The whole board, in the stack shape, with every uid distinct.
+
+    Two cards sharing a uid would share their settings and their identity
+    through the proxy, which shows up as one tile changing when you edit a
+    different one.
+    """
+    out, seen = [], set()
+    for raw in tiles if isinstance(tiles, list) else []:
+        tile = normalise_tile(raw)
+        if not tile:
+            continue
+        for entry in tile["cards"]:
+            if entry["uid"] in seen:
+                entry["uid"] = new_uid()
+            seen.add(entry["uid"])
+        if tile["active"] not in [e["uid"] for e in tile["cards"]]:
+            tile["active"] = tile["cards"][0]["uid"]
+        out.append(tile)
+    return out
+
+
 class Config:
     def __init__(self, home: Path | str | None = None) -> None:
         # Absolute, always. A card process runs with its own working
@@ -166,22 +265,45 @@ class Config:
                 print(f"{self.layout_path}: expected a list of tiles, got "
                       f"{type(tiles).__name__}; starting with a blank board")
                 return []
-            return tiles
-        return [  # first run: the three cards most people want
+            # Every read goes through this, so an old flat layout is a stack
+            # of one from the first moment anything looks at it and nothing
+            # downstream has to know there were ever two shapes.
+            return normalise_layout(tiles)
+        return normalise_layout([  # first run: the cards most people want
             {"uid": "t1", "card": "rig_control", "x": 0, "y": 0, "w": 4, "h": 3},
             {"uid": "t2", "card": "logbook", "x": 4, "y": 0, "w": 5, "h": 5},
             {"uid": "t3", "card": "beacon_map", "x": 9, "y": 0, "w": 3, "h": 4},
-        ]
+        ])
 
     def save_layout(self, tiles: list[dict]) -> None:
-        self.layout_path.write_text(json.dumps(tiles, indent=2))
+        # Normalised on the way in as well as the way out: a PUT is the
+        # board talking, but it is also the one place a bad layout could be
+        # written and then fail on the next load with the app already shut.
+        self.layout_path.write_text(
+            json.dumps(normalise_layout(tiles), indent=2))
+
+    # ------------------------------------------------------------- lookups
+    def entries(self) -> list[dict]:
+        """Every card on the board, whatever tile it sits in."""
+        return [e for t in self.load_layout() for e in t["cards"]]
 
     # ------------------------------------------------------- tile settings
     # Settings live on the tile, not in config.json: two web_embed tiles are
     # two different pages, and settings that travel with the tile survive
     # dragging, popping out and being removed.
     def tile(self, uid: str) -> dict | None:
-        return next((t for t in self.load_layout() if t.get("uid") == uid), None)
+        """The *card* with this uid, wherever it is sitting.
+
+        Named `tile` because that is what a uid has always meant to a card:
+        one card process serves every tile of its kind and this is the one
+        asking. A card in a stack is still a tile to the card.
+        """
+        return next((e for e in self.entries() if e["uid"] == uid), None)
+
+    def stack(self, uid: str) -> dict | None:
+        """The box a card sits in - its geometry, its tabs, its siblings."""
+        return next((t for t in self.load_layout()
+                     if any(e["uid"] == uid for e in t["cards"])), None)
 
     def tile_settings(self, uid: str) -> dict:
         return dict((self.tile(uid) or {}).get("settings") or {})
@@ -189,11 +311,16 @@ class Config:
     def set_tile_settings(self, uid: str, values: dict) -> dict:
         tiles = self.load_layout()
         for t in tiles:
-            if t.get("uid") == uid:
-                t["settings"] = {**(t.get("settings") or {}), **(values or {})}
-                self.save_layout(tiles)
-                return t["settings"]
+            for entry in t["cards"]:
+                if entry["uid"] == uid:
+                    entry["settings"] = {**(entry.get("settings") or {}),
+                                         **(values or {})}
+                    self.save_layout(tiles)
+                    return entry["settings"]
         raise KeyError(f"no tile {uid} on the board")
 
     def active_card_ids(self) -> set[str]:
-        return {t.get("card") for t in self.load_layout() if t.get("card")}
+        """Which cards need a process. A card parked on a background tab is
+        still on the board, so it still counts - reaping it would stop the
+        process behind a tab the operator is one click away from."""
+        return {e["card"] for e in self.entries() if e.get("card")}

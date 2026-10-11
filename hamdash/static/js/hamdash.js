@@ -140,7 +140,22 @@
       if (e.source !== window.parent) return;
       const d = e.data;
       if (d && d.__hamdash === 'event' && d.evt) deliver(d.evt);
+      if (d && d.__hamdash === 'visible') setVisible(!!d.visible);
     });
+  }
+
+  // Whether this card is the one on show. A card can be a tab in a stack,
+  // and a tab that is not on top is still loaded and still running - that is
+  // deliberate, so switching tabs does not reload the card and lose what was
+  // on screen. The browser will not tell it: a CSS-hidden iframe gets no
+  // visibilitychange of its own. So the board says so, and a card that holds
+  // a sound card or polls somebody's server can let go while nobody is
+  // looking. Ignoring this is fine for a card that only draws.
+  function setVisible(on) {
+    if (HD.visible === on) return;
+    HD.visible = on;
+    HD.hidden = !on;
+    window.dispatchEvent(new CustomEvent('hamdash:visible', { detail: on }));
   }
 
   function deliver(evt) {
@@ -195,6 +210,17 @@
     // Which tile this page is. One card process serves every tile of its
     // kind, so anything per-instance hangs off this.
     tileUid: new URLSearchParams(location.search).get('uid') || '',
+
+    // Is this card the one being looked at? A card that is a background tab
+    // in a stack is loaded and running but not on screen, and nothing in the
+    // browser will say so. True until told otherwise, so a card that never
+    // listens behaves exactly as it always did.
+    visible: true,
+    hidden: false,
+    onVisible(fn) {
+      window.addEventListener('hamdash:visible', (e) => fn(e.detail));
+      return HD.visible;
+    },
 
     on(pattern, fn) {
       if (framed && window.__hamdashPrime) window.__hamdashPrime();

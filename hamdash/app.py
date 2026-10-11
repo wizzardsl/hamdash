@@ -262,8 +262,12 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.get("/api/tiles")
     def tiles_list():
         """Tiles, optionally just the ones belonging to one card."""
+        # Cards, not boxes. A card asking "what tiles do I have" means its
+        # own instances, and one of them may be a tab in a stack - which is
+        # still a tile as far as the card is concerned.
         want = request.args.get("card")
-        out = [t for t in cfg.load_layout() if not want or t.get("card") == want]
+        out = [dict(e) for e in cfg.entries()
+               if not want or e.get("card") == want]
         for t in out:
             c = cards.get(t.get("card"))
             t["settings"] = {**(c.defaults() if c else {}),

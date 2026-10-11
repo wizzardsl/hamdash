@@ -139,6 +139,11 @@ function present(latest) {
 }
 
 async function tick() {
+  // A tab nobody is looking at keeps running - that is what makes switching
+  // back instant - so the only thing stopping it from holding the radio's
+  // audio for ever is this. The card closes an input nobody has asked for
+  // in thirty seconds, and not asking is how it finds out.
+  if (HD.hidden) return;
   try {
     const want = state.bins || 0;
     const d = await HD.card('spectrum',

@@ -101,6 +101,20 @@ Shared services are opt-in, not mandatory: `/api/radio/*`, `/api/lookup/<call>`,
 `/api/grid/distance`, `/api/log`, `/api/bands`, `/api/publish`, `/api/events`.
 A card that wants to ignore all of it and just draw a waterfall can.
 
+**If your card holds something, listen for `HD.visible`.** A card can be a tab
+in a stack, and a tab that is not on top is still loaded and still running —
+deliberately, so switching tabs does not reload it. Nothing in the browser
+will tell it, so the board does:
+
+```js
+HD.onVisible((on) => { if (!on) releaseTheThing(); else carryOn(); });
+if (HD.hidden) return;              // inside a polling loop
+```
+
+Ignore it and your card behaves exactly as it always did. Honour it and a
+card parked behind a tab stops holding the sound card, or stops asking
+somebody's server for a list nobody is reading.
+
 ## Moving cards around
 
 Drag a tile by its header, resize it from the bottom-right corner — no mode to
@@ -124,6 +138,26 @@ the toast offers **Undo**, which puts them back with their settings intact.
 
 **Browse & drag…** in that menu opens the older sheet, where a row can be
 dragged out and dropped exactly where you want it on the board.
+
+## Stacking cards
+
+Drag a tile onto another and it docks as a **tab**: one box, a strip of names
+across the header, one card showing at a time. Drag a tab off the strip and it
+comes back out as its own tile. Dropping a stack onto another joins them.
+
+This is the board's doing, not the cards' — nothing in a card knows it is in
+a stack, so anything you write stacks like everything else.
+
+A tab you are not looking at **stays loaded and keeps running**, which is what
+makes switching back instant and why a half-typed contact is still there when
+you return. Cards that hold something are told when they go out of sight so
+they can let go: the decoder and the spectrum give the sound card back, and
+the spots card stops polling. They pick straight up again when you switch
+back.
+
+The card you drag reloads when it lands — moving an iframe to a new parent
+restarts it, and there is no way round that in a browser. The cards already in
+the tile are left alone.
 
 ## Popping a card out
 

@@ -133,6 +133,55 @@ html, body {
 .tile-status.up { background: var(--signal); }
 .tile-status.down { background: var(--alert); }
 .tile-spacer { flex: 1; }
+
+/* ---- tabs -----------------------------------------------------------
+   A tile with one card shows its name and nothing else, so a board that
+   nobody has stacked looks exactly as it always did. The strip only turns
+   into tabs when there is a choice to make. */
+.tile-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.tile-tabs .tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: inherit; font-size: 12px; color: var(--ink);
+  background: none; border: 0; border-radius: var(--radius);
+  padding: 2px 4px; cursor: pointer; max-width: 11em;
+}
+.tile-tabs .tab-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tile-tabs .tab-dot { display: none; }
+.tile-tabs .tab-x { display: none; }
+/* Only a stack has anything to switch between. */
+.tile.stacked .tile-tabs { gap: 1px; }
+.tile.stacked .tab {
+  color: var(--muted);
+  border: 1px solid transparent;
+  padding: 1px 5px;
+}
+.tile.stacked .tab:hover { color: var(--ink); background: var(--panel); }
+.tile.stacked .tab.on {
+  color: var(--ink); background: var(--panel);
+  border-color: var(--rule); border-bottom-color: var(--panel);
+}
+.tile.stacked .tab-dot {
+  display: block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--grip); flex: none;
+}
+.tile.stacked .tab-dot.up { background: var(--signal); }
+.tile.stacked .tab-dot.down { background: var(--alert); }
+.tile.stacked .tab-x { display: none; color: var(--muted); padding: 0 1px; }
+.tile.stacked .tab.on .tab-x,
+.tile.stacked .tab:hover .tab-x { display: inline; }
+.tile.stacked .tab-x:hover { color: var(--alert); }
+/* The tile's own dot would be a second, quieter copy of the active tab's. */
+.tile.stacked .tile-status { display: none; }
+
+/* Where a dragged tile would dock, and the tile that is about to go in. */
+.tile.dock-target {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tile.will-dock { opacity: .75; }
+.tile.will-dock .tile-body { opacity: .4; }
 .tile-btn {
   font: inherit; font-size: 12px;
   background: none; border: 0; color: var(--muted);
@@ -141,7 +190,12 @@ html, body {
 .tile-btn:hover { color: var(--ink); background: var(--panel); }
 .tile-grip { cursor: grab; color: var(--grip); letter-spacing: 1px; }
 .arranging .tile-head { cursor: grab; }
-.tile-body { flex: 1; min-height: 0; }
+.tile-body { flex: 1; min-height: 0; position: relative; }
+/* Every card in a stack stays mounted; only one is on show. `display: none`
+   rather than visibility or opacity, because a hidden-but-laid-out iframe
+   still gets resize work done on it for a tab nobody is looking at. */
+.tile-card { display: none; width: 100%; height: 100%; }
+.tile-card.on { display: block; }
 .tile-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--panel); }
 
 .resize {

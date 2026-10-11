@@ -128,6 +128,31 @@ nothing, because the card never sees it. It had been missing since the
 helper was written, which is why the spectrum card's per-tile audio input
 had never taken effect.
 
+**5a. A tile is a box of cards, not a card.** Stacking put tabs on a tile,
+so `layout.json` holds `{uid, x, y, w, h, active, cards: [{uid, card,
+settings}, ...]}` and a plain tile is a stack of one - one shape in the file
+and one code path above it. `config.normalise_layout` reads the old flat
+shape too, because that is what every upgrade starts from.
+**A card keeps its uid wherever it goes**, because per-instance state hangs
+off it; docking and undocking move the entry rather than rebuilding it, or
+the operator's settings vanish at the moment they rearrange the board. **A
+tile's uid is the uid of the card it was born with**, which is what lets
+every existing layout upgrade without rewriting an id. The two meanings part
+company as soon as that first card is pulled out, so they are looked up
+separately: `cfg.tile(uid)` finds a *card*, `cfg.stack(uid)` finds its box.
+`tests/test_layout.py` covers the upgrade and the repairs.
+
+**5b. A background tab stays loaded, and must be told it is hidden.** It
+keeps running so that switching back is instant and nothing on screen is
+lost - which means a hidden spectrum or decoder would hold the sound card
+for ever. A CSS-hidden iframe gets no `visibilitychange` of its own, so the
+board posts one: `HD.visible`, `HD.hidden`, and a `hamdash:visible` event,
+defaulting to visible so a card that never listens is unaffected. The board
+cannot know what a card holds; it can only say when nobody is looking.
+Moving an iframe to a new parent reloads it, so the card being *dragged*
+restarts when it docks or undocks while its new neighbours do not - that is
+the DOM, not a bug to fix.
+
 **6. Cards are spawned through `proc.card_command()`, never `sys.executable`
 directly.** From source that is the interpreter; frozen, `sys.executable` is
 the hamdash binary, so the app is its own card runner and re-execs itself as
@@ -547,7 +572,15 @@ QRM or fading.
 - **`setPointerCapture` on `pointerdown` makes every child unclickable**: the
   following `click` goes to the captured element, not to what is under the
   cursor. Capture once a drag has actually started (a few pixels of movement),
-  and suppress the click that ends a drag.
+  and suppress the click that ends a drag. It also *throws* if the pointer is
+  no longer active, and uncaught that leaves a drag half built - the class is
+  on, the listeners are not, and the tile follows nothing and will not let
+  go - so the call is wrapped.
+- **`elementFromPoint` cannot find a drop target under a drag**: the dragged
+  tile is under the cursor by definition, so `_tileUnder` walks the tiles and
+  compares rectangles instead.
+- **A tab is torn off, not dragged**: a tab has to travel `TEAR_OFF` pixels
+  before it leaves its stack, or every click on one would undock it.
 - Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per
   wheel notch is the difference between a map and a slideshow.
 - **Longitudes are unwrapped, never split at the antimeridian.** Splitting a

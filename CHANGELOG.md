@@ -7,6 +7,22 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Cards can be stacked.** Drag one tile onto another and it docks as a tab;
+  the tile grows a strip and shows one card at a time. Drag a tab off the
+  strip to pull it back out into a tile of its own. It is board machinery, not
+  card machinery — nothing in any card knows about it, so a card somebody
+  writes tomorrow stacks like the rest.
+  **A background tab stays loaded and running**, so switching back is instant
+  and nothing on screen is lost. Because a CSS-hidden iframe gets no
+  `visibilitychange` of its own, the board tells it instead: `HD.visible`,
+  `HD.hidden` and a `hamdash:visible` event. The spectrum and decoder cards
+  use it to let go of the sound card while nobody is looking, and the spots
+  card to stop asking four hobby servers for a list nobody is reading. A card
+  that only draws can ignore it and behaves exactly as before.
+  Popping out a tab takes it out of its stack and puts it back there when it
+  returns. `layout.json` gains the shape to hold this, and old layouts upgrade
+  on load — every tile keeps its uid, so per-tile settings come through
+  untouched.
 - **A spots card.** Who is on the air now, from four sources on one list —
   **Parks on the Air**, **Summits on the Air** and the **DX cluster** (via DX
   Summit) — with a second tab for **contests**: what is running right now

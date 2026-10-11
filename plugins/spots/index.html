@@ -223,6 +223,10 @@ function paint() {
 
 // ---- talking to the card --------------------------------------------------
 async function loadSpots(force) {
+  // Behind another tab there is nobody to show it to, and these are four
+  // hobby servers. The card's own floor would hold anyway; this is not
+  // asking at all.
+  if (HD.hidden && !force) return;
   try {
     data = await HD.card('spots', `/api/spots${force ? '?force=1' : ''}`);
     $('#err').textContent = '';
@@ -232,6 +236,7 @@ async function loadSpots(force) {
 }
 
 async function loadContests(force) {
+  if (HD.hidden && !force) return;
   try {
     cons = await HD.card('spots', `/api/contests${force ? '?force=1' : ''}`);
   } catch (e) { $('#err').textContent = e.message; return; }

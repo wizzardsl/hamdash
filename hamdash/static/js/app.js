@@ -65,31 +65,35 @@
     cols: 12,
     rowPx: 80,
     onChange: saveLayout,
-    onPopOut: (tile) => HDPopout.popOut(tile),
-    onPopIn: (tile) => HDPopout.popIn(tile.uid),
-    onReopen: (tile) => HDPopout.popOut(tile),
+    onPopOut: (entry) => HDPopout.popOut(entry),
+    onPopIn: (entry) => HDPopout.popIn(entry.uid),
+    onReopen: (entry) => HDPopout.popOut(entry),
     isPoppedOpen: (uid) => HDPopout.isOpen(uid),
-    onSettings: (tile) => openTileSettings(tile),
-    renderBody: (tile, host) => {
-      const card = cards.find((c) => c.id === tile.card);
+    onSettings: (entry) => openTileSettings(entry),
+    // One card, in its holder inside the tile. A tile may hold several and
+    // shows one at a time; every one of them is mounted, so this runs once
+    // per card rather than once per tile.
+    renderBody: (entry, host) => {
+      const card = cards.find((c) => c.id === entry.card);
       const frame = document.createElement('iframe');
-      const st = tile.settings || {};
+      const st = entry.settings || {};
       if (card && card.kind === 'url') {
-        frame.src = st.url || tile.url || card.url;
+        frame.src = st.url || entry.url || card.url;
       } else {
         // the tile uid goes with it: one process, many tiles
-        frame.src = `/cards/${tile.card}/?uid=${encodeURIComponent(tile.uid)}`;
+        frame.src = `/cards/${entry.card}/?uid=${encodeURIComponent(entry.uid)}`;
       }
-      frame.setAttribute('title', tile.title || tile.card);
+      frame.dataset.uid = entry.uid;
+      frame.setAttribute('title', entry.title || entry.card);
       frame.setAttribute('referrerpolicy', 'no-referrer');
       host.appendChild(frame);
-      board.setConfigurable(tile.uid, !!(card && card.schema && card.schema.length));
+      board.setConfigurable(entry.uid, !!(card && card.schema && card.schema.length));
       if (card && card.kind === 'python') {
         HD.post(`/api/cards/${card.id}/start`).then((i) => {
           board.status(card.id, i.status);
         }).catch(() => board.status(card.id, 'failed'));
       } else {
-        board.status(tile.card, 'n/a');
+        board.status(entry.card, 'n/a');
       }
     },
   });
@@ -101,10 +105,13 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       HD.put('/api/layout', {
-        tiles: tiles.map(({ uid, card, x, y, w, h, title, url, settings,
-                           popped, pop_w, pop_h, on_top }) =>
-          ({ uid, card, x, y, w, h, title, url, settings: settings || {},
-             popped: !!popped, pop_w, pop_h, on_top })),
+        tiles: tiles.map(({ uid, x, y, w, h, active, cards: inside,
+                           popped, pop_w, pop_h, on_top, from_stack }) => ({
+          uid, x, y, w, h, active, popped: !!popped, pop_w, pop_h, on_top,
+          from_stack,
+          cards: (inside || []).map(({ uid: cu, card, title, url, settings }) =>
+            ({ uid: cu, card, title, url, settings: settings || {} })),
+        })),
       }).catch((e) => toast(e.message));
     }, 300);
   }
@@ -249,14 +256,14 @@
   }
 
   // ---- cards menu -----------------------------------------------------
-  // Ticking a card puts one tile on the board; unticking takes its tiles off.
-  // A card can legitimately have several tiles (two web_embed tiles are two
-  // pages), so the row shows the count and unticking several asks first -
-  // each tile carries its own settings and they go with it.
+  // Ticking a card puts one tile on the board; unticking takes every copy
+  // off, including the ones parked as tabs in a stack. A card can
+  // legitimately have several (two web_embed tiles are two pages), so the
+  // row shows the count - each carries its own settings and they go with it.
   const menuEl = () => $('#cards-menu');
 
   function tilesOf(cardId) {
-    return board.tiles.filter((t) => t.card === cardId);
+    return board.cards.filter((c) => c.card === cardId);
   }
 
   function renderCardsMenu() {
@@ -309,17 +316,22 @@
                   min_w: c.min_w, min_h: c.min_h, url: c.url });
       toast(`${c.name} added`);
     } else {
-      // Undo rather than a confirm dialog. A card can have several tiles and
-      // each carries its own settings, so taking them off is worth being able
-      // to take back - and a browser confirm() is the one bit of chrome this
-      // app has never used, for the same reason it never uses window.open.
-      const restore = mine.map((t) => ({ ...t, popped: false }));
-      mine.forEach((t) => board.remove(t.uid));
+      // Undo rather than a confirm dialog. A card can have several copies,
+      // each carries its own settings, and one of them may be the third tab
+      // of a stack - so the whole board is kept and put back, which is the
+      // only way "where it was" survives. A browser confirm() is the one bit
+      // of chrome this app has never used, for the same reason it never uses
+      // window.open.
+      const before = JSON.parse(JSON.stringify(board.tiles));
+      mine.forEach((entry) => board.remove(entry.uid));
       toast(`${c.name} removed${mine.length > 1 ? ` (${mine.length} tiles)` : ''}`,
             { label: 'Undo',
               fn: () => {
-                restore.forEach((t) => board.add(t));   // add() keeps the uid,
-                renderCardsMenu();                      // so settings come back
+                // Every card is remounted, so the board reloads - the price
+                // of putting a tab back exactly where it was.
+                board.setTiles(before);
+                saveLayout(board.tiles);
+                renderCardsMenu();
                 toast(`${c.name} restored`);
               } });
     }
@@ -1085,8 +1097,8 @@
   // happen here. The board already has every manifest.
   window.__hamdashRelayFilter = (frame, topic) => {
     const uid = new URL(frame.src, location.href).searchParams.get('uid');
-    const tile = (board.tiles || []).find((t) => t.uid === uid);
-    const card = tile && cards.find((c) => c.id === tile.card);
+    const entry = board.get(uid);
+    const card = entry && cards.find((c) => c.id === entry.card);
     if (!card) return true;                       // not a card frame
     const want = card.subscribes || [];
     if (!want.length) return true;                // undeclared means everything
@@ -1112,8 +1124,10 @@
       return;
     }
     if (backend === 'pywebview') {
+      // A popped tile holds exactly one card; the window is its page.
       for (const t of board.tiles.filter((x) => x.popped)) {
-        try { await HDPopout.popOut(t); } catch (e) { toast(e.message); }
+        const entry = board.get(t.active) || t.cards[0];
+        try { await HDPopout.popOut(entry); } catch (e) { toast(e.message); }
       }
     }
   });
@@ -1121,7 +1135,8 @@
   // reopen windows that were popped out last session. Only the native shell
   // can do this unprompted; browsers need a click, so those tiles show a
   // button instead of silently failing a blocked window.open.
-  board.tiles.filter((t) => t.popped).forEach((t) => board.markPopped(t.uid, true));
+  board.tiles.filter((t) => t.popped)
+    .forEach((t) => board.markPopped(t.active, true));
 
   // keep tile status dots honest
   setInterval(async () => {

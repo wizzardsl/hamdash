@@ -66,13 +66,18 @@ class TestLayoutLoading(unittest.TestCase):
         return Config(home).load_layout()
 
     def test_a_list_of_tiles(self):
-        self.assertEqual(self.layout('[{"uid":"a","card":"x"}]'),
-                         [{"uid": "a", "card": "x"}])
+        """Loaded in the stack shape: a tile is a box of cards, and a plain
+        one is a box of one, so there is a single code path above this.
+        tests/test_layout.py covers the upgrade itself."""
+        got = self.layout('[{"uid":"a","card":"x"}]')
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["uid"], "a")
+        self.assertEqual([c["card"] for c in got[0]["cards"]], ["x"])
 
     def test_a_hand_edited_wrapper_is_unwrapped(self):
         """{"tiles": [...]} is the obvious thing to write by hand."""
-        self.assertEqual(self.layout('{"tiles":[{"uid":"a","card":"x"}]}'),
-                         [{"uid": "a", "card": "x"}])
+        got = self.layout('{"tiles":[{"uid":"a","card":"x"}]}')
+        self.assertEqual([c["card"] for t in got for c in t["cards"]], ["x"])
 
     def test_wrong_shape_gives_a_blank_board_not_a_500(self):
         """This used to reach /api/tiles/<uid>/settings and fail there with
@@ -88,7 +93,9 @@ class TestLayoutLoading(unittest.TestCase):
         home = Path(tempfile.mkdtemp(prefix="hamdash-test-"))
         tiles = Config(home).load_layout()
         self.assertTrue(tiles)
-        self.assertTrue(all("uid" in t and "card" in t for t in tiles))
+        self.assertTrue(all("uid" in t and t.get("cards") for t in tiles))
+        self.assertTrue(all(c.get("card") and c.get("uid")
+                            for t in tiles for c in t["cards"]))
 
 
 class TestDefaultsAreNotShared(unittest.TestCase):
