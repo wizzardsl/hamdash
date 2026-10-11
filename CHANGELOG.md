@@ -4,7 +4,7 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
-## [Unreleased]
+## [0.4.0]
 
 ### Added
 - **Cards can be stacked.** Drag one tile onto another and it docks as a tab;
