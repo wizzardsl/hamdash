@@ -167,8 +167,11 @@ async function boot() {
     b.textContent = m.label;
     b.onclick = async () => {
       try {
-        await HD.radio.freq(m.hz);
-        paint(await HD.radio.mode(m.mode));
+        // Mode before frequency: a radio applies its CW offset on entering
+        // CW, so the other order leaves the dial that offset away from
+        // where the memory said.
+        await HD.radio.mode(m.mode);
+        paint(await HD.radio.freq(m.hz));
       } catch (e) { fail(e); }
     };
     $('#mem').appendChild(b);

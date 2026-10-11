@@ -292,8 +292,13 @@ $('#pane').addEventListener('click', async (e) => {
   if (!b) return;
   const hz = Number(b.dataset.tune);
   try {
-    await HD.radio.freq(hz);
+    // Mode first, then the frequency. A radio applies its CW offset when
+    // it *enters* CW, so setting the frequency and then the mode lands you
+    // the width of that offset away from the station - 700 Hz on an FT-890,
+    // which is a different signal, and reads as the spot being wrong rather
+    // than as hamdash tuning wrong.
     if (b.dataset.mode) await HD.radio.mode(b.dataset.mode).catch(() => {});
+    await HD.radio.freq(hz);
     $('#err').textContent = '';
   } catch (err) { $('#err').textContent = err.message; }
   // Anything else that wants to know what we are looking at. Within this

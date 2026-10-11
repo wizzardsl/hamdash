@@ -415,6 +415,14 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   owns the rig type, port and baud, and two programs cannot share a serial
   port - that is the whole reason to use it. `configure()` opens their dialog
   rather than offering a second set of fields to disagree with it.
+- **Mode before frequency, always.** A radio applies its CW offset when it
+  *enters* CW, so setting the frequency first and the mode second leaves the
+  dial that offset away from where you aimed - 700 Hz on an FT-890, which is
+  a different signal entirely, and reads as the spot being wrong rather than
+  as hamdash tuning wrong. Measured both ways on the air through flrig:
+  freq-then-mode put a 7.037000 CW spot on 7.037700, mode-then-freq lands on
+  7.037000. The spots card's tune and the rig card's memory buttons both
+  order it that way.
 - **flrig is XML-RPC on 127.0.0.1:12345**, and three of its habits matter.
   `rig.get_vfo` returns a **string** of hertz. `rig.get_modes` returns the
   radio's own names with the filter welded on - an FT-890 gives LSB, USB,
@@ -865,6 +873,10 @@ the live service.
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
 - `cty.dat` for real DXCC, replacing the short PREFIX table.
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
+- **PTT has never been keyed by hamdash, on any backend.** Reading and tuning
+  are proven on the air through flrig against an FT-890; `set_ptt` is written
+  and has never put a transmitter on. It is the one write that radiates, so
+  it wants a deliberate test with the operator present and a dummy load.
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,

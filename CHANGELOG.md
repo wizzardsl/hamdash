@@ -6,6 +6,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **Clicking a CW spot tuned 700 Hz away from the station.** A radio applies
+  its CW offset when it *enters* CW, so setting the frequency and then the
+  mode leaves the dial that offset from where the spot said — which reads as
+  the spot being wrong rather than as hamdash tuning wrong. The spots card
+  and the rig card's memory buttons set the mode first now. Measured on an
+  FT-890 through flrig: frequency-then-mode landed on 7.037700 for a
+  7.037000 spot, mode-then-frequency lands on 7.037000.
+
 ### Changed
 - **The board's layout model is testable.** What a board *is* — normalising,
   docking, undocking, overlap, what reaches `layout.json` — moved out of
