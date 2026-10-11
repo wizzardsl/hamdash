@@ -1,0 +1,62 @@
+{
+  "id": "spots",
+  "name": "Spots",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Who is on the air now: POTA, SOTA, the cluster, and what contest is running",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 6,
+  "h": 5,
+  "min_w": 4,
+  "min_h": 3,
+  "permissions": [
+    "radio"
+  ],
+  "publishes": [
+    "spots.picked"
+  ],
+  "settings": {
+    "show_pota": {
+      "type": "bool",
+      "label": "Parks on the Air",
+      "default": true
+    },
+    "show_sota": {
+      "type": "bool",
+      "label": "Summits on the Air",
+      "default": true
+    },
+    "show_dx": {
+      "type": "bool",
+      "label": "DX cluster",
+      "default": true,
+      "help": "Human spots, from DX Summit."
+    },
+    "max_age_min": {
+      "type": "number",
+      "label": "Hide spots older than (minutes)",
+      "default": 30,
+      "help": "A spot is somebody who was there a moment ago. An hour is the most this card will show whatever you put here."
+    },
+    "bands": {
+      "type": "string",
+      "label": "Bands",
+      "default": "",
+      "help": "Comma separated, e.g. '20m, 40m'. Empty shows every band. The tile's own filter bar does the same thing without saving it."
+    },
+    "modes": {
+      "type": "string",
+      "label": "Modes",
+      "default": "",
+      "help": "Comma separated, e.g. 'CW, SSB'. Empty shows every mode. Cluster spots carry no mode at all and are kept whatever this says."
+    },
+    "tune_on_click": {
+      "type": "bool",
+      "label": "Clicking a frequency tunes the radio",
+      "default": true,
+      "help": "Off makes the frequency ordinary text, for a station where the radio is being driven by something else."
+    }
+  }
+}

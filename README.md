@@ -530,6 +530,35 @@ of a dead band teaches you to ignore it. An unknown pattern is printed as the
 dots and dashes that were heard, `<-.-.-.>`, because a silent drop looks
 exactly like a quiet band.
 
+## Spots
+
+The `spots` card answers "who is on, and why is the band full". It puts four
+sources on one list:
+
+| source | what it is | where from |
+|---|---|---|
+| **POTA** | Parks on the Air activations | `api.pota.app` |
+| **SOTA** | Summits on the Air activations | `api2.sota.org.uk` |
+| **Cluster** | human DX spots | [DX Summit](https://www.dxsummit.fi/) |
+| **Contests** | what is running and what is next | [QSO Dates](https://www.qsodates.com/) |
+
+The chips along the filter bar are the legend as well as the switch — the
+colour beside a row is the colour on its chip. Beside them: band, mode, and a
+box that searches callsign, park, summit, spotter and comment at once.
+**Clicking a frequency tunes the radio** (and sets the mode when the spot
+carries one; cluster spots do not). It is the frequency rather than the whole
+row on purpose, so a mis-click cannot move the rig.
+
+The **Contests** tab leads with what is on *now* and how long is left, because
+a contest that started yesterday is exactly the one that explains the band and
+exactly the one a list sorted by start time has already scrolled past.
+
+All the filtering happens in the browser, over what was last fetched. Each
+source is asked at most once a minute, contests every six hours, and the cache
+is on disk so closing the app is not a way to ask again sooner. **Refresh**
+means "don't wait for the next poll"; it cannot ask more often than the floor
+allows. A source that is down keeps showing what it last gave, with its age.
+
 ## Logbook sync
 
 Settings → Integrations → Logbook sync. Credentials there, then Pull or Push.

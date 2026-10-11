@@ -7,6 +7,21 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A spots card.** Who is on the air now, from four sources on one list —
+  **Parks on the Air**, **Summits on the Air** and the **DX cluster** (via DX
+  Summit) — with a second tab for **contests**: what is running right now
+  with a countdown to the end of each, and what starts in the next fortnight.
+  Filter by source, band, mode and free text over callsign, park, summit,
+  spotter or comment; clicking a frequency tunes the radio.
+  Filtering happens entirely in the browser over what was already fetched,
+  because every one of these is somebody's hobby server: one fetch per source
+  per minute whatever the tile does, the cache is on disk so restarting does
+  not reset the floor, Refresh means "do not wait for the poll" rather than
+  "ask again now", and a source that is down is a note beside the rows it
+  last gave us rather than an empty card.
+  Contests come from QSO Dates' bulk export, fetched every six hours: their
+  keyed API allows twenty calls a day, which is not a dashboard, and the big
+  contest calendar everyone links to forbids automated access outright.
 - **flrig as a way into the radio.** A rig entry can be an flrig already
   running — host and port, nothing else, because flrig owns the rig type and
   the serial port exactly as OmniRig does. Worth having for the same reason:

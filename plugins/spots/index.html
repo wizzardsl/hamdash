@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  html, body { height: 100%; }
+  body { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+
+  .bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+  /* An author `display: flex` beats the user agent's `[hidden]`, so the
+     filter bar stayed on screen on the Contests tab, filtering nothing. */
+  .bar[hidden] { display: none; }
+  .bar .spacer { flex: 1; }
+  select, input, button { font: inherit; font-size: 12px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 2px 6px; }
+  button { cursor: pointer; }
+  button:hover:not([disabled]) { border-color: var(--accent); color: var(--accent); }
+  button[disabled] { opacity: .45; cursor: default; }
+  #q { width: 9em; }
+
+  /* The source chips are the filter and the legend at once: the colour
+     beside a row is the one on its chip, so nothing has to be looked up. */
+  .chip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+          border: 1px solid var(--rule); border-radius: var(--radius);
+          padding: 2px 7px; user-select: none; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .chip.off { opacity: .4; }
+  .chip.off .dot { background: var(--muted) !important; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tabs button.on { color: var(--accent); border-color: var(--accent); }
+  .tabs .count { font-family: var(--mono); opacity: .8; }
+
+  .scroll { flex: 1; min-height: 40px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px;
+       position: sticky; top: 0; background: var(--panel); z-index: 1;
+       padding: 2px 6px 3px; border-bottom: 1px solid var(--rule); }
+  td { padding: 2px 6px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tr:hover td { background: var(--panel-2); }
+  .mono { font-family: var(--mono); }
+  .src { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .call { font-family: var(--mono); font-weight: 600; }
+  .freq { font-family: var(--mono); }
+  button.freq { border: none; background: none; padding: 0; color: var(--accent);
+                text-decoration: underline dotted; }
+  .dim { color: var(--muted); }
+  .note { color: var(--muted); font-size: 11px; }
+  .note.warn { color: var(--alert); }
+  .ref { color: var(--muted); }
+  .empty { padding: 14px 6px; color: var(--muted); font-size: 12px; }
+
+  /* Contests. A running one is the answer to "why is the band full", so it
+     is the loud part and what is merely coming up is quiet. */
+  .con { border-bottom: 1px solid var(--rule); padding: 5px 6px; }
+  .con .name { font-weight: 600; }
+  .con.on .name { color: var(--accent); }
+  .con .meta { color: var(--muted); font-size: 11px; }
+  h4 { margin: 8px 6px 2px; font-size: 11px; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="tabs">
+    <button id="tab-spots" class="on" type="button">Spots <span class="count" id="n-spots"></span></button>
+    <button id="tab-contests" type="button">Contests <span class="count" id="n-contests"></span></button>
+  </span>
+  <span class="spacer"></span>
+  <span class="note" id="status"></span>
+  <button id="refresh" type="button" title="Ask the sources now, if their floor allows it">Refresh</button>
+</div>
+
+<div class="bar" id="filters">
+  <span class="chip" data-kind="pota"><span class="dot"></span>POTA</span>
+  <span class="chip" data-kind="sota"><span class="dot"></span>SOTA</span>
+  <span class="chip" data-kind="dx"><span class="dot"></span>Cluster</span>
+  <select id="band" aria-label="Band"><option value="">any band</option></select>
+  <select id="mode" aria-label="Mode"><option value="">any mode</option></select>
+  <input id="q" placeholder="call, park, summit" spellcheck="false" aria-label="Search">
+  <button id="clear" type="button">Clear</button>
+</div>
+
+<div class="scroll" id="pane"></div>
+<p class="note warn" id="err"></p>
+
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'spots';
+const $ = (s) => document.querySelector(s);
+
+// One colour per source, used by the chip and by the dot on every row, so
+// the filter bar is the legend and there is nothing else to learn.
+const COLOUR = { pota: 'var(--signal)', sota: 'var(--accent)', dx: 'var(--ink)' };
+
+let conf = {};
+let tab = 'spots';
+let data = { spots: [], sources: [], now: 0 };
+let cons = { on: [], soon: [], source: {} };
+const off = new Set();          // sources switched off on this tile
+let filters = { band: '', mode: '', q: '' };
+
+const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function hhmm(at) {
+  const d = new Date(at * 1000);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function ago(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) return `${s}s`;
+  if (s < 5400) return `${Math.round(s / 60)}m`;
+  return `${Math.round(s / 3600)}h`;
+}
+
+// ---- filtering, entirely over what was already fetched --------------------
+// A keystroke must never be a reason to call somebody's server; the card
+// holds the last fetch and the floor is in the card, not here.
+function visible() {
+  const q = filters.q.trim().toUpperCase();
+  return data.spots.filter((s) => {
+    if (off.has(s.kind)) return false;
+    if (filters.band && s.band !== filters.band) return false;
+    // A cluster spot carries no mode at all - the network has no such
+    // field - so filtering it out on mode would hide every one of them the
+    // moment a mode was chosen, which reads as the cluster being down.
+    if (filters.mode && s.mode && s.mode !== filters.mode) return false;
+    if (filters.mode && !s.mode && s.kind !== 'dx') return false;
+    if (!q) return true;
+    return [s.call, s.ref, s.place, s.where, s.spotter, s.comment]
+      .some((v) => String(v || '').toUpperCase().includes(q));
+  });
+}
+
+function fillChoices() {
+  const bands = [...new Set(data.spots.map((s) => s.band).filter(Boolean))];
+  // By frequency, not alphabetically: 10m, 12m, 15m ... is nobody's idea of
+  // band order. HD.bands() is the host's one table.
+  const order = (HD._bandTable || []).map((b) => b[2]);
+  bands.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const modes = [...new Set(data.spots.map((s) => s.mode).filter(Boolean))].sort();
+  for (const [el, list, label] of [[$('#band'), bands, 'any band'],
+                                   [$('#mode'), modes, 'any mode']]) {
+    const was = el.value;
+    el.innerHTML = `<option value="">${label}</option>`
+      + list.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    el.value = list.includes(was) ? was : '';
+  }
+}
+
+// ---- drawing --------------------------------------------------------------
+function paintSpots() {
+  const rows = visible();
+  $('#n-spots').textContent = rows.length ? `(${rows.length})` : '';
+  if (!rows.length) {
+    $('#pane').innerHTML = `<p class="empty">${
+      data.spots.length ? 'Nothing matches those filters.'
+                        : 'No spots yet — the sources are being asked.'}</p>`;
+    return;
+  }
+  const tune = conf.tune_on_click !== false;
+  $('#pane').innerHTML = `<table><thead><tr>
+      <th></th><th>UTC</th><th>Call</th><th>Freq</th><th>Band</th>
+      <th>Mode</th><th>Where</th><th>Spotter</th><th>Comment</th>
+    </tr></thead><tbody>${rows.map((s, i) => `<tr data-i="${i}">
+      <td><span class="src" style="background:${COLOUR[s.kind] || 'var(--muted)'}"
+                title="${esc(s.kind.toUpperCase())}"></span></td>
+      <td class="mono dim">${hhmm(s.at)}</td>
+      <td class="call">${esc(s.call)}</td>
+      <td>${s.hz ? (tune
+          ? `<button class="freq" data-tune="${s.hz}" data-mode="${esc(s.mode)}"
+                     title="Tune the radio here">${(s.hz / 1e6).toFixed(3)}</button>`
+          : `<span class="freq">${(s.hz / 1e6).toFixed(3)}</span>`) : ''}</td>
+      <td class="mono dim">${esc(s.band)}</td>
+      <td class="mono">${esc(s.mode)}</td>
+      <td>${esc(s.ref ? `${s.ref} ` : '')}<span class="ref">${esc(
+            [s.place, s.where].filter(Boolean).join(' · ').slice(0, 44))}</span></td>
+      <td class="mono dim">${esc(s.spotter)}</td>
+      <td class="dim">${esc(String(s.comment || '').slice(0, 60))}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function paintContests() {
+  const now = cons.now || Date.now() / 1000;
+  const one = (c, on) => `<div class="con${on ? ' on' : ''}">
+      <div class="name">${esc(c.name)}</div>
+      <div class="meta">${esc(c.type)} · ${
+        on ? `ends in ${ago(c.end - now)}`
+           : `starts in ${ago(c.start - now)}`}${
+        c.modes && c.modes.length ? ' · ' + esc(c.modes.join(', ')) : ''}${
+        c.bands && c.bands.length ? ' · ' + esc(c.bands.join(', ')) : ''}${
+        c.website ? ` · <a href="${esc(c.website)}" target="_blank" rel="noopener">rules</a>` : ''}
+      </div></div>`;
+  $('#pane').innerHTML =
+    `<h4>On now (${cons.on.length})</h4>`
+    + (cons.on.length ? cons.on.map((c) => one(c, true)).join('')
+                      : '<p class="empty">Nothing running.</p>')
+    + `<h4>Next two weeks (${cons.soon.length})</h4>`
+    + (cons.soon.length ? cons.soon.map((c) => one(c, false)).join('')
+                        : '<p class="empty">Nothing scheduled.</p>');
+}
+
+function paintStatus() {
+  const bits = (data.sources || [])
+    .filter((s) => !off.has(s.name))
+    .map((s) => s.ok ? `${s.name} ${ago(s.age_s)}`
+                     : `${s.name} — ${String(s.error).slice(0, 40)}`);
+  $('#status').textContent = bits.join(' · ');
+  $('#status').className = 'note'
+    + ((data.sources || []).some((s) => !s.ok && !off.has(s.name)) ? ' warn' : '');
+  $('#n-contests').textContent = cons.on.length ? `(${cons.on.length})` : '';
+}
+
+function paint() {
+  (tab === 'spots' ? paintSpots : paintContests)();
+  paintStatus();
+}
+
+// ---- talking to the card --------------------------------------------------
+async function loadSpots(force) {
+  try {
+    data = await HD.card('spots', `/api/spots${force ? '?force=1' : ''}`);
+    $('#err').textContent = '';
+  } catch (e) { $('#err').textContent = e.message; return; }
+  fillChoices();
+  if (tab === 'spots') paint(); else paintStatus();
+}
+
+async function loadContests(force) {
+  try {
+    cons = await HD.card('spots', `/api/contests${force ? '?force=1' : ''}`);
+  } catch (e) { $('#err').textContent = e.message; return; }
+  if (tab === 'contests') paint(); else paintStatus();
+}
+
+// ---- events ---------------------------------------------------------------
+$('#filters').addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  const kind = chip.dataset.kind;
+  if (off.has(kind)) off.delete(kind); else off.add(kind);
+  paintChips();
+  paint();
+});
+
+function paintChips() {
+  document.querySelectorAll('.chip').forEach((c) => {
+    c.classList.toggle('off', off.has(c.dataset.kind));
+    c.querySelector('.dot').style.background = COLOUR[c.dataset.kind];
+  });
+}
+
+$('#band').onchange = () => { filters.band = $('#band').value; paint(); };
+$('#mode').onchange = () => { filters.mode = $('#mode').value; paint(); };
+$('#q').addEventListener('input', () => { filters.q = $('#q').value; paint(); });
+$('#clear').onclick = () => {
+  filters = { band: '', mode: '', q: '' };
+  $('#band').value = ''; $('#mode').value = ''; $('#q').value = '';
+  off.clear(); paintChips(); paint();
+};
+
+$('#tab-spots').onclick = () => { tab = 'spots'; tabs(); paint(); };
+$('#tab-contests').onclick = () => { tab = 'contests'; tabs(); paint(); };
+function tabs() {
+  $('#tab-spots').classList.toggle('on', tab === 'spots');
+  $('#tab-contests').classList.toggle('on', tab === 'contests');
+  $('#filters').hidden = tab !== 'spots';
+}
+
+$('#refresh').onclick = async (e) => {
+  e.target.disabled = true;
+  // The floor is in the card. This only means "do not wait for the poll",
+  // and the card says no if the source was asked a moment ago.
+  await Promise.all([loadSpots(true), loadContests(true)]);
+  e.target.disabled = false;
+};
+
+// Tuning is deliberately the frequency itself rather than the whole row: a
+// row-wide click would put the radio somewhere else on a mis-click.
+$('#pane').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-tune]');
+  if (!b) return;
+  const hz = Number(b.dataset.tune);
+  try {
+    await HD.radio.freq(hz);
+    if (b.dataset.mode) await HD.radio.mode(b.dataset.mode).catch(() => {});
+    $('#err').textContent = '';
+  } catch (err) { $('#err').textContent = err.message; }
+  // Anything else that wants to know what we are looking at. Within this
+  // card's own namespace; it is a pick, not a lookup result.
+  const row = visible()[Number(b.closest('tr').dataset.i)];
+  if (row) HD.publish('spots.picked', row).catch(() => {});
+});
+
+(async function boot() {
+  try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  HD.onSettings((v) => { conf = v || {}; loadSpots(); });
+  await HD.bands().catch(() => {});
+  paintChips();
+  tabs();
+  await Promise.all([loadSpots(), loadContests()]);
+  // The card holds the floor, so this is just "show me what it has".
+  setInterval(loadSpots, 30000);
+  setInterval(loadContests, 300000);
+})();
+</script>
+</body>
+</html>
