@@ -101,7 +101,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   what the state reports, so the Transmit button shows on-air instead of
   offering to transmit on a radio that already is.
   Verified on the radio that broke it, dummy load on: it now comes off the
-  air after the six-second hold.
+  air after the six-second hold. The same radio through Hamlib *does*
+  report its transmission, so both halves of the rule were watched working
+  on one rig — it confirms, hamdash stops second-guessing, and the watchdog
+  still ends an unheld transmission.
 - **A radio that cannot say which VFO it is on no longer has one guessed
   for it.** Plenty can be *told* which VFO to use and cannot read it back,
   and OmniRig still answers the question — with the last thing it was told.

@@ -1153,8 +1153,15 @@ the live service.
   `set_mode`, `set_vfo` and `set_split` all reach the radio and it was
   returned exactly as found. `l STRENGTH` gives a real dB-relative-to-S9
   reading; `l RFPOWER_METER` and `l SWR` are refused by this rig, so the
-  transmit meters come back empty rather than as zeroes. **PTT is not
-  proven on Hamlib.**
+  transmit meters come back empty rather than as zeroes. **PTT keys and
+  unkeys** (dummy load, operator present) and the watchdog ends an unheld
+  transmission at `PTT_HOLD`.
+- **Every rig backend is now proven on hardware**, which between them cover
+  both halves of the PTT rule: the same FT-900 reports its transmission
+  through Hamlib and does not through OmniRig, so `_ptt_confirmed` was
+  watched doing each job on one radio. What is still unproven anywhere is a
+  *second* rig model - everything here is one FT-890/900 - so anything that
+  looks like a rig quirk should be suspected of being this rig's quirk.
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,

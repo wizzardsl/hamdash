@@ -137,7 +137,7 @@ def main(argv=None) -> int:
         print(f"\nSHA-256 mismatch - not unpacking it.\n"
               f"  expected {want}\n  got      {got}")
         return 2
-    print(f"  sha256 ok: {got[:16]}…")
+    print(f"  sha256 ok: {got[:16]}...")
 
     unpack(blob, into)
     exe = find_rigctld_under(into)
