@@ -172,11 +172,17 @@ function paintVfos(s) {
   const show = can('vfo') && (s.vfo || s.freq_a || s.freq_b);
   $('#vfos').hidden = !show;
   if (!show) return;
-  const live_ = s.vfo || 'A';
+  // Blank when the radio will not say which VFO it is on - plenty can be
+  // told and cannot report back. Lighting A on a guess is the same mistake
+  // as calling an unknown PTT "receiving": the operator reads it as fact.
+  const live_ = s.vfo || '';
+  $('#vfos').classList.toggle('unsure', !live_);
+  $('#vfos').title = live_ ? ''
+    : 'This radio does not report which VFO it is using';
   // Which VFO is transmitting: the other one, when split is on. That is
   // the thing about split worth saying - the dial is not where you are
   // being heard.
-  const txOn = s.split ? (live_ === 'A' ? 'B' : 'A') : live_;
+  const txOn = s.split && live_ ? (live_ === 'A' ? 'B' : 'A') : live_;
   [['a', 'A'], ['b', 'B']].forEach(([id, name]) => {
     const hz = name === 'A' ? s.freq_a : s.freq_b;
     $(`#hz-${id}`).textContent = hz ? HD.fmtHz(hz) : '--';

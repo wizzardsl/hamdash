@@ -896,6 +896,13 @@ class OmniRigBackend(Backend):
         can = []
         if r.IsParamWriteable(PM_VFOA) and r.IsParamWriteable(PM_VFOB):
             can.append(F_VFO)
+        # Plenty of rigs can be *told* which VFO to use and cannot say which
+        # one they are on. `Vfo` still answers - with the last thing it was
+        # told - so without this the echo of our own command comes back as a
+        # reading. Measured on an FT-900: PM_VFOA and PM_VFOB both unreadable
+        # and `Vfo` stuck on PM_VFOBA while the dial was plainly on A.
+        vfo_known = bool(r.IsParamReadable(PM_VFOA)
+                         or r.IsParamReadable(PM_VFOB))
         if r.IsParamWriteable(PM_SPLITON):
             can.append(F_SPLIT)
         if r.IsParamWriteable(PM_VFOSWAP):
@@ -903,6 +910,7 @@ class OmniRigBackend(Backend):
         return {"online": True, "status": says, "rig_type": kind,
                 "freq": int(r.Freq or 0), "mode": int(r.Mode or 0),
                 "tx": int(r.Tx or 0), "vfo": int(r.Vfo or 0),
+                "vfo_known": vfo_known,
                 "split": int(r.Split or 0), "can": can,
                 "freq_a": int(r.FreqA or 0), "freq_b": int(r.FreqB or 0)}
 
@@ -937,14 +945,18 @@ class OmniRigBackend(Backend):
             out["freq_a"] = got["freq_a"]
         if got["freq_b"]:
             out["freq_b"] = got["freq_b"]
-        if got["vfo"] in OMNI_VFO:
+        if got["vfo_known"] and got["vfo"] in OMNI_VFO:
             out["vfo"] = OMNI_VFO[got["vfo"]]
-        # Split is two answers in one: the flag, and the cross VFO forms -
-        # AB means receive on A and transmit on B, which is split however
-        # the `Split` property happens to read on that radio.
+        # **The flag wins.** Split is two answers in one: the `Split`
+        # property, and the cross VFO forms - AB means receive on A and
+        # transmit on B, which is split on a radio whose CAT has no split
+        # flag of its own. The cross form is therefore only a *fallback*:
+        # reading it over the top of an explicit PM_SPLITOFF reported an
+        # FT-900 that was not split as split, and went on doing so after
+        # the operator could see on the radio that it was not.
         if got["split"] in (PM_SPLITON, PM_SPLITOFF):
             out["split"] = got["split"] == PM_SPLITON
-        if got["vfo"] in OMNI_SPLIT_VFO:
+        elif got["vfo"] in OMNI_SPLIT_VFO:
             out["split"] = True
         return out
 

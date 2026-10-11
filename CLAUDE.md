@@ -553,6 +553,24 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   **OmniRig has no meters of any kind**: its interface (read from the type
   library) has no such property, because it is CAT control and not a
   receiver. A card must not draw an empty S-meter for it.
+- **A radio can be told which VFO to use and be unable to say which it is
+  on.** On an FT-900, `IsParamReadable(PM_VFOA)` and `PM_VFOB` are both
+  false while the *writeable* ones are true - and `Vfo` still answers, with
+  the last thing it was told. After a `set_vfo("B")` it read `PM_VFOBA`
+  and stayed there with the dial plainly back on A. Taken as a reading that
+  is the card lighting the wrong VFO and the operator believing it, so
+  `vfo` is reported only when the rig says it is readable, and the card
+  lights neither when it is absent. Same rule as `ptt_known`.
+- **The `Split` flag beats the cross-VFO forms.** `PM_VFOAB` and `PM_VFOBA`
+  mean split on a radio whose CAT has no split flag, so they are a
+  *fallback* - used only when `Split` is `PM_UNKNOWN`. Reading them over an
+  explicit `PM_SPLITOFF` reported an FT-900 that was not split as split,
+  and went on saying so while the operator could see on the radio that it
+  was not. It also sent me looking for a broken `set_split(False)` that had
+  worked the whole time: the write was fine, the reading was wrong.
+- **The CW offset is the radio's, not flrig's.** Setting CW through OmniRig
+  moved an FT-900 by the same +700 Hz, so mode-before-frequency is a rule
+  about radios and holds on every backend.
 - **OmniRig's VFO constants are read from its type library**, like
   `ST_ONLINE` before them - `OmniRig.exe` carries it, and loading a typelib
   creates no object and opens no port. The catch: `Vfo` can be `PM_VFOAB`
@@ -1071,10 +1089,15 @@ the live service.
   leaves the live one alone, split reports back through flrig, the S-meter
   tracks real signals (and reads a true 0 on a dummy load), and keying CW
   showed 78% on the power meter. The radio was returned exactly as found
-  every time. **Not proven on OmniRig or Hamlib** - OmniRig's VFO and split
-  are written from its type library and its `IsParamWriteable`, and
-  Hamlib's `\get_vfo_info` and `l STRENGTH` paths have never run against a
-  rigctld (neither rigctl nor rigctld is installed on this machine).
+  every time.
+- **OmniRig is proven too, against an FT-900** (slot 1, flrig shut down -
+  two programs cannot share the port): it comes on line and reports its
+  type, both VFOs read, `set_freq`, `set_mode`, `set_vfo` and `set_split`
+  all reach the radio, and the capability check earns its keep - that rig
+  file cannot swap VFOs, so the button is not offered. **PTT is not proven
+  on OmniRig**, and neither is anything on Hamlib: `\get_vfo_info` and
+  `l STRENGTH` have never run against a rigctld, because neither rigctl nor
+  rigctld is installed on this machine.
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,

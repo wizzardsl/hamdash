@@ -10,6 +10,7 @@ file exists to stop.
 Run with:  python -m unittest discover -s tests
 """
 import unittest
+import unittest.mock
 
 from hamdash.services import rigs
 from tests.test_flrig import FakeFlrig, a_backend
@@ -185,6 +186,59 @@ class TestTwoVfos(unittest.TestCase):
         self.assertIn(rigs.F_VFO, m.features)
         m.set_split(True)
         self.assertTrue(m.state()["split"])
+
+
+class TestOmniRigSaysWhatItKnows(unittest.TestCase):
+    """Read off an FT-900 through OmniRig: a radio can be *told* which VFO
+    to use and be unable to say which it is on, and `Vfo` still answers -
+    with the last thing it was told."""
+
+    def state_from(self, **got):
+        base = {"online": True, "status": "On-line", "rig_type": "FT-900",
+                "freq": 7_200_340, "mode": rigs.MODE_TO_OMNI["USB"],
+                "tx": rigs.PM_RX, "vfo": rigs.PM_UNKNOWN, "vfo_known": False,
+                "split": rigs.PM_SPLITOFF, "can": [rigs.F_VFO, rigs.F_SPLIT],
+                "freq_a": 7_200_340, "freq_b": 14_300_000}
+        b = rigs.OmniRigBackend.__new__(rigs.OmniRigBackend)
+        b.slot = 1
+        with unittest.mock.patch.object(rigs, "com_call",
+                                        lambda fn, *a, **k: {**base, **got}):
+            return b.state()
+
+    def test_a_vfo_it_cannot_read_is_not_reported(self):
+        """`Vfo` came back PM_VFOBA - the echo of a set_vfo('B') - while the
+        dial was plainly on A. Reported as a reading, that is a card lighting
+        the wrong VFO and an operator believing it."""
+        st = self.state_from(vfo=rigs.PM_VFOBA, vfo_known=False)
+        self.assertNotIn("vfo", st)
+
+    def test_a_vfo_it_can_read_is(self):
+        st = self.state_from(vfo=rigs.PM_VFOB, vfo_known=True)
+        self.assertEqual(st["vfo"], "B")
+
+    def test_the_split_flag_beats_the_cross_vfo_forms(self):
+        """The radio said PM_SPLITOFF and `Vfo` said PM_VFOBA. Inferring
+        split from the cross form reported a radio that was not split as
+        split - over the top of the radio's own explicit answer."""
+        st = self.state_from(split=rigs.PM_SPLITOFF, vfo=rigs.PM_VFOBA)
+        self.assertIs(st["split"], False)
+
+    def test_a_cross_form_is_still_split_when_there_is_no_flag(self):
+        """A radio whose CAT has no split flag says it this way, and that is
+        the whole reason the fallback exists."""
+        st = self.state_from(split=rigs.PM_UNKNOWN, vfo=rigs.PM_VFOAB)
+        self.assertIs(st["split"], True)
+
+    def test_an_unknown_split_with_no_cross_form_says_nothing(self):
+        st = self.state_from(split=rigs.PM_UNKNOWN, vfo=rigs.PM_UNKNOWN)
+        self.assertNotIn("split", st)
+
+    def test_what_the_rig_file_cannot_do_is_not_offered(self):
+        """The FT-900 has no VFO swap: PM_VFOSWAP is neither readable nor
+        writeable, so the card must not draw the button."""
+        st = self.state_from(can=[rigs.F_VFO, rigs.F_SPLIT])
+        self.assertEqual(st["features"], [rigs.F_VFO, rigs.F_SPLIT])
+        self.assertNotIn(rigs.F_SWAP, st["features"])
 
 
 class TestWhatACardMayOffer(unittest.TestCase):

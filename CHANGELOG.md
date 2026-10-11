@@ -74,6 +74,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **A radio that cannot say which VFO it is on no longer has one guessed
+  for it.** Plenty can be *told* which VFO to use and cannot read it back,
+  and OmniRig still answers the question — with the last thing it was told.
+  That echo was being drawn as fact, lighting the wrong VFO. The card now
+  lights neither and says the radio does not report it.
+- **A radio that reported "not split" was being shown as split.** The
+  cross-VFO forms mean split on a radio whose CAT has no split flag, but
+  they were overriding radios that have one and had plainly answered
+  "off". Found on an FT-900 through OmniRig, where it also made a working
+  `set_split(False)` look broken.
 - **Popping a card back in left the tile showing "Bring it back" instead of
   the card.** The card *did* come back — it was mounted correctly and pushed
   out of sight underneath the "Running in its own window" panel, which the
