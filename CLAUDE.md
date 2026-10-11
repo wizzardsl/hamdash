@@ -319,6 +319,31 @@ README and is guesswork as a result.
   tick is per card and a card can have many tiles. That discards per-tile
   settings, so the toast offers Undo: `board.add()` honours a `uid` you pass
   it, which is what makes restoring them exact.
+- **A held tile scrolls the board.** Moving a card from the bottom of a
+  long board to the top otherwise means drop, scroll, pick it up, repeat.
+  The pointer within `EDGE` of either end scrolls, faster the closer it
+  gets, and `startY` moves by exactly what the board scrolled - without
+  that the tile would slide away from the cursor, because the same screen
+  position means a different row once the board has moved.
+- **The scroll rate is per second, not per frame.** A per-frame step is
+  whatever the machine is managing: measured on one board with one gesture
+  it swung between 830 and 34 px/s. The distance comes from the clock and
+  the frame rate only decides how smooth it looks. The step is capped at
+  what 50 ms would move, so a frame arriving after a stall does not
+  teleport the board.
+- **Dragging up past the top means scroll while there is still board to
+  reach**, and only means "pop out" once there is nowhere left to go.
+  Hauling a tile to the top is how you say "put this at the top", and it
+  was also the gesture for popping out - which is how a map ended up in its
+  own window when the operator was only rearranging.
+- **Only a tile's tab strip docks.** The whole tile used to, and on a full
+  board that is nearly everywhere, so moving a card across the board kept
+  turning it into somebody else's tab and plain rearranging became the hard
+  case. Dropping on the strip where tabs already live is the same gesture
+  as dropping a browser tab on a tab bar. The band is the header with a
+  `DOCK_BAND` floor so a short tile is still a target, and the highlight is
+  on the strip rather than the whole tile - an outline round everything
+  said "anywhere in here", which was the misleading part.
 - **A tile's body owns everything in it, not just the cards.** Popping a
   card out replaces the body with a "Running in its own window"
   placeholder; popping it back in used to prune `.tile-card` nodes only, so

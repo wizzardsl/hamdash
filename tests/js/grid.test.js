@@ -1,4 +1,5 @@
-/* What a tile's body contains, under `node --test`.
+/* What the board does with tiles, under `node --test`: what a tile's body
+ * contains, and where a drop docks.
  *
  *   node --test tests/js/
  *
@@ -43,6 +44,15 @@ class El {
     this._classes = new Set(String(v).split(/\s+/).filter(Boolean));
   }
   appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  /* Laid out by the test, since nothing here does layout. */
+  setRect(r) {
+    this.rect = { ...r, right: r.left + r.width, bottom: r.top + r.height };
+    return this;
+  }
+  getBoundingClientRect() {
+    return this.rect || { left: 0, top: 0, width: 0, height: 0,
+      right: 0, bottom: 0 };
+  }
   remove() {
     if (!this.parent) return;
     const i = this.parent.children.indexOf(this);
@@ -175,4 +185,81 @@ test('a card that has left the tile goes with it', () => {
   const left = bodyOf(node).querySelectorAll('.tile-card');
   assert.strictEqual(left.length, 1);
   assert.strictEqual(left[0].dataset.uid, 'c1');
+});
+
+
+/* ---- where a drop docks ----------------------------------------------
+ * The whole of a target tile used to dock. On a full board that is almost
+ * everywhere, so moving a card across the board kept making it somebody
+ * else's tab and plain rearranging became the hard case. Only the tab strip
+ * docks now - the row where tabs already live.
+ */
+const HEAD_H = 28;
+
+function aLaidOutTile(uid, { top, height = 200, popped = false }) {
+  const node = new El('section');
+  node.className = 'tile';
+  node.dataset.uid = uid;
+  node.setRect({ left: 100, top, width: 300, height });
+  const head = new El('header');
+  head.className = 'tile-head';
+  head.setRect({ left: 100, top, width: 300, height: HEAD_H });
+  node.appendChild(head);
+  return { t: { uid, popped, cards: [{ uid, card: 'x' }] }, node };
+}
+
+function aLaidOutBoard() {
+  const a = aLaidOutTile('target', { top: 0 });
+  const b = aLaidOutTile('dragged', { top: 400 });
+  return {
+    tiles: [a.t, b.t],
+    _nodes: new Map([['target', a.node], ['dragged', b.node]]),
+    nodes: { target: a.node, dragged: b.node },
+    tileOf: { target: a.t, dragged: b.t },
+  };
+}
+
+const under = (self, x, y) =>
+  Board.prototype._tileUnder.call(self, { clientX: x, clientY: y },
+    self.nodes.dragged);
+
+test('dropping on the tab strip of a tile docks into it', () => {
+  const self = aLaidOutBoard();
+  assert.strictEqual(under(self, 250, 10), self.tileOf.target);
+});
+
+test('dropping on the body of a tile does not dock', () => {
+  // The one that matters: this is most of a full board, and it used to
+  // dock, so moving a card anywhere kept turning it into a tab.
+  const self = aLaidOutBoard();
+  assert.strictEqual(under(self, 250, 120), null);
+  assert.strictEqual(under(self, 250, 199), null);
+});
+
+test('the strip stays a usable target on a short tile', () => {
+  // A header can be thinner than a finger. The band has a floor, so a tile
+  // whose header is tiny is still droppable on.
+  const self = aLaidOutBoard();
+  self.nodes.target.querySelector('.tile-head')
+    .setRect({ left: 100, top: 0, width: 300, height: 6 });
+  assert.strictEqual(under(self, 250, 30), self.tileOf.target);
+});
+
+test('a tile never docks into itself', () => {
+  const self = aLaidOutBoard();
+  self.nodes.dragged.setRect({ left: 100, top: 0, width: 300, height: 200 });
+  assert.strictEqual(under(self, 250, 10), self.tileOf.target,
+    'the dragged tile is under the cursor by definition');
+});
+
+test('a popped-out tile is not a dock target', () => {
+  const self = aLaidOutBoard();
+  self.tileOf.target.popped = true;
+  assert.strictEqual(under(self, 250, 10), null);
+});
+
+test('a drop beside the board docks into nothing', () => {
+  const self = aLaidOutBoard();
+  assert.strictEqual(under(self, 20, 10), null);
+  assert.strictEqual(under(self, 900, 10), null);
 });

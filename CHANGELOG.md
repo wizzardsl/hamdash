@@ -7,6 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Dragging a card to the edge scrolls the board.** Moving a card from the
+  bottom of a long dashboard to the top used to mean dropping it, scrolling,
+  picking it up again, over and over. Hold it near the top or bottom and the
+  board scrolls under it, faster the closer to the edge, with the card
+  staying under the cursor. Dragging up now means "scroll" while there is
+  still board above to reach, and only means "pop out" once there is not —
+  so hauling a card to the top no longer throws it into its own window.
+- **Docking a card as a tab now needs its target's tab strip.** The whole of
+  a tile used to be a dock zone, so on a full board nearly anywhere you
+  dropped a card made it somebody else's tab, and simply rearranging the
+  board became the awkward case. Drop onto the strip where the tabs already
+  live — the same gesture as dropping a browser tab on a tab bar — and that
+  strip is what lights up. Everywhere else just moves.
 - **The rig card shows both VFOs, split, and a meter.** VFO A and B side by
   side with the live one lit, click either to switch, A&#8646;B to exchange
   what they hold, and a Split button that marks which VFO is actually

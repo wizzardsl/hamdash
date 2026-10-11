@@ -139,6 +139,12 @@ enter first. **Arrange** just turns on the grid guides and keeps the resize
 handles visible. Overlaps are resolved by pushing tiles *down*, never sideways:
 horizontal position is what people place deliberately, vertical order isn't.
 
+**Hold a card near the top or bottom edge and the board scrolls under it**,
+faster the closer you get to the edge, so moving a card from the bottom of a
+long dashboard to the top is one gesture rather than drop-scroll-repeat. While
+there is still board above to reach, dragging up means scroll; only once there
+is none does leaving the top mean pop the card out into its own window.
+
 Adding and removing a card: the **Cards** menu lists everything installed with
 a tick beside whatever is on the board. Tick to put a card on, untick to take
 it off — and closing a tile with its own **✕** unticks it there, so the menu is
@@ -177,9 +183,15 @@ has stopped being part of the story.
 
 ## Stacking cards
 
-Drag a tile onto another and it docks as a **tab**: one box, a strip of names
-across the header, one card showing at a time. Drag a tab off the strip and it
-comes back out as its own tile. Dropping a stack onto another joins them.
+Drag a tile **onto another tile's tab strip** — the header row where its tab
+names sit — and it docks as a **tab**: one box, a strip of names across the
+header, one card showing at a time. The strip lights up as you cross it. Drag
+a tab off the strip and it comes back out as its own tile. Dropping a stack
+onto another joins them.
+
+Only the strip docks. Drop anywhere else on a tile and the card simply moves,
+because on a full board every spot is over *something*, and making all of it a
+dock zone turned ordinary rearranging into accidental tabs.
 
 This is the board's doing, not the cards' — nothing in a card knows it is in
 a stack, so anything you write stacks like everything else.

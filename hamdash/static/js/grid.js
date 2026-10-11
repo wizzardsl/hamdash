@@ -26,6 +26,15 @@
 (function (global) {
   const POP_MARGIN = 48;      // px outside the board before a drag means "pop out"
   const TEAR_OFF = 14;        // px a tab must travel before it leaves its stack
+  const DOCK_BAND = 40;       // px of a tile's top that means "dock as a tab"
+  const EDGE = 60;            // px inside the board's edge where a drag scrolls it
+  // Pixels per *second*, not per frame. A frame-based rate is whatever the
+  // machine happens to be managing - measured here swinging between 830 and
+  // 34 px/s on the same board for the same gesture - so the distance is
+  // worked out from the clock and the frame rate only decides how smooth
+  // it looks.
+  const EDGE_SLOW = 140;      // px/s once the pointer is just inside the edge
+  const EDGE_FAST = 1500;     // px/s hard against it
 
   // What a board *is* lives in layout.js, with no DOM: normalising, docking,
   // undocking, overlap. This file owns the pixels and the event handlers and
@@ -420,7 +429,9 @@
       if (e.button !== 0) return;
       e.preventDefault();
       const startX = e.clientX;
-      const startY = e.clientY;
+      // Not const: when the board scrolls under a held tile, the same
+      // screen position means a different row, so the origin moves with it.
+      let startY = e.clientY;
       const orig = { x: t.x, y: t.y, w: t.w, h: t.h };
       const cw = this.cellW + this.gap;
       const ch = this.rowPx + this.gap;
@@ -433,13 +444,23 @@
       // follows nothing and will not let go.
       try { node.setPointerCapture(e.pointerId); } catch { /* no capture */ }
 
-      const move = (ev) => {
+      // Where the pointer is now. The auto-scroller re-applies the drag from
+      // this without a new pointer event: the mouse can be held perfectly
+      // still against the edge while the board moves underneath it.
+      const at = { clientX: startX, clientY: startY };
+
+      const apply = () => {
+        const ev = at;
         const dx = Math.round((ev.clientX - startX) / cw);
         const dy = Math.round((ev.clientY - startY) / ch);
         if (mode === 'move') {
           const r = this.el.getBoundingClientRect();
+          // Dragging up past the top is how you say "put this at the top",
+          // and that is also the gesture for popping out. While there is
+          // still board above to reach, it means scroll; only once there is
+          // nowhere left to go does leaving the top edge mean pop out.
           const out = ev.clientX < r.left - POP_MARGIN || ev.clientX > r.right + POP_MARGIN
-                   || ev.clientY < r.top - POP_MARGIN;
+                   || (ev.clientY < r.top - POP_MARGIN && this.el.scrollTop <= 0);
           if (out !== willPop) {
             willPop = out;
             node.classList.toggle('will-pop', out);
@@ -463,7 +484,49 @@
         this._place(t, node);
       };
 
+      const move = (ev) => {
+        at.clientX = ev.clientX;
+        at.clientY = ev.clientY;
+        apply();
+      };
+
+      /* ---- scrolling the board while a tile is held ------------------
+         Without this, moving a card from the bottom of a long board to the
+         top means dropping it, scrolling, picking it up again, over and
+         over. The pointer sitting inside EDGE of either end scrolls the
+         board, faster the closer it gets, and the tile keeps following the
+         cursor because `startY` moves by exactly what the board scrolled. */
+      let scrolling = null;
+      let lastTick = 0;
+      // How deep into the edge band the pointer is, 0..1, past the edge
+      // counting as all the way.
+      const rate = (depth) =>
+        EDGE_SLOW + (EDGE_FAST - EDGE_SLOW)
+          * Math.min(1, Math.max(0, depth) / EDGE);
+
+      const tick = (now) => {
+        scrolling = requestAnimationFrame(tick);
+        // A frame that arrives after a long stall must not teleport the
+        // board, so the step is capped at what 50ms would have moved.
+        const dt = Math.min(0.05, lastTick ? (now - lastTick) / 1000 : 0);
+        lastTick = now;
+        const r = this.el.getBoundingClientRect();
+        const y = at.clientY;
+        let d = 0;
+        if (y < r.top + EDGE) d = -rate(r.top + EDGE - y) * dt;
+        else if (y > r.bottom - EDGE) d = rate(y - (r.bottom - EDGE)) * dt;
+        if (!d) return;
+        const before = this.el.scrollTop;
+        this.el.scrollTop = before + d;
+        const moved = this.el.scrollTop - before;
+        if (!moved) return;           // already at the end; nothing to do
+        startY -= moved;
+        apply();
+      };
+      scrolling = requestAnimationFrame(tick);
+
       const up = () => {
+        cancelAnimationFrame(scrolling);
         node.classList.remove('dragging', 'will-pop', 'will-dock');
         this._nodes.get(onto?.uid)?.classList.remove('dock-target');
         node.removeEventListener('pointermove', move);
@@ -497,16 +560,29 @@
       node.addEventListener('pointercancel', up);
     }
 
-    /* Which tile the pointer is over, ignoring the one being dragged.
-       elementFromPoint would only ever answer with the dragged tile, which
-       is under the cursor by definition. */
+    /* Which tile the pointer would dock into, ignoring the one being
+       dragged. elementFromPoint would only ever answer with the dragged
+       tile, which is under the cursor by definition.
+
+       **Only the target's tab strip docks.** The whole tile used to, and on
+       a full board that is almost everywhere - so moving a card across the
+       board kept turning it into somebody else's tab, and plain rearranging
+       became the hard case. Dropping a card on the strip where tabs already
+       live is the same gesture as dropping a browser tab on a tab bar, and
+       it leaves the rest of the tile meaning what it looks like it means:
+       move. The band is the header, floored at DOCK_BAND so it stays a
+       comfortable target on a short tile. */
     _tileUnder(ev, dragging) {
       for (const t of this.tiles) {
         const node = this._nodes.get(t.uid);
         if (!node || node === dragging || t.popped) continue;
         const r = node.getBoundingClientRect();
-        if (ev.clientX >= r.left && ev.clientX <= r.right
-            && ev.clientY >= r.top && ev.clientY <= r.bottom) return t;
+        if (ev.clientX < r.left || ev.clientX > r.right) continue;
+        const head = node.querySelector('.tile-head');
+        const deep = Math.max(DOCK_BAND,
+          head ? head.getBoundingClientRect().height : 0);
+        if (ev.clientY >= r.top && ev.clientY <= Math.min(r.bottom,
+            r.top + deep)) return t;
       }
       return null;
     }
