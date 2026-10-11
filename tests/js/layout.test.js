@@ -49,11 +49,17 @@ test('a tile with no cards is not a tile', () => {
   assert.strictEqual(L.asStack(null), null);
 });
 
-test('junk geometry falls back rather than reaching the grid as NaN', () => {
+test('junk geometry falls back the same way the host does', () => {
+  // Number() and int() disagree about exactly the values a hand-edited file
+  // contains: Number(null) and Number('') are 0 where int() raises. A `w`
+  // of null was a tile zero columns wide here and four on the host.
   const t = L.asStack({ ...FLAT, x: 'left', h: null, w: {} });
-  assert.strictEqual(t.x, 0);
-  assert.strictEqual(t.h, 3);
-  assert.strictEqual(t.w, 4);
+  assert.strictEqual(t.x, 0, 'a word is not a column');
+  assert.strictEqual(t.h, 3, 'null is missing, not zero');
+  assert.strictEqual(t.w, 4, 'an object is not a width');
+  assert.strictEqual(L.asStack({ ...FLAT, w: '' }).w, 4, 'nor is empty text');
+  assert.strictEqual(L.asStack({ ...FLAT, w: '6' }).w, 6, 'but a number is');
+  assert.strictEqual(L.asStack({ ...FLAT, h: 5.9 }).h, 5, 'truncated, as int()');
 });
 
 test('fields nobody declared are dropped', () => {
@@ -171,13 +177,25 @@ test('overlapping tiles are pushed down, never sideways', () => {
   assert.strictEqual(tiles[1].y, 2);
 });
 
-test('a chain of overlaps all moves, and resolving terminates', () => {
+test('a chain of overlaps all moves, and nothing is left overlapping', () => {
+  // The bug this caught: the recursion pushed the third tile down and then
+  // the outer loop put it back at the first tile's bottom edge, sitting on
+  // top of the second. Resolving only ever moves a tile down now.
   const tiles = board({ uid: 'a', card: 'x', x: 0, y: 0, w: 4, h: 2 },
     { uid: 'b', card: 'y', x: 0, y: 0, w: 4, h: 2 },
     { uid: 'c', card: 'z', x: 0, y: 1, w: 4, h: 2 });
   L.resolve(tiles, tiles[0]);
-  assert.ok(tiles[1].y >= 2 && tiles[2].y >= tiles[1].y + 2,
-    `b=${tiles[1].y} c=${tiles[2].y}`);
+  tiles.forEach((p, i) => tiles.slice(i + 1).forEach((q) => {
+    assert.ok(!L.overlap(p, q),
+      `${p.uid}@${p.y} overlaps ${q.uid}@${q.y}`);
+  }));
+});
+
+test('resolving never shoves a tile upwards', () => {
+  const tiles = board({ uid: 'a', card: 'x', x: 0, y: 0, w: 4, h: 2 },
+    { uid: 'b', card: 'y', x: 0, y: 9, w: 4, h: 2 });
+  L.resolve(tiles, tiles[0]);
+  assert.strictEqual(tiles[1].y, 9, 'it was not in the way');
 });
 
 test('a tile never overlaps itself', () => {

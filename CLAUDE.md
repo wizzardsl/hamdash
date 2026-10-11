@@ -139,6 +139,15 @@ assumption: `tests/fixtures/layouts.json` holds the awkward cases,
 `python tools/layout_golden.py`), and `tests/test_layout_agreement.py` and
 `tests/js/agreement.test.js` both check against it. A disagreement is a card
 coming back in the wrong box, or without its settings.
+**`Number()` is not `int()`**, and a layout file is exactly where it shows:
+`Number(null)` and `Number('')` are 0 where `int(None)` and `int('')` raise
+and fall back. A `w` of null was a tile zero columns wide in the board and
+four columns wide on the host - the two disagreeing about the same file.
+**Overlap is resolved downwards only.** `o.y = moved.y + moved.h` put a tile
+back where it had just been pushed from: with three overlapping, the
+recursion moved the third down and then the outer loop set it to the first
+tile's bottom edge, leaving it on top of the second. `Math.max` with its
+current y, so resolving is order-independent.
 **Normalising has to be idempotent down to the text.** It was not: the values
 matched while the keys came out in a different order each pass, so every save
 rewrote the file with the lines shuffled. Both sides build a tile in a fixed

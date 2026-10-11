@@ -66,8 +66,18 @@
     if (!cards.length) return null;
 
     const kept = pick(raw, STACK_KEYS);
+    // Matches what `int()` does on the host, which is not what `Number()`
+    // does here: Number(null) is 0 and Number('') is 0, while int(None) and
+    // int('') both raise and fall back. A `w` of null became a tile zero
+    // columns wide on the board and four columns wide on the host - the two
+    // disagreeing about the same file, which is the whole thing the
+    // agreement fixtures exist to stop.
     const whole = (k, fallback) => {
-      const n = Number(kept[k]);
+      const v = kept[k];
+      if (v === null || v === undefined) return fallback;
+      if (typeof v === 'object') return fallback;
+      if (typeof v === 'string' && v.trim() === '') return fallback;
+      const n = Number(v);
       return Number.isFinite(n) ? Math.trunc(n) : fallback;
     };
     // An `active` naming a card that is not here is worse than none: the
@@ -192,7 +202,11 @@
     tiles.filter((o) => overlap(moved, o))
       .sort((p, q) => p.y - q.y)
       .forEach((o) => {
-        o.y = moved.y + moved.h;
+        // Never upwards. Straight assignment put a tile back where it had
+        // just been pushed from: with three tiles overlapping, the recursion
+        // moved the third down and then the outer loop set it back to the
+        // first tile's bottom edge, leaving it sitting on top of the second.
+        o.y = Math.max(o.y, moved.y + moved.h);
         resolve(tiles, o, seen);
       });
     return tiles;

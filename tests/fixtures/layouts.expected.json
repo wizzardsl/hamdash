@@ -293,5 +293,58 @@
         ]
       }
     ]
+  },
+  {
+    "why": "null and empty geometry, where JS Number() and Python int() disagree",
+    "tiles": [
+      {
+        "uid": "a",
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 3,
+        "active": "#0",
+        "popped": false,
+        "cards": [
+          {
+            "uid": "a",
+            "card": "spots",
+            "settings": {}
+          }
+        ]
+      },
+      {
+        "uid": "b",
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 0,
+        "active": "#0",
+        "popped": false,
+        "cards": [
+          {
+            "uid": "b",
+            "card": "logbook",
+            "settings": {}
+          }
+        ]
+      },
+      {
+        "uid": "c",
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5,
+        "active": "#0",
+        "popped": false,
+        "cards": [
+          {
+            "uid": "c",
+            "card": "decoder",
+            "settings": {}
+          }
+        ]
+      }
+    ]
   }
 ]
