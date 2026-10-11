@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import socket
 import threading
 import time
 from html import escape
@@ -26,13 +27,29 @@ from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
 from .services.radio import MODES
 from .services import audio as audiosvc
 
-
 from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes
 
 # One requests.Session per server thread, for the card proxy.
 _local = threading.local()
+
+def _local_addresses() -> set[str]:
+    """Every address that means "this machine".
+
+    Loopback is not enough: an instance bound to a LAN address does not
+    listen on 127.0.0.1 at all, so a request made on the host itself
+    arrives from that LAN address. A request from anywhere else carries
+    the caller's own address, which is not in this set.
+    """
+    out = {"127.0.0.1", "::1", "localhost"}
+    try:
+        name = socket.gethostname()
+        out.add(name)
+        out.update(socket.gethostbyname_ex(name)[2])
+    except OSError:                                     # no DNS, no matter
+        pass
+    return out
 
 # A proxied reply at or over this streams; under it is sent as bytes.
 # 64 kB covers every JSON reply and every ordinary card page.
@@ -63,7 +80,7 @@ def reachable(host: str) -> str:
 
 
 def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
-               native: bool = False):
+               native: bool = False, on_quit=None):
     static = BUNDLED_STATIC
     app = Flask(__name__, static_folder=None)
     # Cards dial this, so it must be dialable: see reachable().
@@ -1070,6 +1087,50 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                        wedged=[w.card.id for w in sup.workers.values()
                                if w.status == "wedged"],
                        radio=rig.state().get("ok"))
+
+    @app.post("/api/shutdown")
+    def shutdown_now():
+        """Stop the app properly, from the machine it is running on.
+
+        Without this, a headless instance on Windows can only be killed,
+        and a kill cannot be caught: the signal handlers never run, the
+        cards are not stopped and - the part with consequences outside
+        the computer - `rig.stop()` never takes the transmitter off the
+        air. A window can be asked to close; `--browser` has no window,
+        which is the normal case for a board somebody operates remotely.
+
+        **Only from this machine.** Not a security control - nothing here
+        is authenticated, and an operator who wanted one would say so -
+        but stopping the station is not something a browser on the far
+        side of the house should be able to do by loading a URL, and the
+        local check costs nothing and needs no configuration.
+        """
+        who = request.remote_addr or ""
+        if who not in _local_addresses():
+            return jsonify(
+                error="hamdash can only be stopped from the machine it is "
+                      "running on; press Ctrl-C in its window, or run "
+                      "`python run.py --stop` there",
+                asked_from=who), 403
+        if on_quit is None:
+            return jsonify(error="this instance has no way to stop itself"), 501
+
+        def bye():
+            # Answer first, then close. The order matters: the caller is
+            # told it worked rather than seeing the connection drop and
+            # having to guess whether it did.
+            #
+            # `on_quit` owns ending the process as well as closing things
+            # down, and that is deliberate: ending it is the launcher's
+            # business, not the app's. It was `os._exit(0)` here, which
+            # worked and also meant the test suite killed itself the
+            # moment it exercised this route - exit code 0, no summary
+            # line, every later test silently not run.
+            time.sleep(0.25)
+            on_quit()
+
+        threading.Thread(target=bye, daemon=True, name="shutdown").start()
+        return jsonify(ok=True, stopping=True)
 
     def shutdown():
         sup.stop_all()

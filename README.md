@@ -18,6 +18,7 @@ pip install -r requirements.txt
 python run.py                 # native window (pywebview)
 python run.py --browser       # serve on http://127.0.0.1:8765 instead
 python run.py --home ./dev    # use a throwaway config directory
+python run.py --stop          # ask a running one to close properly
 ```
 
 Your config, log and cards live in one directory:

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.handlers
+import json
 import os
 import signal
 import socket
@@ -110,6 +111,79 @@ class _Truncating(logging.Formatter):
             out = f"{out[:self.LIMIT]}… [truncated, {len(out)} chars]"
         return out
 
+
+RUNNING = "running.json"
+
+
+def note_running(cfg, host: str, port: int, url: str) -> None:
+    """Leave a note saying where this instance is listening.
+
+    So that `--stop` has something to talk to. The port is often not a
+    fixed one - a native window takes whatever is free - and the bind
+    address may not be loopback, so guessing is no good.
+    """
+    try:
+        (cfg.home / RUNNING).write_text(json.dumps({
+            "pid": os.getpid(), "host": host, "port": port, "url": url,
+            "started": time.time(),
+        }), encoding="utf-8")
+    except OSError:              # a read-only home is not worth failing on
+        pass
+
+
+def clear_running(cfg) -> None:
+    try:
+        (cfg.home / RUNNING).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def stop_running(cfg) -> int:
+    """`python run.py --stop`: ask the instance recorded here to close.
+
+    The point is that a kill cannot be caught. On Windows a headless
+    instance has no window to close and taskkill needs /F, which skips
+    the signal handlers - so the cards are not stopped and `rig.stop()`
+    never runs, which is what takes a transmitter off the air. This asks
+    properly instead.
+    """
+    import requests
+    note = cfg.home / RUNNING
+    if not note.exists():
+        print(f"no running hamdash recorded in {cfg.home}", file=sys.stderr)
+        return 1
+    try:
+        at = json.loads(note.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print(f"{note} is unreadable; deleting it", file=sys.stderr)
+        clear_running(cfg)
+        return 1
+    url = at.get("url") or f"http://127.0.0.1:{at.get('port')}"
+    try:
+        r = requests.post(f"{url}/api/shutdown", timeout=10)
+    except requests.RequestException as exc:
+        print(f"nothing answering at {url} ({exc}); clearing the note",
+              file=sys.stderr)
+        clear_running(cfg)
+        return 1
+    if r.status_code == 403:
+        print(r.json().get("error", "refused"), file=sys.stderr)
+        return 1
+    if not r.ok:
+        print(f"{url} said {r.status_code}: {r.text[:200]}", file=sys.stderr)
+        return 1
+    print(f"asked hamdash on {url} to stop")
+    # Wait for it to actually go, so a script can restart it straight after.
+    for _ in range(100):
+        time.sleep(0.1)
+        try:
+            requests.get(f"{url}/api/health", timeout=1)
+        except requests.RequestException:
+            clear_running(cfg)
+            print("stopped")
+            return 0
+    print("it is still answering; it may be stuck", file=sys.stderr)
+    return 1
 
 def setup_logging(cfg) -> None:
     """Log to a file as well as the console.
@@ -203,13 +277,29 @@ def main() -> int:
     ap.add_argument("--home", default=None, help="config directory override")
     ap.add_argument("--threads", type=int, default=64,
                     help="server threads; each open event stream uses one")
+    ap.add_argument("--stop", action="store_true",
+                    help="ask a running hamdash on this machine to stop")
     args = ap.parse_args()
+
+    if args.stop:
+        return stop_running(Config(args.home))
 
     port = args.port or (8765 if args.browser else free_port())
     cfg = Config(args.home)
     setup_logging(cfg)
+    # /api/shutdown calls this. close_once is defined below; the hook is
+    # read when the route fires, which is long after. Ending the process
+    # belongs here rather than in the app: by this point the cards are
+    # stopped and the rig is closed - which is what takes a transmitter
+    # off the air - so what is left to unwind is a blocking server with
+    # no clean way to be stopped from one of its own threads.
+    def quit_now():
+        close_once()
+        logging.shutdown()
+        os._exit(0)
+
     app, shutdown = create_app(cfg, host=args.host, port=port,
-                               native=not args.browser)
+                               native=not args.browser, on_quit=quit_now)
     # The page the window opens, or that is printed for the
     # operator - the bind address may be a wildcard, which is
     # not something a browser can go to.
@@ -221,6 +311,8 @@ def main() -> int:
     # most of the time - and the rig manager's shutdown is what takes a
     # transmitter off the air. A hard kill still cannot be caught by
     # anything, which is why the radio's own timeout is the real backstop.
+    note_running(cfg, args.host, port, url)
+
     closing = threading.Lock()
     closed = []
 
@@ -229,6 +321,7 @@ def main() -> int:
             if closed:
                 return
             closed.append(True)
+        clear_running(cfg)
         try:
             native_windows.close_all()
         except Exception:                               # noqa: BLE001
@@ -258,6 +351,10 @@ def main() -> int:
 
     if args.browser:
         print(f"hamdash on {url}  (config in {cfg.home})")
+        # Headless has no window to close, and a kill cannot be caught -
+        # which matters because closing is what unkeys the radio.
+        print("stop it with Ctrl-C here, or `python run.py --stop` "
+              "from another window on this machine")
         try:
             wsgi_serve(app, **kwargs)
         finally:

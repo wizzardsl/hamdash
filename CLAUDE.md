@@ -530,6 +530,22 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   handlers that close once, and the `--browser` path had no signal handling
   at all. **A hard kill still cannot be caught by anything**, so the radio's
   own time-out timer is the real backstop and the README says so.
+
+- **Headless has no window, so there was no safe way to stop it.** The
+  signal handlers cover Ctrl-C in its own console and a native window can
+  be asked to close; `--browser` has neither, and on Windows `taskkill`
+  then insists on `/F`, which nothing can catch - so the cards are not
+  stopped and `rig.stop()` never runs. Running headless is the normal
+  case for a board operated from another room, so that is not an edge
+  case there. `POST /api/shutdown` asks properly and
+  `python run.py --stop` is how an operator calls it; `run.py` leaves a
+  `running.json` in the home directory so `--stop` can find an instance
+  whose port was chosen for it. **The endpoint answers only to this
+  machine** - not a security control, since nothing here is
+  authenticated, but stopping somebody's station should not be a URL a
+  browser in the next room can load. Loopback alone is not the test: an
+  instance bound to a LAN address does not listen on 127.0.0.1 at all,
+  so a request made on the host itself arrives from that LAN address.
 - **The Transmit button reads the radio, never its own flag.** It kept `tx`
   in the page, so a reload while keyed brought it back saying "Transmit"
   with the radio still on the air, and that press told an already
@@ -1503,12 +1519,25 @@ the live service.
   `plugins/rx_audio` plays the radio's audio in a browser and control was
   always there (the board is a web app and `/api/radio/*` never cared
   where a request came from), so listening and operating from another
-  machine on the LAN works now. What is left: **authentication**, which
-  this makes urgent rather than optional - `--host` binds the board off
-  localhost and anyone who can route to it can key the rig, delete QSOs
-  and overwrite config, so it stays undocumented until there is a lock on
-  it. Then transmit, which needs a microphone, which needs a secure
-  context, which means HTTPS or a tailnet.
+  machine on the LAN works now. Transmit is what is left, and it needs a
+  microphone, which needs a secure context, which means HTTPS with a
+  certificate or a tailnet.
+- **Authentication is deliberately not here, and that is the operator's
+  decision rather than an oversight.** It was offered and turned down to
+  keep the app simple for ham users, who are mostly running one station
+  on their own home network. Written down so the next session does not
+  'fix' it, and so the trade is visible rather than implied: with
+  `--host` set, anyone who can route to the board can key the rig, delete
+  QSOs and overwrite config, including the saved credentials. The honest
+  mitigations are a trusted LAN or a VPN such as Tailscale, and the docs
+  say so where `--host` is explained rather than burying it. Two things
+  follow from the decision and should survive it: **nothing new should
+  widen that surface without being asked for**, and anything genuinely
+  destructive that is *not* part of operating - stopping the app is the
+  first - is restricted to the machine hamdash runs on, which costs no
+  configuration and no password. If it is ever picked up, a shared token
+  checked before the mutating routes, carried by the board itself, is
+  the small version; it should not grow accounts.
 - **Sharing one sound card between cards is not solved.** If a spectrum
   or decoder tile already holds the radio's input, `rx_audio` cannot open
   it too - PortAudio on Windows will not reliably give one capture device

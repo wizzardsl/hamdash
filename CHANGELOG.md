@@ -24,6 +24,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **`python run.py --stop`**, and a way for hamdash to close itself
+  properly. Running without the native window left no safe way to stop
+  it: there is no window to close, and a forced kill cannot be caught, so
+  the cards were left running and the radio was never closed down — which
+  is the step that takes a transmitter off the air. It can now be asked
+  to stop, and does it in the right order. The request is only accepted
+  from the machine hamdash is running on, so a browser elsewhere in the
+  house cannot shut your station down by loading a URL.
 - **A Tidy up button**, in the Cards menu. Unticking a few cards leaves
   holes in the board, and it does not close them by itself on purpose — a
   layout that rearranged whenever something was removed would move cards
