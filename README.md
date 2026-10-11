@@ -51,6 +51,23 @@ hang the UI, crash the host, or drag a conflicting dependency into it. The host
 reverse-proxies `/cards/<id>/*` to the card's own loopback port, so cards are
 same-origin to the browser and their ports are never exposed.
 
+## The board's own tests
+
+`hamdash/static/js/layout.js` is what a board *is* — normalising, docking,
+undocking, overlap, what reaches `layout.json` — with no DOM in it, split out
+of `grid.js` so the part that can be wrong invisibly is the part that gets
+tested. `grid.js` keeps the pixels.
+
+```bash
+node --test tests/js/
+```
+
+No npm and no package.json: Node's own runner, and the thing being tested has
+no dependencies either. The Python suite covers the host's half, and both
+check themselves against `tests/fixtures/layouts.expected.json` — the host
+and the board both rewrite `layout.json`, so they have to agree about what a
+layout becomes.
+
 ## Writing a card
 
 Copy `plugins/hello_card` into `<HAMDASH_HOME>/cards/` and edit. Three kinds:

@@ -14,6 +14,7 @@ python run.py                      # native window
 python run.py --browser            # http://127.0.0.1:8765, no webview
 python run.py --home ./dev         # throwaway config dir
 python -m unittest discover -s tests
+node --test tests/js/              # the board's layout model; needs Node
 
 pyinstaller hamdash.spec           # -> dist/hamdash/  (needs pip install pyinstaller)
 python tools/smoke_frozen.py       # starts that build and makes it run a card
@@ -52,7 +53,8 @@ plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
 tests/              regression guards — js_api shape, bus namespace,
-                    packaging/spec drift, release notes
+                    packaging/spec drift, release notes, layout agreement
+tests/js/           the board's layout model, under `node --test`
 tools/              release_notes.py (release notes), smoke_frozen.py (build check)
 hamdash.spec        PyInstaller build definition — onedir, see invariant 7
 .github/workflows/  ci.yml (tests), build.yml (frozen apps), release.yml (on tag)
@@ -128,7 +130,20 @@ nothing, because the card never sees it. It had been missing since the
 helper was written, which is why the spectrum card's per-tile audio input
 had never taken effect.
 
-**5a. A tile is a box of cards, not a card.** Stacking put tabs on a tile,
+**5a. A tile is a box of cards, not a card.** The model lives in
+`hamdash/static/js/layout.js` and `hamdash/config.py`, in two languages,
+and **both of them rewrite `layout.json`** - the board saves what it holds,
+the host normalises what it is sent. So they have a contract rather than an
+assumption: `tests/fixtures/layouts.json` holds the awkward cases,
+`layouts.expected.json` is what the host makes of them (regenerate with
+`python tools/layout_golden.py`), and `tests/test_layout_agreement.py` and
+`tests/js/agreement.test.js` both check against it. A disagreement is a card
+coming back in the wrong box, or without its settings.
+**Normalising has to be idempotent down to the text.** It was not: the values
+matched while the keys came out in a different order each pass, so every save
+rewrote the file with the lines shuffled. Both sides build a tile in a fixed
+order - uid, x, y, w, h, active, popped, cards - and both assert it.
+ Stacking put tabs on a tile,
 so `layout.json` holds `{uid, x, y, w, h, active, cards: [{uid, card,
 settings}, ...]}` and a plain tile is a stack of one - one shape in the file
 and one code path above it. `config.normalise_layout` reads the old flat

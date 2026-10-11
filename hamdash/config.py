@@ -147,10 +147,13 @@ def _entry(raw) -> dict | None:
     """One card in a tile, or None if it is not one."""
     if not isinstance(raw, dict) or not raw.get("card"):
         return None
-    out = {k: raw[k] for k in ENTRY_KEYS if k in raw}
-    out["card"] = str(out["card"])
-    out["uid"] = str(out.get("uid") or "") or new_uid()
-    out["settings"] = dict(out.get("settings") or {})
+    kept = {k: raw[k] for k in ENTRY_KEYS if k in raw}
+    out = {"uid": str(kept.get("uid") or "") or new_uid(),
+           "card": str(kept["card"])}
+    for key in ("title", "url"):
+        if key in kept:
+            out[key] = kept[key]
+    out["settings"] = dict(kept.get("settings") or {})
     return out
 
 
@@ -170,19 +173,33 @@ def normalise_tile(raw) -> dict | None:
     if not entries:
         return None
 
-    out = {k: raw[k] for k in STACK_KEYS if k in raw and k != "cards"}
-    out["cards"] = entries
-    out["uid"] = str(out.get("uid") or "") or entries[0]["uid"]
+    kept = {k: raw[k] for k in STACK_KEYS if k in raw and k != "cards"}
+
+    def whole(key, fallback):
+        try:
+            return int(kept.get(key, fallback))
+        except (TypeError, ValueError):
+            return fallback
+
+    active = kept.get("active")
     # An `active` naming a card that is not here is worse than none at all:
     # the board draws an empty box under a working tab strip.
-    if out.get("active") not in [e["uid"] for e in entries]:
-        out["active"] = entries[0]["uid"]
-    out["popped"] = bool(out.get("popped"))
-    for key, fallback in (("x", 0), ("y", 0), ("w", 4), ("h", 3)):
-        try:
-            out[key] = int(out.get(key, fallback))
-        except (TypeError, ValueError):
-            out[key] = fallback
+    if active not in [e["uid"] for e in entries]:
+        active = entries[0]["uid"]
+
+    # Built in a fixed order, not by copying whatever order the file had.
+    # Normalising is not idempotent otherwise - the values match but the keys
+    # come out shuffled - so every save rewrites layout.json with the lines
+    # moved around, and the one file an operator might read by hand or keep
+    # in git churns for no reason.
+    out = {"uid": str(kept.get("uid") or "") or entries[0]["uid"],
+           "x": whole("x", 0), "y": whole("y", 0),
+           "w": whole("w", 4), "h": whole("h", 3),
+           "active": active, "popped": bool(kept.get("popped"))}
+    for key in ("pop_w", "pop_h", "on_top", "from_stack"):
+        if key in kept:
+            out[key] = kept[key]
+    out["cards"] = entries          # last: it is the long one to read
     return out
 
 

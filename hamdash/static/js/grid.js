@@ -27,6 +27,12 @@
   const POP_MARGIN = 48;      // px outside the board before a drag means "pop out"
   const TEAR_OFF = 14;        // px a tab must travel before it leaves its stack
 
+  // What a board *is* lives in layout.js, with no DOM: normalising, docking,
+  // undocking, overlap. This file owns the pixels and the event handlers and
+  // calls in for the rest, so there is one implementation of the model and
+  // `tests/js/layout.test.js` can drive it without a browser.
+  const L = global.HDLayout;
+
   class Board {
     constructor(el, opts) {
       this.el = el;
@@ -54,7 +60,7 @@
     }
 
     setTiles(tiles) {
-      this.tiles = (tiles || []).map(asStack).filter(Boolean);
+      this.tiles = L.normalise(tiles);
       this.el.querySelectorAll('.tile').forEach((n) => n.remove());
       this._nodes.clear();
       this.tiles.forEach((t) => this._mount(t));
@@ -63,7 +69,7 @@
 
     /* `tile` may be a card ({card, uid, ...}) or an already-built stack. */
     add(tile) {
-      const t = asStack({ x: 0, y: this._nextRow(), w: 4, h: 3, ...tile });
+      const t = L.asStack({ x: 0, y: this._nextRow(), w: 4, h: 3, ...tile });
       t.x = clamp(t.x, 0, Math.max(0, this.cols - t.w));
       this.tiles.push(t);
       this._mount(t);
@@ -78,36 +84,33 @@
       const t = this.stackOf(cardUid);
       if (!t) return;
       if (t.popped) this.onPopIn(t);             // don't orphan its window
-      t.cards = t.cards.filter((c) => c.uid !== cardUid);
-      if (t.cards.length) {
-        if (t.active === cardUid) t.active = t.cards[0].uid;
-        this._remount(t);
-        this.onChange(this.tiles);
-        return;
-      }
-      this.tiles = this.tiles.filter((x) => x !== t);
+      const got = L.removeCard(this.tiles, cardUid);
+      if (!got.changed) return;
+      this.tiles = got.tiles;
+      if (got.emptied) this._remount(got.emptied);
+      if (got.dropped) this._drop(got.dropped);
+      this.onChange(this.tiles);
+    }
+
+    /* Forget a tile's element. The model has already let go of the tile. */
+    _drop(t) {
       this._nodes.get(t.uid)?.remove();
       this._nodes.delete(t.uid);
-      this.onChange(this.tiles);
     }
 
     /* The card with this uid, wherever it is. */
     get(cardUid) {
-      for (const t of this.tiles) {
-        const c = t.cards.find((x) => x.uid === cardUid);
-        if (c) return c;
-      }
-      return undefined;
+      return L.cardOf(this.tiles, cardUid);
     }
 
     /* The box a card sits in. */
     stackOf(cardUid) {
-      return this.tiles.find((t) => t.cards.some((c) => c.uid === cardUid));
+      return L.stackOf(this.tiles, cardUid);
     }
 
     /* Every card on the board, in board order. */
     get cards() {
-      return this.tiles.flatMap((t) => t.cards);
+      return L.allCards(this.tiles);
     }
 
     show(cardUid) {
@@ -125,22 +128,12 @@
     /* Move a card into another tile, as a tab. Returns false if it would be
        a no-op, so a drag that ends where it started is not a layout change. */
     dock(cardUid, ontoTileUid) {
-      const from = this.stackOf(cardUid);
-      const onto = this.tiles.find((t) => t.uid === ontoTileUid);
-      if (!from || !onto || from === onto || onto.popped) return false;
-      const card = from.cards.find((c) => c.uid === cardUid);
-      from.cards = from.cards.filter((c) => c.uid !== cardUid);
-      onto.cards.push(card);
-      onto.active = cardUid;
-      if (from.cards.length) {
-        if (from.active === cardUid) from.active = from.cards[0].uid;
-        this._remount(from);
-      } else {
-        this.tiles = this.tiles.filter((t) => t !== from);
-        this._nodes.get(from.uid)?.remove();
-        this._nodes.delete(from.uid);
-      }
-      this._remount(onto);
+      const got = L.dock(this.tiles, cardUid, ontoTileUid);
+      if (!got.changed) return false;
+      this.tiles = got.tiles;
+      if (got.from) this._remount(got.from);
+      if (got.dropped) this._drop(got.dropped);
+      this._remount(got.onto);
       this.reflow();
       this.onChange(this.tiles);
       return true;
@@ -148,22 +141,15 @@
 
     /* Pull a tab back out into a tile of its own, next to the one it left. */
     undock(cardUid, where) {
-      const from = this.stackOf(cardUid);
-      if (!from || from.cards.length < 2) return null;
-      const card = from.cards.find((c) => c.uid === cardUid);
-      from.cards = from.cards.filter((c) => c.uid !== cardUid);
-      if (from.active === cardUid) from.active = from.cards[0].uid;
-      this._remount(from);
-      const t = this.add({
-        ...card, cards: [card], active: card.uid,
-        w: from.w, h: from.h,
-        x: clamp((where && where.x) ?? from.x, 0, this.cols - from.w),
-        y: Math.max(0, (where && where.y) ?? (from.y + from.h)),
-      });
-      this._resolve(t);
+      const got = L.undock(this.tiles, cardUid, where, this.cols);
+      if (!got.changed) return null;
+      this.tiles = got.tiles;
+      this._remount(got.from);
+      this._mount(got.made);
+      this._resolve(got.made);
       this.reflow();
       this.onChange(this.tiles);
-      return t;
+      return got.made;
     }
 
     setArranging(on) {
@@ -581,25 +567,12 @@
 
     /* ---- geometry ---------------------------------------------------- */
 
-    _overlap(a, b) {
-      return a.uid !== b.uid && a.x < b.x + b.w && b.x < a.x + a.w
-          && a.y < b.y + b.h && b.y < a.y + a.h;
-    }
-
-    _resolve(moved, seen = new Set()) {
-      if (seen.has(moved.uid)) return;
-      seen.add(moved.uid);
-      this.tiles
-        .filter((o) => this._overlap(moved, o))
-        .sort((p, q) => p.y - q.y)
-        .forEach((o) => {
-          o.y = moved.y + moved.h;
-          this._resolve(o, seen);
-        });
+    _resolve(moved) {
+      L.resolve(this.tiles, moved);
     }
 
     _nextRow() {
-      return this.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+      return L.nextRow(this.tiles);
     }
 
     _place(t, node) {
@@ -661,30 +634,9 @@
     }
   }
 
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  const uid = () => Math.random().toString(36).slice(2, 9);
+  const clamp = L.clamp;
   const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-  /* A tile, from either shape. The board is handed flat tiles by `add` and
-     by older callers, and stacks by the layout; one shape in, one out. */
-  function asStack(raw) {
-    if (!raw) return null;
-    const t = { ...raw };
-    if (!Array.isArray(t.cards) || !t.cards.length) {
-      if (!t.card) return null;
-      const { card, title, url, settings } = t;
-      t.cards = [{ uid: t.uid || uid(), card, title, url, settings }];
-    }
-    t.cards = t.cards.map((c) => ({ ...c, uid: c.uid || uid() }));
-    t.uid = t.uid || t.cards[0].uid;
-    if (!t.cards.some((c) => c.uid === t.active)) t.active = t.cards[0].uid;
-    // The card fields live on the entries now. Leaving copies on the tile
-    // is two answers to "which card is this", and they drift apart the
-    // first time one is docked.
-    delete t.card; delete t.title; delete t.url; delete t.settings;
-    return t;
-  }
 
   global.Board = Board;
 })(window);

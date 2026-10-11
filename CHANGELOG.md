@@ -4,6 +4,28 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Changed
+- **The board's layout model is testable.** What a board *is* — normalising,
+  docking, undocking, overlap, what reaches `layout.json` — moved out of
+  `grid.js` into `hamdash/static/js/layout.js`, with no DOM in it, the same
+  way `cw.py` is split out of the decoder card. `grid.js` keeps the pixels and
+  the event handlers. `tests/js/` drives the model under `node --test`: no
+  npm, no package.json, nothing to install.
+  The two normalisers — the host's and the board's — now have a contract
+  rather than an assumption. `tests/fixtures/layouts.json` is a set of
+  awkward layouts, `layouts.expected.json` is what the host makes of them,
+  and both sides must match it. They both rewrite `layout.json`, so a
+  disagreement is a card coming back in the wrong box.
+
+### Fixed
+- **Normalising a layout was not idempotent.** The values matched but the keys
+  came out in a different order on each pass, so every save rewrote
+  `layout.json` with the lines shuffled — noise in the one file an operator
+  might open or keep in git. Both normalisers now build a tile in a fixed
+  order, and both sides assert it.
+
 ## [0.4.0]
 
 ### Added

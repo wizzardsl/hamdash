@@ -38,3 +38,20 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+
+  # The board's layout model, in the language it is written in. Node's own
+  # test runner, so there is no package.json and nothing to install: the
+  # thing being tested has no dependencies and neither should testing it.
+  # One OS is enough - it is arithmetic over plain objects, not a browser.
+  board:
+    name: board layout (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Layout model tests
+        run: node --test tests/js/

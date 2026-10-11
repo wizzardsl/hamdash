@@ -104,15 +104,11 @@
     renderCardsMenu();      // a tile closed with its own x unticks it here
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      HD.put('/api/layout', {
-        tiles: tiles.map(({ uid, x, y, w, h, active, cards: inside,
-                           popped, pop_w, pop_h, on_top, from_stack }) => ({
-          uid, x, y, w, h, active, popped: !!popped, pop_w, pop_h, on_top,
-          from_stack,
-          cards: (inside || []).map(({ uid: cu, card, title, url, settings }) =>
-            ({ uid: cu, card, title, url, settings: settings || {} })),
-        })),
-      }).catch((e) => toast(e.message));
+      // HDLayout.forSave decides the shape, so the board and its tests
+      // agree about what reaches layout.json rather than each having a list
+      // of field names to drift apart.
+      HD.put('/api/layout', { tiles: HDLayout.forSave(tiles) })
+        .catch((e) => toast(e.message));
     }, 300);
   }
 

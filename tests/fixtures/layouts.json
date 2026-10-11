@@ -1,0 +1,88 @@
+{
+  "_": [
+    "Awkward layouts, read by tests/js/layout.test.js and by",
+    "tests/test_layout_agreement.py. Both normalisers run every one of these",
+    "and must agree, because both of them rewrite layout.json: the board",
+    "saves what it holds, the host normalises what it is sent, and a",
+    "disagreement means a tile saved in a shape the other side repairs",
+    "differently. Each case says what it is guarding."
+  ],
+  "cases": [
+    {
+      "why": "the old flat tile, which is what every upgrade starts from",
+      "tiles": [
+        {"uid": "t1", "card": "logbook", "x": 2, "y": 1, "w": 5, "h": 4,
+         "settings": {"page_size": 30}}
+      ]
+    },
+    {
+      "why": "a stack, which must pass through untouched",
+      "tiles": [
+        {"uid": "s1", "x": 0, "y": 0, "w": 6, "h": 5, "active": "b",
+         "cards": [{"uid": "a", "card": "spots", "settings": {"q": 1}},
+                   {"uid": "b", "card": "decoder", "settings": {}}]}
+      ]
+    },
+    {
+      "why": "an active naming a card that is not here; the board would draw an empty box under a working tab strip",
+      "tiles": [
+        {"uid": "s", "active": "gone",
+         "cards": [{"uid": "a", "card": "spots"},
+                   {"uid": "b", "card": "logbook"}]}
+      ]
+    },
+    {
+      "why": "a tile with nothing in it is not a tile",
+      "tiles": [
+        {"uid": "empty", "cards": []},
+        {"uid": "alsoempty"},
+        {"uid": "ok", "card": "spots"}
+      ]
+    },
+    {
+      "why": "a card with no id goes, its siblings stay",
+      "tiles": [
+        {"uid": "s", "cards": [{"uid": "a", "card": "spots"}, {"uid": "junk"}]}
+      ]
+    },
+    {
+      "why": "two cards sharing a uid would share their settings and their identity through the proxy",
+      "tiles": [
+        {"uid": "p", "cards": [{"uid": "same", "card": "spots"}]},
+        {"uid": "q", "active": "same",
+         "cards": [{"uid": "same", "card": "decoder"}]}
+      ]
+    },
+    {
+      "why": "junk geometry falls back rather than reaching the grid as NaN",
+      "tiles": [
+        {"uid": "t", "card": "spots", "x": "left", "y": null, "w": {}, "h": 7}
+      ]
+    },
+    {
+      "why": "fields nobody declared are dropped, so a hand-edit cannot smuggle one past",
+      "tiles": [
+        {"uid": "t", "card": "spots", "nonsense": {"x": 99}, "w": 3,
+         "cards": [{"uid": "c", "card": "spots", "sneaky": true}]}
+      ]
+    },
+    {
+      "why": "popped is a boolean whatever it was written as",
+      "tiles": [
+        {"uid": "t", "card": "spots", "popped": "yes"},
+        {"uid": "u", "card": "logbook", "popped": 0}
+      ]
+    },
+    {
+      "why": "a whole board, mixed shapes, which is what an upgrade actually looks like",
+      "tiles": [
+        {"uid": "t1", "card": "rig_control", "x": 0, "y": 0, "w": 4, "h": 3},
+        {"uid": "t2", "x": 4, "y": 0, "w": 5, "h": 5, "active": "t2",
+         "cards": [{"uid": "t2", "card": "logbook", "settings": {"a": 1}},
+                   {"uid": "z9", "card": "spots"}]},
+        {"uid": "t3", "card": "beacon_map", "x": 9, "y": 0, "w": 3, "h": 4,
+         "popped": true}
+      ]
+    }
+  ]
+}
