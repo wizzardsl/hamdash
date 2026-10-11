@@ -1083,6 +1083,30 @@ the live service.
   `qsodates.com/api/downloads?format=json`, the one its own downloads page
   links to - needs no key. It is ~720 kB of a year's calendar with real dates
   rather than recurrence rules to expand, capped at 1000 records.
+- **The contest calendar has no links in it, so the name searches.** The
+  card carried a `rules` link from the day contests were added and it had
+  never once rendered: QSO Dates' bulk export has a `website` field and it
+  is empty on all 1000 rows, measured against the live export, and their
+  own site has no per-contest page to fall back on - every
+  `/activities/<id>` shape answers 404. A link that is always absent is
+  indistinguishable from no feature, which is how it was reported.
+  The name is the link now and it goes to a search, **marked as one**: a
+  dotted underline and a tooltip saying the calendar carries no rules
+  page. Dressing a search up as the organiser's own page is the wrong
+  answer that looks like a right one. `website` is still read first, so
+  the day they fill it in nothing here changes. Nothing else in the row
+  is scanned for a URL - the only real rules URL in the whole export is
+  in a *logo_url*, and guessing at mislabelled fields is how you link
+  somebody to a PNG.
+- **The underline has to be visible to be a signal.** The first version
+  drew it in `var(--rule)`, which on this surface is invisible - so the
+  name was a link that nothing said was a link, and the dotted/solid
+  distinction that was the whole point could not be seen. Screenshot it
+  rather than trusting that a border was set.
+- **The export is CC0 “free to use with attribution”**, which it states in
+  its own payload. `docs/built-in-cards.md` credited it and the card did
+  not; the operator seeing the data is the one who should see whose
+  calendar it is. Same lesson as the bundled flags' licence.
 - **Reverse Beacon Network has no public HTTP API**, so it is telnet, in
   `plugins/spots/telnet.py` - which is also what a DX cluster speaks, so the
   two are one class pointed at different hosts. Its web endpoints answer 400

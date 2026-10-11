@@ -65,7 +65,19 @@
   .con { border-bottom: 1px solid var(--rule); padding: 5px 6px; }
   .con .name { font-weight: 600; }
   .con.on .name { color: var(--accent); }
+  /* An underline in --rule is invisible on this surface, which makes a
+     link that nothing says is a link. Muted reads as "clickable" against
+     both themes without competing with the contest name. */
+  .con .name a { color: inherit; text-decoration: underline;
+                 text-decoration-color: var(--muted);
+                 text-underline-offset: 3px; }
+  .con .name a:hover { text-decoration-color: currentColor; }
+  /* A search is not the rules page. Dotted, so the difference is visible
+     before the click rather than discovered after it. */
+  .con .name a.guess { text-decoration-style: dotted; }
   .con .meta { color: var(--muted); font-size: 11px; }
+  .credit { color: var(--muted); font-size: 11px; margin: 10px 6px 2px; }
+  .credit a { color: var(--muted); }
   h4 { margin: 8px 6px 2px; font-size: 11px; color: var(--muted);
        text-transform: uppercase; letter-spacing: .06em; }
 </style>
@@ -259,24 +271,61 @@ function paintSpots() {
     </tr>`).join('')}</tbody></table>`;
 }
 
+// Where a contest's name points. QSO Dates' bulk export has a `website`
+// field and it is **empty on all 1000 rows**, measured against the live
+// export, and their own site has no per-contest page either (every
+// /activities/<id> shape answers 404). So for every contest in practice
+// the honest link is a search, and the one dishonest thing would be to
+// dress one up as the organiser's own page: `known` is false there and
+// the underline goes dotted to say so before the click, not after.
+//
+// `website` is still read first, so the day they start filling it in this
+// uses it with no change here. Nothing else in the row is worth scanning:
+// the only real rules URL in the whole export is in a *logo_url*, and
+// guessing at mislabelled fields is how you link somebody to a PNG.
+function rules(c) {
+  const direct = (c.website || '').trim();
+  if (/^https?:\/\//i.test(direct)) {
+    let host = direct;
+    try { host = new URL(direct).hostname.replace(/^www\./, ''); } catch (e) {}
+    return { url: direct, known: true, why: `Rules — ${host}` };
+  }
+  return {
+    url: 'https://duckduckgo.com/?q='
+         + encodeURIComponent(`${c.name} ${c.type || 'contest'} rules`),
+    known: false,
+    why: 'The calendar carries no rules page — searches the web for it',
+  };
+}
+
 function paintContests() {
   const now = cons.now || Date.now() / 1000;
-  const one = (c, on) => `<div class="con${on ? ' on' : ''}">
-      <div class="name">${esc(c.name)}</div>
+  const one = (c, on) => {
+    const r = rules(c);
+    return `<div class="con${on ? ' on' : ''}">
+      <div class="name"><a href="${esc(r.url)}" target="_blank" rel="noopener"
+         class="${r.known ? '' : 'guess'}" title="${esc(r.why)}"
+         >${esc(c.name)}</a></div>
       <div class="meta">${esc(c.type)} · ${
         on ? `ends in ${ago(c.end - now)}`
            : `starts in ${ago(c.start - now)}`}${
         c.modes && c.modes.length ? ' · ' + esc(c.modes.join(', ')) : ''}${
-        c.bands && c.bands.length ? ' · ' + esc(c.bands.join(', ')) : ''}${
-        c.website ? ` · <a href="${esc(c.website)}" target="_blank" rel="noopener">rules</a>` : ''}
+        c.bands && c.bands.length ? ' · ' + esc(c.bands.join(', ')) : ''}
       </div></div>`;
+  };
   $('#pane').innerHTML =
     `<h4>On now (${cons.on.length})</h4>`
     + (cons.on.length ? cons.on.map((c) => one(c, true)).join('')
                       : '<p class="empty">Nothing running.</p>')
     + `<h4>Next two weeks (${cons.soon.length})</h4>`
     + (cons.soon.length ? cons.soon.map((c) => one(c, false)).join('')
-                        : '<p class="empty">Nothing scheduled.</p>');
+                        : '<p class="empty">Nothing scheduled.</p>')
+    // The export is CC0 "free to use with attribution", and the docs
+    // saying so is not the same as the operator being able to see whose
+    // calendar this is. It is also the only link here that goes to a
+    // page about these contests rather than to a search.
+    + `<p class="credit">Calendar from <a href="https://www.qsodates.com/"
+         target="_blank" rel="noopener">QSO Dates</a></p>`;
 }
 
 function paintStatus() {

@@ -6,6 +6,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Changed
+- **Clicking a contest opens its rules.** The name is the link now. The
+  calendar this comes from has no rules pages in it — the `website` field
+  is empty on all 1000 rows and the site has no per-contest page — so for
+  almost every contest the link is a web search, and it says so: a dotted
+  underline and a tooltip, rather than a search dressed up as the
+  organiser's own page. Where a contest does carry a real address the link
+  goes straight there and the underline is solid. A `rules` link had been
+  in the card since contests were added and had never once appeared,
+  because that field has never had anything in it.
+- **The contests pane credits QSO Dates.** Their export is CC0 “free to
+  use with attribution”; only the docs carried it.
+
 ## [0.5.1]
 
 ### Added
