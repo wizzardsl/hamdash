@@ -18,6 +18,10 @@
   .mem { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
   .mem button { font-size: 12px; padding: 3px 7px; }
   .ptt { background: var(--alert); color: var(--bg); }
+  /* On the air. The label says so too, but a transmitting radio deserves
+     something visible from across the room. */
+  .ptt.on-air { animation: onair 1s steps(2, end) infinite; }
+  @keyframes onair { 50% { opacity: .45; } }
   .err { color: var(--alert); font-size: 12px; margin-top: 8px; }
   /* The arrows sit with the dial, because that is the thing they move. */
   .tuner { display: flex; align-items: center; gap: 4px; margin-left: auto; }
@@ -73,6 +77,15 @@ const STEPS = [
 let conf = {};
 let live = null;              // the last state the rig gave us
 let stepping = false;         // one request at a time while a key is held
+let transmitting = false;     // what the *radio* last said, not this page
+
+function setPtt(on) {
+  transmitting = on;
+  const b = $('#ptt');
+  if (!b) return;
+  b.textContent = on ? 'Stop transmitting' : 'Transmit';
+  b.classList.toggle('on-air', on);
+}
 
 function stepHz() {
   return Number($('#step').value) || 1000;
@@ -110,6 +123,13 @@ function paint(s) {
   $('#band').textContent = s.band;
   $('#state').textContent = s.ptt ? 'transmitting' : `${s.mode}${s.mock ? ' · simulated' : ''}`;
   $('#state').className = s.ptt ? 'state tx' : 'state';
+  // The Transmit button follows the radio, not a flag of its own. It used
+  // to keep `tx` in the page: reload while transmitting and the button read
+  // "Transmit" while the radio was keyed, so the one control that takes a
+  // transmitter off the air would have told it to key again. Anything that
+  // keys the rig - this card, another program, the rig's own PTT - moves
+  // the button, because `radio.state` is what moves it.
+  setPtt(!!s.ptt);
   if ($('#mode').value !== s.mode && [...$('#mode').options].some(o => o.value === s.mode)) {
     $('#mode').value = s.mode;
   }
@@ -152,11 +172,10 @@ async function boot() {
   };
   $('#freq-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#tune').click(); });
 
-  let tx = false;
   $('#ptt').onclick = () => {
-    tx = !tx;
-    $('#ptt').textContent = tx ? 'Stop transmitting' : 'Transmit';
-    HD.radio.ptt(tx).then(paint).catch(fail);
+    // Asked for the opposite of what the radio is doing, not of what this
+    // page last did.
+    HD.radio.ptt(!transmitting).then(paint).catch(fail);
   };
 
   const { memories } = await HD.card('rig_control', '/api/memories');

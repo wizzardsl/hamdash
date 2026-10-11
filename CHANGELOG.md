@@ -7,6 +7,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **The Transmit button could get out of step with the radio.** It kept
+  whether it was transmitting in the page rather than reading it from the
+  rig, so reloading the board while keyed brought the button back up saying
+  **Transmit** while the radio was still on the air — and pressing it told an
+  already-transmitting radio to transmit. The one control that takes a
+  transmitter off the air was the one that would not. It follows
+  `radio.state` now, so anything that keys the rig moves the button, and it
+  blinks while on the air. Tested on an FT-890 into a dummy load: keyed,
+  reloaded, and one press took it off.
 - **Clicking a CW spot tuned 700 Hz away from the station.** A radio applies
   its CW offset when it *enters* CW, so setting the frequency and then the
   mode leaves the dial that offset from where the spot said — which reads as
