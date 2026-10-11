@@ -163,11 +163,35 @@ Everything else is open to any card: `/api/bands`, `/api/grid/distance`,
 
 Ask for a service you did not declare and you get a 403 that names the fix.
 
-> **Honest about what this is.** Permissions are enforced properly for your
-> card's *server* calls, which carry a token. For calls from your card's
-> *page* the host matches on `Referer`, which a page controls. It is a speed
-> bump against mistakes, not a sandbox against malice. Install cards you
-> trust.
+### Honest about what permissions are
+
+For your card's **server** calls they are real: the SDK sends a token, the
+host checks it, and a python card cannot reach a service it did not declare.
+
+For calls from your card's **page** they are a guard against mistakes and
+nothing more. Not because of the `Referer` header — a page cannot forge
+that — but because **every card page shares one origin with the board and
+with every other card**. A card page can read `parent.document`, find any
+other card's iframe, and run code inside it. Measured, with a card that
+declares no permissions:
+
+| | |
+|---|---|
+| `fetch('/api/radio/state')` as itself | **403**, as intended |
+| the same fetch inside the rig card's window | **200**, and the frequency |
+
+That reach also covers the logbook, the operator's config and the settings
+sheet, because those live in the board's page.
+
+**What this means for you as an author:** declare your permissions honestly
+and treat a 403 as a bug in your manifest rather than something to route
+around. The guard exists to tell you what you forgot to declare. If you ever
+find yourself reaching into `parent.document`, you are writing something the
+operator would not want installed.
+
+**And as somebody installing a card:** read it first. A card is a program on
+your machine with your logbook in reach. Fixing this properly means one
+origin per card plus CORS, which is an open thread rather than a promise.
 
 ---
 

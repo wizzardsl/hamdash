@@ -1194,9 +1194,26 @@ the live service.
   read the first lines of the log to decide whether always-on-top is available.
 - Manifest `warnings` (a bad `publishes` entry) are computed and returned by
   `/api/cards` but nothing in the UI renders them yet.
-- Card *pages* are still identified by `Referer`, which the page controls. The
-  namespace policy is enforced properly only for a card's server calls. Same
-  caveat as `permissions`; real isolation needs card pages on their own origin.
+- **Card pages are not isolated, and `Referer` is not the reason.** A page
+  cannot forge that header - the browser forbids it. The hole is that every
+  card page shares one origin with the board and with each other, so a card
+  can read `parent.document`, find another card's iframe and run `fetch`
+  inside it. Demonstrated with a card declaring no permissions: `403` asking
+  as itself, `200` and the frequency asking from the rig card's window. The
+  logbook, the config and the settings sheet are in the same reach.
+  The fix is one origin per card plus CORS, so the browser-set `Origin`
+  identifies the caller unforgeably. Three shapes were weighed:
+  a `<id>.localhost` subdomain (no extra ports, **measured working on
+  Chromium and so on WebView2**, but Windows itself does not resolve those
+  names - `socket.gethostbyname` fails - so it rests on the browser doing it,
+  and WKWebView on macOS probably will not); one port per card (works
+  everywhere, but a listener each, against invariant 4); or one shared second
+  port for all card pages (cheap, stops a card reading the *board*, leaves
+  cards able to borrow each other).
+  **The operator chose to document it rather than rebuild it**, which is
+  reasonable for a single-operator app where they install their own cards.
+  Do not describe permissions as security anywhere; `README.md` and
+  `docs/cards.md` both carry the measurement.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
 - `cty.dat` for real DXCC, replacing the short PREFIX table.

@@ -881,14 +881,30 @@ Declare nothing and the card can't touch `/api/radio/*`, `/api/log*`,
 `/api/lookup/*` or `/api/space/*`. The refusal names what's missing rather than returning a bare
 403, so a card author can act on it.
 
-**How far this actually goes:** a card's *server* calls carry that card's
-token and are checked properly. A card's *web page* runs in the dashboard
-origin with no token, so those calls are matched on `Referer` — a speed bump,
-not a sandbox. Any card page can reach any host API if it wants to, and can
-reach other cards' pages through the DOM. Real isolation means serving card
-pages from their own origin with a CSP, which is a bigger change. Treat
-permissions as "declared intent, enforced on the backend," not as protection
-from a hostile card.
+**How far this actually goes.** A card's *server* calls carry that card's
+token and are checked properly: a python card really cannot reach a service
+it did not declare.
+
+A card's *web page* is a different matter, and the reason is not the
+`Referer` header — a page cannot forge that, the browser forbids it. It is
+that **every card page shares one origin with the board and with every other
+card**. Measured, with a card declaring no permissions at all:
+
+- asking for `/api/radio/state` as itself returned **403**, as intended;
+- it could then enumerate every tile on the board from `parent.document`;
+- and running the same `fetch` inside the rig control card's window returned
+  **200 and the radio's frequency**.
+
+The same reach covers the logbook, your config and the settings sheet,
+because those live in the board's own page. So `permissions` is a declaration
+of intent and a guard against mistakes — it is not protection from a card
+that means harm. **Install cards you trust, and read them.**
+
+Fixing it properly means one origin per card — a `<card>.localhost`
+subdomain or a port each — plus CORS on every call, so that the browser-set
+`Origin` identifies the caller unforgeably. That was measured as workable on
+Chromium and WebView2 and left undone deliberately: it is a large change for
+a single-operator application where the operator installs their own cards.
 
 ## Themes
 

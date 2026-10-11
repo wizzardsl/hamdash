@@ -199,6 +199,19 @@ own. An amber status dot means the manifest had something the host ignored
 (hover it). Everything the card prints also goes to
 `<HAMDASH_HOME>/hamdash.log`.
 
+## What the permission system is, honestly
+
+Server-side calls from `card.py` carry a token and are properly enforced.
+Calls from the page are not isolated at all: every card page shares one
+origin with the board and with every other card, so a page *can* reach
+`parent.document` and run code in another card's window. That is a known
+limitation of the app, not an invitation.
+
+Declare the permissions the card needs and treat a 403 as a missing
+declaration to fix. Never reach into `parent.document` or another card's
+frame to get around one — that is writing something the operator would not
+want on their machine.
+
 ## What you cannot do from here
 
 This card runs on the operator's radio. Do not write anything that keys the
