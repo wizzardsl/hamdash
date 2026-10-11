@@ -25,12 +25,17 @@
   .chip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
           border: 1px solid var(--rule); border-radius: var(--radius);
           padding: 2px 7px; user-select: none; }
-  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  /* The source's shape, not a colour swatch: a row of identical dots asks
+     the reader to hold a legend in their head. The colour still carries,
+     through `currentColor`, so chip and row still match. */
+  .chip .dot, .src { width: 13px; height: 13px; display: inline-flex;
+                     align-items: center; justify-content: center; flex: none; }
+  .chip .dot svg, .src svg { width: 100%; height: 100%; display: block; }
   .chip.off { opacity: .4; }
   /* An author `display` beats the user agent's `[hidden]`, so a chip
      hidden in code stays on screen without this. Third time. */
   .chip[hidden] { display: none; }
-  .chip.off .dot { background: var(--muted) !important; }
+  .chip.off .dot { color: var(--muted) !important; }
 
   .tabs { display: flex; gap: 4px; }
   .tabs button.on { color: var(--accent); border-color: var(--accent); }
@@ -44,7 +49,7 @@
   td { padding: 2px 6px; border-bottom: 1px solid var(--rule); vertical-align: top; }
   tr:hover td { background: var(--panel-2); }
   .mono { font-family: var(--mono); }
-  .src { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
   .call { font-family: var(--mono); font-weight: 600; }
   .freq { font-family: var(--mono); }
   button.freq { border: none; background: none; padding: 0; color: var(--accent);
@@ -101,6 +106,39 @@ const $ = (s) => document.querySelector(s);
 // the filter bar is the legend and there is nothing else to learn.
 const COLOUR = { pota: 'var(--signal)', sota: 'var(--accent)', dx: 'var(--ink)',
                  rbn: 'var(--alert)', cluster: 'var(--muted)' };
+
+// A shape per source, because a row of identical coloured dots asks you to
+// remember a legend. Drawn here rather than taken from POTA's or SOTA's
+// logos: those are their marks, and a tree and a mountain say the same
+// thing without borrowing anybody's branding.
+//
+// `currentColor` so the source colour still carries - the chip at the top
+// is the legend and the row matches it, which is the rule this card was
+// built on. 16x16 and no detail below a pixel: these are drawn at 13px.
+const ICON = {
+  // a conifer: Parks on the Air
+  pota: '<path d="M8 1.2 4.1 7h1.7L2.6 11.4h4.2V15h2.4v-3.6h4.2L10.2 7h1.7z"/>',
+  // two peaks: Summits on the Air
+  sota: '<path d="M1 14 6 4.6l2.7 5 1.9-3.1L15 14z"/>',
+  // somebody typed it: a cluster spot
+  dx: '<path d="M2.4 2.6h11.2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.6l-3.4 3v-3H2.4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>',
+  // a machine heard it: skimmer spots
+  rbn: '<g fill="none" stroke="currentColor" stroke-width="1.6" '
+     + 'stroke-linecap="round"><path d="M3.6 10.6a5 5 0 0 1 8.8 0"/>'
+     + '<path d="M1.2 13a8 8 0 0 1 13.6 0"/></g>'
+     + '<circle cx="8" cy="5.2" r="1.7"/>',
+};
+ICON.cluster = ICON.dx;      // a telnet cluster spot is typed by a person too
+
+function icon(kind) {
+  const d = ICON[kind];
+  if (!d) return '';
+  return `<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">${d}</svg>`;
+}
+
+const SOURCE_NAME = { pota: 'Parks on the Air', sota: 'Summits on the Air',
+                      dx: 'DX cluster', cluster: 'DX cluster (telnet)',
+                      rbn: 'Reverse Beacon Network' };
 
 let conf = {};
 let tab = 'spots';
@@ -160,6 +198,15 @@ function fillChoices() {
 }
 
 // ---- drawing --------------------------------------------------------------
+// What the Where column says. A park or summit when the source gives one,
+// and the country when it does not - a skimmer spot carries neither, so the
+// cell used to be a flag on its own and the country was only in a tooltip.
+// Seeing where somebody is, is the whole job of this column.
+function where(s) {
+  const named = [s.place, s.where].filter(Boolean).join(' · ');
+  return (named || s.country || '').slice(0, 44);
+}
+
 function paintSpots() {
   const rows = visible();
   $('#n-spots').textContent = rows.length ? `(${rows.length})` : '';
@@ -192,8 +239,9 @@ function paintSpots() {
       <th></th><th>UTC</th><th>Call</th><th>Freq</th><th>Band</th>
       <th>Mode</th><th>Where</th><th>Spotter</th><th>Comment</th>
     </tr></thead><tbody>${rows.map((s, i) => `<tr data-i="${i}">
-      <td><span class="src" style="background:${COLOUR[s.kind] || 'var(--muted)'}"
-                title="${esc(s.kind.toUpperCase())}"></span></td>
+      <td><span class="src" style="color:${COLOUR[s.kind] || 'var(--muted)'}"
+                title="${esc(SOURCE_NAME[s.kind] || s.kind.toUpperCase())}"
+                >${icon(s.kind)}</span></td>
       <td class="mono dim">${hhmm(s.at)}</td>
       <td class="call">${esc(s.call)}</td>
       <td>${s.hz ? (tune
@@ -203,8 +251,7 @@ function paintSpots() {
       <td class="mono dim">${esc(s.band)}</td>
       <td class="mono">${esc(s.mode)}</td>
       <td>${HD.flag(s.iso, s.country)}${esc(s.ref ? `${s.ref} ` : '')}<span
-            class="ref">${esc([s.place, s.where].filter(Boolean)
-              .join(' · ').slice(0, 44))}</span></td>
+            class="ref">${esc(where(s))}</span></td>
       <td class="mono dim">${esc(s.spotter)}</td>
       <td class="dim">${s.snr_db !== undefined && s.snr_db !== null
           ? `<b>${s.snr_db} dB</b>${s.wpm ? ` · ${s.wpm} wpm` : ''} `
@@ -292,7 +339,9 @@ function paintChips() {
     // chip only appears when there is something behind it.
     if (kind === 'rbn' || kind === 'cluster') c.hidden = !live.has(kind);
     c.classList.toggle('off', off.has(kind));
-    c.querySelector('.dot').style.background = COLOUR[kind];
+    const dot = c.querySelector('.dot');
+    dot.style.color = COLOUR[kind];
+    if (!dot.firstChild) dot.innerHTML = icon(kind);
   });
 }
 

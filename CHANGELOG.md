@@ -19,8 +19,20 @@ versions follow [SemVer](https://semver.org/). The version of record is
   country's flag, worked out from the callsign the same way the log does it
   — never from what a source calls the country, since the three sources
   spell them differently and the cluster sends none at all.
+- **Each spot source has its own mark.** POTA, SOTA, the cluster and the
+  Reverse Beacon Network were four coloured dots, which is a legend you
+  have to learn and a distinction that fails for anybody who cannot tell
+  the colours apart. They are small drawings now — a tree, a summit, a
+  speech bubble, a pair of radio waves — keeping the colour as well, and
+  the same mark sits on the filter chip so the chip still reads as the
+  legend for the column.
 
 ### Fixed
+- **Skimmer spots said nothing about where the station was.** An RBN or
+  cluster spot carries no park or summit, so its Where column was a flag on
+  its own with the country hidden in a tooltip — 258 of 400 rows on a busy
+  band. It shows the country as text when there is nothing more specific to
+  say, which is the whole job of that column.
 - **The Falklands and Cameroon have flags now**, so their prefixes are in
   the table rather than deliberately blank. They were waiting on a flag file
   rather than on knowing the answer.

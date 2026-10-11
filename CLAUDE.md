@@ -1050,6 +1050,15 @@ the live service.
   ones as *local* time, which on this machine puts every spot seven hours
   into the future and sorts the newest to the bottom of a list that merges
   all three.
+- **A source is a drawing and a colour, never a colour alone.** The four
+  sources were four coloured dots: a legend to memorise, and for anybody
+  who cannot separate the hues, no legend at all. They are inline SVGs in
+  `ICON` in `plugins/spots/index.html` - a conifer, a pair of summits, a
+  speech bubble, radio waves - drawn here rather than taken from POTA's or
+  SOTA's own logos, which are their trademarks and not ours to ship. They
+  paint with `currentColor`, so the row's colour still carries and the
+  filter chip and the column keep showing the same mark; the chip is the
+  legend, so anything added to one has to be added to the other.
 - **The cluster has no mode field**, so none is invented from the comment -
   an invented one would then be filtered on as though it were known. The page
   therefore keeps cluster spots when a mode filter is set, or choosing a mode
@@ -1256,17 +1265,20 @@ the live service.
   `docs/cards.md` both carry the measurement.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
-- `cty.dat` for real DXCC, replacing the PREFIX table. Weighed and deferred
-  rather than forgotten: **country-files.com answers an automated request
-  with 403** and its terms could not be read from here, and this tree has
-  already turned down WA7BNM over exactly that. It would not fix flags by
-  itself either - cty.dat carries DXCC entities, CQ and ITU zones and
-  lat/lon, and no ISO codes, so flags would still need an entity-to-ISO map
-  of some 340 entries, many of which have no ISO code at all. What it does
-  buy is entity names, zones and callsign-level exceptions like `4U1UN`. The
-  table was grown and measured instead; 1409 of 1409 live sightings resolve.
-  If it is picked up again, read it from a file the operator supplies rather
-  than fetching or shipping it.
+- `cty.dat` is **not** on this list, and that is a decision. The reason the
+  flags and the Where column were wanted was *seeing where a spot is*, and
+  that is done: the table carries each country's whole ITU block and 1409
+  of 1409 live sightings resolve. cty.dat would add nothing to it - it
+  carries DXCC entities, CQ and ITU zones and lat/lon but no ISO codes, so
+  flags would still need an entity-to-ISO map of some 340 entries, 148 of
+  them new, plus a flag file for each new code and a parser for its
+  override syntax. What it would buy is zones, entity numbers and
+  callsign-level exceptions, which are **logging** fields - and logging is
+  the logbook card's job, not the spots card's. Pick it up only if the log
+  ever wants `CQZ`, `ITUZ`, `DXCC` and `CONT` filled in automatically, and
+  weigh it then against simply adding those fields to the 192 entities
+  already here. (Its terms could not be read from here either:
+  country-files.com answers an automated request with 403.)
 - Rig depth: sharing the rig with WSJT-X. VFO A/B, split and the meters
   are done; RIT/XIT and the sub-receiver are not.
 - PTT is proven through flrig on an FT-890, into a dummy load, operator
