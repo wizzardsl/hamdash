@@ -42,12 +42,32 @@ HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
               "connection", "keep-alive", "upgrade", "proxy-authenticate",
               "proxy-authorization", "te", "trailers"}
 
+# What you bind is not what you dial. 0.0.0.0 means "every interface" to
+# bind() and is not a destination at all: connecting to it on Windows is
+# WinError 10049, "the requested address is not valid in its context".
+WILDCARD = {"", "0.0.0.0", "::", "[::]", "*"}
+
+
+def reachable(host: str) -> str:
+    """An address this machine can actually open a connection to.
+
+    `--host 0.0.0.0` listens everywhere, which is the point, but the host
+    URL built from it is handed to every card process as HAMDASH_HOST and
+    to the native window as the page to open. Both then dial 0.0.0.0 and
+    fail - and a card that cannot call home does not crash, it just gets
+    manifest defaults instead of its tile's settings and hears nothing
+    from the bus. That is the quietest possible failure: the board loads,
+    the tiles paint, and the settings silently do nothing.
+    """
+    return "127.0.0.1" if str(host).strip() in WILDCARD else str(host)
+
 
 def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                native: bool = False):
     static = BUNDLED_STATIC
     app = Flask(__name__, static_folder=None)
-    host_url = f"http://{host}:{port}"
+    # Cards dial this, so it must be dialable: see reachable().
+    host_url = f"http://{reachable(host)}:{port}"
 
     cards = registry.discover(cfg.plugin_dirs)
     sup = Supervisor(host_url, home=str(cfg.home))

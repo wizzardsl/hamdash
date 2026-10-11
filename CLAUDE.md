@@ -1455,6 +1455,18 @@ the live service.
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"
   event and feeding it guesses would be worse than silence.
+- **What you bind is not what you dial.** `--host 0.0.0.0` listens
+  everywhere, which is the point, and is not an address anything can
+  connect to - on Windows that is WinError 10049, measured. The host URL
+  built from it goes to every card as `HAMDASH_HOST` and to the native
+  window as the page to open, so both dialled 0.0.0.0 and failed. A card
+  that cannot call home does not crash: it gets manifest defaults instead
+  of its tile's settings and hears nothing from the bus, so the board
+  loads, the tiles paint, and the settings quietly do nothing. `reachable()`
+  in `app.py` maps the wildcards to loopback and leaves a named address
+  alone; `tests/test_bind_address.py` guards both call sites, because
+  reverting them is a tidy-looking one-line change.
+
 - **Remote operation: receive is done, transmit is not.**
   `plugins/rx_audio` plays the radio's audio in a browser and control was
   always there (the board is a web app and `/api/radio/*` never cared

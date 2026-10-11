@@ -66,11 +66,16 @@ culprit rather than just failing.
 
 ### Listening from another machine
 
-The board binds to `127.0.0.1` by default. `--host` changes that:
+The board binds to `127.0.0.1` by default. `--host` changes that — give it
+the address of the interface you want to be reachable on:
 
 ```bash
 python run.py --host 192.168.1.50 --port 8765
 ```
+
+`--host 0.0.0.0` listens on every interface, which is simpler but also
+offers the board on any network the machine is attached to, including the
+next coffee shop's. Naming one address is the better habit.
 
 > **There is no authentication of any kind.** Anyone who can reach that
 > address can key your transmitter, retune the radio, delete log entries

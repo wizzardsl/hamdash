@@ -30,7 +30,7 @@ import urllib.request
 from pathlib import Path
 
 from hamdash import __version__
-from hamdash.app import create_app
+from hamdash.app import create_app, reachable
 from hamdash.config import Config
 from hamdash import windows as native_windows
 
@@ -194,7 +194,10 @@ def main() -> int:
     setup_logging(cfg)
     app, shutdown = create_app(cfg, host=args.host, port=port,
                                native=not args.browser)
-    url = f"http://{args.host}:{port}"
+    # The page the window opens, or that is printed for the
+    # operator - the bind address may be a wildcard, which is
+    # not something a browser can go to.
+    url = f"http://{reachable(args.host)}:{port}"
 
     # Closing has to happen once, and it has to happen on the ways out that
     # actually occur. The `finally` around the server covers a clean return;

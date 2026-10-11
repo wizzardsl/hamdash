@@ -6,6 +6,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **`--host 0.0.0.0` half-worked.** It bound every interface as asked, so
+  a browser elsewhere on the network could reach the board — but the same
+  value was handed to every card process as the address to call the host
+  back on, and to the native window as the page to open, and `0.0.0.0` is
+  not an address anything can connect *to*. Cards came up unable to read
+  their tile's settings or hear the bus, which looks like settings that
+  silently do nothing rather than like a network fault. Binding a named
+  address always worked and still does.
 ### Added
 - **Hear the radio in the browser, including from another machine.** A
   new **Receive audio** card plays the receiver's audio in a tile, which
