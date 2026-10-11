@@ -74,6 +74,18 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **A radio that cannot report PTT disarmed the transmit watchdog.** Some
+  key perfectly and go on reporting "receiving" — an FT-900 through OmniRig
+  does. The watchdog read that as "the transmission ended without us", so
+  half a second after key-down it stopped watching: neither the keep-alive
+  timeout nor the ceiling could fire, and a transmitter whose card had
+  crashed would have stayed on the air with only the radio's own timeout
+  behind it. A radio only gets to say it stopped if it ever said it
+  started. Until a radio confirms a transmission, hamdash's own key-down is
+  what the state reports, so the Transmit button shows on-air instead of
+  offering to transmit on a radio that already is.
+  Verified on the radio that broke it, dummy load on: it now comes off the
+  air after the six-second hold.
 - **A radio that cannot say which VFO it is on no longer has one guessed
   for it.** Plenty can be *told* which VFO to use and cannot read it back,
   and OmniRig still answers the question — with the last thing it was told.

@@ -1238,6 +1238,10 @@ class RigManager:
         # transmitting on our account - see PTT_HOLD.
         self._ptt_since = 0.0
         self._ptt_seen = 0.0
+        # Has the radio itself said "transmitting" since we keyed it? Some
+        # cannot: an FT-900 through OmniRig keys perfectly and goes on
+        # reporting PM_RX while it is on the air.
+        self._ptt_confirmed = False
         self._ptt_drop = ""
         self._ptt_drop_at = 0.0
         self.select(self.conf().get("active", ""), announce=False)
@@ -1314,6 +1318,17 @@ class RigManager:
                 self._ptt_drop, self._ptt_drop_at = "", 0.0
         if self._ptt_since:
             out["ptt_ours"] = True
+            # **A radio that cannot report PTT must not read as receiving
+            # while we are holding it on the air.** Until it has confirmed
+            # a transmission once, our own key-down is the better answer -
+            # otherwise the Transmit button offers to transmit on a radio
+            # that already is. `ptt_reported` keeps what the rig actually
+            # said, because the watchdog has to see that and not this.
+            if out.get("ok") and not self._ptt_confirmed:
+                out["ptt_reported"] = out.get("ptt")
+                if out.get("ptt") is not True:
+                    out["ptt"] = True
+                    out["ptt_known"] = False
         return out
 
     def _do(self, fn, *a):
@@ -1366,9 +1381,11 @@ class RigManager:
         got = self._do(lambda b, v: b.set_ptt(v), on)
         if on:
             self._ptt_since = self._ptt_seen = now
+            self._ptt_confirmed = False
             self._ptt_drop, self._ptt_drop_at = "", 0.0
         else:
             self._ptt_since = self._ptt_seen = 0.0
+            self._ptt_confirmed = False
         return got
 
     def ptt_limits(self) -> tuple[float, float]:
@@ -1390,12 +1407,22 @@ class RigManager:
             # Not ours. A rig transmitting because the operator is on the
             # mic is not hamdash's to interrupt.
             return st
-        if st.get("ok") and st.get("ptt") is False:
+        says = st.get("ptt_reported", st.get("ptt"))
+        if st.get("ok") and says is True:
+            self._ptt_confirmed = True
+        elif st.get("ok") and says is False and self._ptt_confirmed:
             # It stopped without us - the rig's own timeout, or the operator.
             # Holding a transmission that is not happening would have us send
             # a pointless unkey a few seconds later.
             self._ptt_since = self._ptt_seen = 0.0
             return st
+        # **A radio only gets to say "it stopped" if it ever said "it
+        # started".** An FT-900 through OmniRig keys and reports PM_RX
+        # throughout, so this used to read as "it stopped without us" on the
+        # very first poll after key-down: the hold and the ceiling were both
+        # disarmed within half a second, and the transmitter stayed on the
+        # air with nothing left watching it but the radio's own timeout.
+        # Silently, which is the worst part.
         hold, ceiling = self.ptt_limits()
         now = time.time()
         why = ""

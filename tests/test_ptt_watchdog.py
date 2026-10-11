@@ -147,12 +147,64 @@ class TestTheWatchdog(unittest.TestCase):
 
     def test_a_rig_that_unkeys_itself_is_noticed(self):
         """Its own timeout, or the operator's hand. Holding a transmission
-        that is not happening would send a pointless unkey later."""
+        that is not happening would send a pointless unkey later.
+
+        The rig has to have *reported* the transmission first, though -
+        see the test below for why a radio that never does is a different
+        case entirely."""
         self.man.set_ptt(True)
-        self.rig._f["ptt"] = False              # the rig dropped it
+        self.tick(1.0)                          # the rig says it is keyed
+        self.rig._f["ptt"] = False              # then the rig drops it
         self.tick(1.0)
         self.tick(rigs.PTT_HOLD + 1)
         self.assertEqual(self.rig.calls, [True], "it unkeyed an idle rig")
+
+    def test_a_radio_that_never_reports_ptt_is_still_watched(self):
+        """**A radio only gets to say "it stopped" if it ever said "it
+        started".** Measured on an FT-900 through OmniRig, dummy load on,
+        operator watching: it keys, and goes on reporting PM_RX the whole
+        time it is transmitting. Read as "it stopped without us", that
+        disarmed the hold and the ceiling on the first poll after key-down
+        - half a second - and left the transmitter on the air with nothing
+        watching it but the radio's own timeout. Silently.
+        """
+        self.man.set_ptt(True)
+        self.rig._f["ptt"] = False              # this radio cannot say
+        self.tick(1.0)
+        self.assertEqual(self.rig.calls, [True], "unkeyed while still held")
+        self.tick(rigs.PTT_HOLD + 1)
+        self.assertEqual(self.rig.calls, [True, False],
+                         "the transmitter was left on the air")
+
+    def test_the_ceiling_still_applies_to_a_radio_that_cannot_report(self):
+        man, home = a_manager(ptt_timeout=30)
+        self.addCleanup(shutil.rmtree, home, True)
+        self.addCleanup(man.stop)
+        rig = man._backend
+        man.set_ptt(True)
+        rig._f["ptt"] = False
+        for _ in range(40):                     # held, but past the ceiling
+            self.now += 1.0
+            man.set_ptt(True)
+            man._watch_ptt(man.state())
+        self.assertIn(False, rig.calls, "it transmitted past its ceiling")
+
+    def test_a_radio_that_cannot_report_ptt_reads_as_transmitting(self):
+        """Otherwise the Transmit button offers to transmit on a radio that
+        already is - the thing the button was rewritten to stop doing."""
+        self.man.set_ptt(True)
+        self.rig._f["ptt"] = False
+        st = self.man.state()
+        self.assertIs(st["ptt"], True, "it read as receiving while on air")
+        self.assertIs(st["ptt_known"], False, "it claimed to know")
+        self.assertIs(st["ptt_reported"], False, "the rig's own answer is lost")
+
+    def test_what_the_rig_says_is_believed_once_it_has_said_it(self):
+        self.man.set_ptt(True)
+        self.tick(1.0)
+        st = self.man.state()
+        self.assertIs(st["ptt"], True)
+        self.assertNotIn("ptt_reported", st, "it was still second-guessing")
 
     def test_a_failed_unkey_is_shouted_about(self):
         """The radio may still be transmitting, which is the worst case and

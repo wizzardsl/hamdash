@@ -553,6 +553,26 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   **OmniRig has no meters of any kind**: its interface (read from the type
   library) has no such property, because it is CAT control and not a
   receiver. A card must not draw an empty S-meter for it.
+- **A radio can key perfectly and go on reporting "receiving".** An FT-900
+  through OmniRig does: it transmits (operator watching, dummy load on) and
+  `Tx` reads `PM_RX` the whole time. `IsParamReadable(PM_TX)` says it is
+  readable and it is still wrong, so capability flags cannot be used to
+  decide whether to trust it.
+  That defeated the watchdog, which is the one thing here with consequences
+  outside the computer. `_watch_ptt` took `ptt is False` as "it stopped
+  without us", so on the first poll after key-down - half a second - it
+  cleared `_ptt_since` and stopped watching. Neither the hold nor the
+  ceiling could fire, and the transmitter stayed on the air with nothing
+  left but the radio's own timeout. Silently, and only on the radios that
+  cannot report.
+  **A radio only gets to say "it stopped" if it ever said "it started".**
+  `_ptt_confirmed` is set the first time the rig reports a transmission,
+  and only then is `ptt is False` believed as "it stopped". Until then our
+  own key-down is the better answer: `state()` reports `ptt: True` with
+  `ptt_known: False`, so the Transmit button shows on-air rather than
+  offering to transmit on a radio that already is. The rig's own answer is
+  kept as `ptt_reported`, because the watchdog has to read that and not the
+  one we substituted - using the doctored value would let it confirm itself.
 - **A radio can be told which VFO to use and be unable to say which it is
   on.** On an FT-900, `IsParamReadable(PM_VFOA)` and `PM_VFOB` are both
   false while the *writeable* ones are true - and `Vfo` still answers, with
@@ -1094,10 +1114,13 @@ the live service.
   two programs cannot share the port): it comes on line and reports its
   type, both VFOs read, `set_freq`, `set_mode`, `set_vfo` and `set_split`
   all reach the radio, and the capability check earns its keep - that rig
-  file cannot swap VFOs, so the button is not offered. **PTT is not proven
-  on OmniRig**, and neither is anything on Hamlib: `\get_vfo_info` and
-  `l STRENGTH` have never run against a rigctld, because neither rigctl nor
-  rigctld is installed on this machine.
+  file cannot swap VFOs, so the button is not offered. **PTT keys and
+  unkeys** (dummy load, operator watching) and the watchdog takes an unheld
+  transmission off the air at `PTT_HOLD` - though the radio never reports
+  the transmission at all, which is what the `_ptt_confirmed` rule above is
+  for. Nothing on Hamlib is proven: `\get_vfo_info` and `l STRENGTH` have
+  never run against a rigctld, because neither rigctl nor rigctld is
+  installed on this machine.
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,
