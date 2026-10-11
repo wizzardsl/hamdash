@@ -105,17 +105,20 @@ same-origin to the browser and their ports are never exposed.
 
 ## Not done yet
 
-ADIF import dedupe, per-card settings UI (manifest `settings` is read but not
-rendered), a real map tile layer in `beacon_map`, LoTW/QRZ upload, cty.dat for
-proper DXCC. On the layout side: an option to free the grid slot while a card
-is popped out (right now it holds its place), multi-monitor placement memory
-across restarts, and snapping popped windows to screen edges.
+`cty.dat` for proper DXCC instead of the short prefix table; freeing a tile's
+grid slot while its card is popped out; remembering where popped-out windows
+were across a restart; RTTY and PSK31 in the decoder; multiple boards as tabs.
 
-On packaging: Linux builds (CI builds Windows and macOS only — both have a
-pip-installable pywebview backend, while Linux needs system GTK/WebKit
-packages and a build without them would silently be browser-only), code
-signing, an application icon, and bundling Hamlib so `rigctld` doesn't have to
-be installed separately.
+On packaging: Linux builds (CI builds Windows and macOS, which both have a
+pip-installable pywebview backend — Linux needs system GTK/WebKit packages
+and a build without them would silently be browser-only), code signing, and
+an application icon.
+
+The full list, with the reasoning and what was measured, is under
+[Open threads in CLAUDE.md](CLAUDE.md#open-threads) — kept there rather than
+here so there is one list to keep true rather than two that drift. This
+paragraph used to claim ADIF import dedupe, the per-card settings UI and
+LoTW/QRZ upload were outstanding; all three had been done for a while.
 
 ## A word about installing cards
 

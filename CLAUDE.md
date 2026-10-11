@@ -1209,8 +1209,11 @@ the live service.
 - This machine logs `pywebview 6.2.1` on win32. The gui backend only resolves
   once a window opens, so `--browser` won't tell you; run `python run.py` and
   read the first lines of the log to decide whether always-on-top is available.
-- Manifest `warnings` (a bad `publishes` entry) are computed and returned by
-  `/api/cards` but nothing in the UI renders them yet.
+- Popped-out window geometry is remembered in `windows._GEOMETRY`, which is a
+  module-level dict - so a window reopens where it was within a session and
+  forgets across a restart. Persisting it means writing it somewhere, and
+  multi-monitor placement is the harder half of the same problem.
+- Snapping a popped-out window to a screen edge.
 - **Card pages are not isolated, and `Referer` is not the reason.** A page
   cannot forge that header - the browser forbids it. The hole is that every
   card page shares one origin with the board and with each other, so a card
@@ -1288,7 +1291,11 @@ the live service.
   needs right-click → Open. Needs a certificate and an Apple developer
   account; nothing in the repo is blocking it.
 - An icon. `hamdash.spec` sets none, so the binary carries PyInstaller's.
-- Bundling Hamlib (`rigctld`) rather than asking the operator to install it.
+- Bundling Hamlib is **not** on this list any more, and that is a decision
+  rather than an omission: `tools/get_hamlib.py` fetches it from the Hamlib
+  project on request. `rigctl` and `rigctld` are GPL and hamdash is MIT, so
+  shipping them in a release would put their licence and a source offer on
+  every artifact. Running one as a separate process is nobody's problem.
 
 ## Testing the UI from here
 
@@ -1359,6 +1366,15 @@ both have their own guard: `docs/cards.md` (`test_card_docs.py`) and the
 release notes cut from `CHANGELOG.md` (`tools/release_notes.py`).
 
 ## Keeping this file true
+
+**A stale "not done" list is worse than no list**: it sends the next session
+to build something that already exists. The README's one claimed ADIF import
+dedupe, the per-card settings UI and LoTW/QRZ upload were outstanding long
+after all three shipped - and it was read as a to-do before anybody checked
+the code. There is one list now, `## Open threads` above, and the README
+points at it rather than keeping its own. When something here gets done,
+delete the thread in the same commit.
+
 
 This file is the recovery point for a new session: it is checked in, so a
 fresh clone plus `CLAUDE.md` is enough to pick the work back up. Update it in

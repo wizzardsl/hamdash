@@ -6,6 +6,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Changed
+- **The "not done yet" list is true again.** It still claimed ADIF import
+  dedupe, the per-card settings UI and LoTW/QRZ upload were outstanding; all
+  three have been done for a while, and a stale list of missing features is
+  worse than none because it sends somebody off to build what already
+  exists. There is one list now, in `CLAUDE.md`, and the README points at it
+  rather than keeping a copy that drifts.
+
 ### Added
 - **A flag beside every spot.** The Where column now starts with the
   country's flag, worked out from the callsign the same way the log does it
