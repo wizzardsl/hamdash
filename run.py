@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.handlers
+import errno
 import json
 import os
 import signal
@@ -75,6 +76,29 @@ def run_card(entry: str) -> int:
     runpy.run_path(str(path), run_name="__main__")
     return 0
 
+
+def why_not_bindable(host: str, port: int) -> str:
+    """"" if the board can listen there, else the reason in plain words.
+
+    Checked before anything is built, because waitress fails deep: the
+    operator gets a traceback ending in `PermissionError: [WinError
+    10013] An attempt was made to access a socket in a way forbidden by
+    its access permissions`, which does not name the port and, on
+    Windows, does not say the thing that is actually true - that
+    something already has it. Whoever passes --port for a fixed address
+    is exactly who meets this.
+    """
+    s = socket.socket()
+    try:
+        s.bind((host, port))
+        return ""
+    except OSError as exc:
+        if getattr(exc, "winerror", None) in (10013, 10048) or \
+                exc.errno in (errno.EADDRINUSE, errno.EACCES):
+            return "something is already using it"
+        return str(exc)
+    finally:
+        s.close()
 
 def free_port() -> int:
     s = socket.socket()
@@ -285,6 +309,14 @@ def main() -> int:
         return stop_running(Config(args.home))
 
     port = args.port or (8765 if args.browser else free_port())
+
+    why = why_not_bindable(args.host, port)
+    if why:
+        print(f"cannot listen on {args.host}:{port} - {why}",
+              file=sys.stderr)
+        print("  pick another with --port, or stop whatever has it",
+              file=sys.stderr)
+        return 2
     cfg = Config(args.home)
     setup_logging(cfg)
     # /api/shutdown calls this. close_once is defined below; the hook is

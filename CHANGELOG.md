@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **A port already in use now says so.** Passing `--port` is how you pin
+  the address a remote browser bookmarks, and picking one something else
+  already has gave a traceback ending in “an attempt was made to access a
+  socket in a way forbidden by its access permissions” — which names
+  neither the port nor, on Windows, the actual problem. It is two lines
+  now, before anything else starts.
 - **Unhandled exceptions in threads never reached the log.** The handler
   that was supposed to record them read a field that does not exist, so
   it raised on every call and logged its own error instead of the one it

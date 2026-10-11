@@ -161,5 +161,33 @@ class TestTheNoteItLeaves(unittest.TestCase):
         self.assertIn("Ctrl-C", RUN_PY)
 
 
+class TestAPortThatIsTaken(unittest.TestCase):
+    """A fixed --port is what a remote operator uses, and a taken one is
+    what they meet. waitress fails deep: the last line is
+    `PermissionError: [WinError 10013] An attempt was made to access a
+    socket in a way forbidden by its access permissions`, which does not
+    name the port and, on Windows, does not say the true thing - that
+    something already has it."""
+
+    def test_it_is_caught_before_anything_is_built(self):
+        import socket
+        import run as runpy
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            port = s.getsockname()[1]
+            why = runpy.why_not_bindable("127.0.0.1", port)
+            self.assertIn("already using it", why)
+        finally:
+            s.close()
+
+    def test_a_free_port_is_fine(self):
+        import run as runpy
+        self.assertEqual(runpy.why_not_bindable("127.0.0.1", 0), "")
+
+    def test_the_message_says_what_to_do(self):
+        self.assertIn("pick another with --port", RUN_PY)
+
 if __name__ == "__main__":
     unittest.main()

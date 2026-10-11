@@ -531,6 +531,18 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   at all. **A hard kill still cannot be caught by anything**, so the radio's
   own time-out timer is the real backstop and the README says so.
 
+- **The listen address is a command-line argument and is not remembered,
+  deliberately.** Persisting it in `config.json` with a field in the
+  Settings sheet was built and then taken back out: it is one more thing
+  on screen for every operator, to serve the few who want the board on
+  the network, and a saved address that has gone stale - a port taken, a
+  network this machine has left - is an app that will not start with no
+  clue why. `--host` and `--port` on the shortcut say what is happening
+  where somebody can see it. What *was* kept is the part that was
+  measured: a taken port used to fail deep inside waitress with
+  `WinError 10013 ... forbidden by its access permissions`, naming
+  neither the port nor the real cause, so it is checked before anything
+  is built and says `something is already using it`.
 - **Headless has no window, so there was no safe way to stop it.** The
   signal handlers cover Ctrl-C in its own console and a native window can
   be asked to close; `--browser` has neither, and on Windows `taskkill`
