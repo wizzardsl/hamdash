@@ -27,6 +27,9 @@
           padding: 2px 7px; user-select: none; }
   .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
   .chip.off { opacity: .4; }
+  /* An author `display` beats the user agent's `[hidden]`, so a chip
+     hidden in code stays on screen without this. Third time. */
+  .chip[hidden] { display: none; }
   .chip.off .dot { background: var(--muted) !important; }
 
   .tabs { display: flex; gap: 4px; }
@@ -78,6 +81,8 @@
   <span class="chip" data-kind="pota"><span class="dot"></span>POTA</span>
   <span class="chip" data-kind="sota"><span class="dot"></span>SOTA</span>
   <span class="chip" data-kind="dx"><span class="dot"></span>Cluster</span>
+  <span class="chip" data-kind="rbn" hidden><span class="dot"></span>RBN</span>
+  <span class="chip" data-kind="cluster" hidden><span class="dot"></span>Telnet</span>
   <select id="band" aria-label="Band"><option value="">any band</option></select>
   <select id="mode" aria-label="Mode"><option value="">any mode</option></select>
   <input id="q" placeholder="call, park, summit" spellcheck="false" aria-label="Search">
@@ -94,7 +99,8 @@ const $ = (s) => document.querySelector(s);
 
 // One colour per source, used by the chip and by the dot on every row, so
 // the filter bar is the legend and there is nothing else to learn.
-const COLOUR = { pota: 'var(--signal)', sota: 'var(--accent)', dx: 'var(--ink)' };
+const COLOUR = { pota: 'var(--signal)', sota: 'var(--accent)', dx: 'var(--ink)',
+                 rbn: 'var(--alert)', cluster: 'var(--muted)' };
 
 let conf = {};
 let tab = 'spots';
@@ -158,9 +164,27 @@ function paintSpots() {
   const rows = visible();
   $('#n-spots').textContent = rows.length ? `(${rows.length})` : '';
   if (!rows.length) {
-    $('#pane').innerHTML = `<p class="empty">${
-      data.spots.length ? 'Nothing matches those filters.'
-                        : 'No spots yet — the sources are being asked.'}</p>`;
+    // An empty list has three different meanings and they are not
+    // interchangeable: nothing has arrived yet, the filters exclude
+    // everything, or - watching your own callsign on RBN - the feed is
+    // busy and none of it is you. The last one is an answer, not a fault,
+    // and it is the one that otherwise reads as the card being broken.
+    const held = (data.sources || [])
+      .filter((s) => s.held !== undefined && !off.has(s.name))
+      .reduce((n, s) => n + s.held, 0);
+    const live = (data.sources || []).some((s) => s.status === 'running');
+    let why;
+    if (data.watching && live && held) {
+      why = `Nothing has heard <b>${esc(data.watching)}</b> yet — `
+          + `${held} spots of other stations have come in.`;
+    } else if (data.spots.length) {
+      why = 'Nothing matches those filters.';
+    } else if (live) {
+      why = 'Listening…';
+    } else {
+      why = 'No spots yet — the sources are being asked.';
+    }
+    $('#pane').innerHTML = `<p class="empty">${why}</p>`;
     return;
   }
   const tune = conf.tune_on_click !== false;
@@ -181,7 +205,9 @@ function paintSpots() {
       <td>${esc(s.ref ? `${s.ref} ` : '')}<span class="ref">${esc(
             [s.place, s.where].filter(Boolean).join(' · ').slice(0, 44))}</span></td>
       <td class="mono dim">${esc(s.spotter)}</td>
-      <td class="dim">${esc(String(s.comment || '').slice(0, 60))}</td>
+      <td class="dim">${s.snr_db !== undefined && s.snr_db !== null
+          ? `<b>${s.snr_db} dB</b>${s.wpm ? ` · ${s.wpm} wpm` : ''} `
+          : ''}${esc(String(s.comment || '').slice(0, 48))}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
@@ -210,6 +236,9 @@ function paintStatus() {
     .filter((s) => !off.has(s.name))
     .map((s) => s.ok ? `${s.name} ${ago(s.age_s)}`
                      : `${s.name} — ${String(s.error).slice(0, 40)}`);
+  // What the live feeds are narrowed to. On RBN this is the whole point,
+  // so it is said rather than left for the operator to remember.
+  if (data.watching) bits.unshift(`watching ${data.watching}`);
   $('#status').textContent = bits.join(' · ');
   $('#status').className = 'note'
     + ((data.sources || []).some((s) => !s.ok && !off.has(s.name)) ? ' warn' : '');
@@ -232,6 +261,7 @@ async function loadSpots(force) {
     $('#err').textContent = '';
   } catch (e) { $('#err').textContent = e.message; return; }
   fillChoices();
+  paintChips();
   if (tab === 'spots') paint(); else paintStatus();
 }
 
@@ -254,9 +284,14 @@ $('#filters').addEventListener('click', (e) => {
 });
 
 function paintChips() {
+  const live = new Set((data.sources || []).map((s) => s.name));
   document.querySelectorAll('.chip').forEach((c) => {
-    c.classList.toggle('off', off.has(c.dataset.kind));
-    c.querySelector('.dot').style.background = COLOUR[c.dataset.kind];
+    const kind = c.dataset.kind;
+    // The live feeds are off unless this tile has them configured, so the
+    // chip only appears when there is something behind it.
+    if (kind === 'rbn' || kind === 'cluster') c.hidden = !live.has(kind);
+    c.classList.toggle('off', off.has(kind));
+    c.querySelector('.dot').style.background = COLOUR[kind];
   });
 }
 

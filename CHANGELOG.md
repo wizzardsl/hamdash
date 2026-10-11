@@ -7,6 +7,26 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **The spots card can watch the Reverse Beacon Network, and a DX cluster,
+  over telnet.** Both are live connections rather than polls: one socket held
+  open, spots arriving as they happen. The point of RBN is the one question
+  nothing else here answered — *who can hear me* — so **Watch one callsign**
+  defaults to `ME` and the list becomes every skimmer receiving you, with its
+  signal report and the speed it read you at. Clear it for the whole feed
+  (about five spots a second on CW). The telnet cluster is the same machinery
+  pointed at a DXSpider or CC-Cluster node, with whatever setup commands that
+  node wants.
+  Both log in with the station callsign and refuse to connect without one —
+  these are accounts on somebody else's public network — and nothing is ever
+  sent but the login and the configured commands. A feed no tile has asked
+  for in 90 seconds is disconnected, one connection is shared by every tile
+  wanting the same feed, and what it keeps is bounded.
+  Verified against the live service: the login prompt carries no newline, so
+  it is answered out of the buffer rather than waited for as a line; a
+  frequency can fill its column with no space after the spotter's colon
+  (`DX de JI1HFJ-#:430051.30`), which whitespace splitting drops; and spots
+  carry HHMM and nothing finer, so one just before midnight is dated
+  yesterday rather than a day into the future.
 - **A transmission nobody is holding is taken off the air.** Nothing else in
   the shack would: a card that keys the rig and then crashes, a tile closed
   mid transmission, a browser that dies — the transmitter just keeps going.
@@ -23,6 +43,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **A log with less than one page in it drew an empty Prev/Next bar.** The
+  pager is hidden in code, but an author `display: flex` beats the browser's
+  own `[hidden]` rule outright, so it stayed on screen offering to page
+  through nothing. Found by a new test rather than on screen: this is the
+  fourth time the same CSS trap has been walked into, so it is now checked —
+  anything hidden in code whose stylesheet gives it a `display` fails the
+  suite with the one-line rule that fixes it.
 - **The Transmit button could get out of step with the radio.** It kept
   whether it was transmitting in the page rather than reading it from the
   rig, so reloading the board while keyed brought the button back up saying

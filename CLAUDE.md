@@ -744,7 +744,13 @@ QRM or fading.
   beats the user agent's `[hidden] { display: none }`, so a group hidden in
   code stays on screen. `.dirs[hidden]`, `.peek[hidden]`, `.sync-svc[hidden]`
   and `.bar[hidden]` all exist for that reason - the last of them because
-  the spots card walked into it again with this note already written.
+  the spots card walked into it again with this note already written. It
+  then happened a third time (`.chip`) and a fourth (`.pager`, a pre-existing
+  one nobody had noticed), so `tests/test_hidden_display.py` now fails on it:
+  anything hidden in markup or by `.hidden =` whose stylesheet gives it a
+  `display` must carry a `[hidden]` rule. Reading the attribute back does
+  *not* catch this - the DOM says hidden and the element is on screen - so
+  check `getComputedStyle`.
 - **A hidden filter must reset when it is hidden.** The PSK card drops the
   direction filter when it leaves Call mode: one that is invisible but still
   narrowing makes the map look broken with nothing on screen to explain it.
@@ -814,10 +820,44 @@ the live service.
   `qsodates.com/api/downloads?format=json`, the one its own downloads page
   links to - needs no key. It is ~720 kB of a year's calendar with real dates
   rather than recurrence rules to expand, capped at 1000 records.
-- **Reverse Beacon Network has no public HTTP API.** Its web endpoints answer
-  400 or redirect for anything that is not a browser, so using them means
-  reverse-engineering a private interface. Its documented way in is telnet
-  with a callsign login - the same shape as a DX cluster, and an open thread.
+- **Reverse Beacon Network has no public HTTP API**, so it is telnet, in
+  `plugins/spots/telnet.py` - which is also what a DX cluster speaks, so the
+  two are one class pointed at different hosts. Its web endpoints answer 400
+  or redirect for anything that is not a browser; using them would mean
+  reverse-engineering a private interface.
+- **The login prompt has no newline after it.** RBN sends `Please enter your
+  call:` and then waits, so a reader splitting on `
+` never sees it and sits
+  there until the far end gives up. The prompt is matched in the *buffer*,
+  and if none appears the callsign is sent once the line has gone quiet for
+  3 s - clusters differ from each other and some never prompt at all.
+- **A spot line is not whitespace separated.** The frequency is a fixed-width
+  column, so a 70cm spot arrives as `DX de JI1HFJ-#:430051.30` with nothing
+  between the colon and the digits. `line.split()` puts the frequency in the
+  spotter's name and drops the spot - which presents as RBN simply never
+  showing UHF. One regex, anchored on `DX de`, handles both.
+- **The wire carries HHMM and nothing finer.** Two consequences, both found
+  live. A spot stamped 2359 arriving at 0001 has to be dated *yesterday*, or
+  it sorts a day into the future and sits at the top of the list for ever.
+  And most spots on a busy feed tie on time, so sorting on `at` alone falls
+  back to insertion order and puts the oldest of them on top - `seen` is the
+  tie-break, stamped on arrival, and `at` stays honest.
+- **These are logins on somebody else's public network**, which is the whole
+  reason the shape is what it is. A feed will not start without a configured
+  callsign (inventing one, or connecting anonymously, is not a thing to do on
+  the operator's behalf); one connection is shared by every tile wanting the
+  same (kind, host, port, call); nothing is ever sent but the login and the
+  operator's own setup commands; the reconnect backs off 5 s to 5 min; and a
+  feed nobody has asked for in `STREAM_IDLE` is disconnected, because
+  "nothing tells a card that a tile was deleted" applies to a socket on a
+  public server even more than to a sound card.
+- **A quiet feed and a dead one look identical** until something is written
+  to the socket. `QUIET_DEATH` (7 min) calls it: at five spots a second,
+  seven minutes of nothing is a dropped TCP session, not a quiet band.
+- **`show_rbn` alone used to turn all three polled sources back on.**
+  "Everything off means everything on" was a fair reading of an empty choice
+  until there were live feeds to want instead. `_wanted()` only falls back
+  when nothing at all is selected.
 - `plugins/*/card.py` all share the module name `card`, so two card tests
   that `import card` get whichever one was imported first - and the failure
   is an `AttributeError` about a constant that is plainly there.
@@ -906,13 +946,6 @@ the live service.
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,
   the polling and the text window do.
-- **Reverse Beacon Network, over telnet.** It is the CW and RTTY counterpart
-  to what `psk_reporter` does for digital, and the one thing neither covers:
-  spot your own callsign and you see who is actually hearing you, with SNR
-  and WPM, continuously and by machine rather than by whoever bothered to
-  spot. No HTTP API (see Spots), so it means a telnet session with a callsign
-  login - which is also what a real DX cluster would need, so the two share a
-  shape and should be built together.
 - The decoder publishes nothing. A callsign it has copied would be worth
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"

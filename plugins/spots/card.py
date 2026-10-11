@@ -31,8 +31,20 @@ from flask import request
 from hamdash.sdk import Card
 
 import sources
+import telnet
 
 card = Card(__file__)
+
+# The telnet feeds, one per (kind, host, port, callsign), shared by every
+# tile that wants the same thing - these hold a socket open on somebody
+# else's server, so two tiles must not mean two logins.
+_streams: dict = {}
+_streams_lock = threading.Lock()
+# Nothing tells a card that a tile was deleted, so a feed nobody has asked
+# for is dropped - and this one is a login on a public network, not just a
+# cache entry.
+STREAM_IDLE = 90.0
+_stream_wanted: dict = {}
 
 # POTA's own page refreshes once a minute and the others are no busier, so
 # this is the pace of a human watching, not of a program.
@@ -125,9 +137,17 @@ _contests = Feed("contests", sources.contests, CONTEST_FLOOR)
 
 
 def _wanted(conf: dict) -> list[str]:
-    """Which sources this tile is watching."""
+    """Which polled sources this tile is watching.
+
+    Everything off used to mean everything on, which was a reasonable
+    reading of an empty choice until there were live feeds to watch
+    instead: a tile set to RBN alone got all three polled sources back as
+    well. It only falls back when *nothing at all* is selected.
+    """
     on = [k for k in sources.KINDS if conf.get(f"show_{k}", True)]
-    return on or list(sources.KINDS)
+    if on or conf.get("show_rbn") or conf.get("show_cluster"):
+        return on
+    return list(sources.KINDS)
 
 
 def _refresh(kinds, force=False) -> None:
@@ -146,6 +166,62 @@ def _refresh(kinds, force=False) -> None:
 
 
 # ---------------------------------------------------------------- routes
+def my_call() -> str:
+    try:
+        return str(card.host.station().get("callsign") or "").strip().upper()
+    except Exception:                                   # noqa: BLE001
+        return ""
+
+
+def stream_for(conf: dict):
+    """The telnet feeds this tile wants, started if they are not running."""
+    want = []
+    call = my_call()
+    if conf.get("show_rbn"):
+        port = (telnet.RBN_FT_PORT if str(conf.get("rbn_feed")) == "ft8"
+                else telnet.RBN_CW_PORT)
+        want.append(("rbn", telnet.RBN_HOST, port, call, ()))
+    if conf.get("show_cluster"):
+        host = str(conf.get("cluster_host") or "").strip()
+        if host:
+            # Every cluster has its own commands - VE7CC prints a page of
+            # them on connect - so they are the operator's to give, one per
+            # line or separated by semicolons.
+            raw = str(conf.get("cluster_commands") or "").replace(";", "\n")
+            cmds = [c.strip() for c in raw.splitlines() if c.strip()]
+            want.append(("cluster", host,
+                         int(conf.get("cluster_port") or 23), call, cmds))
+
+    out = []
+    now = time.time()
+    with _streams_lock:
+        for kind, host, port, who, cmds in want:
+            key = (kind, host, port, who)
+            _stream_wanted[key] = now
+            st = _streams.get(key)
+            if st is None:
+                st = _streams[key] = telnet.SpotStream(
+                    kind, host, port, who, cmds)
+            out.append(st)
+    return out
+
+
+def _reap_streams() -> None:
+    """Close a feed nobody has asked for. It is a login on a public
+    network, so leaving it open because a tile was closed is rude as well
+    as wasteful."""
+    while True:
+        time.sleep(15.0)
+        now = time.time()
+        with _streams_lock:
+            for key in list(_streams):
+                if now - _stream_wanted.get(key, 0) > STREAM_IDLE:
+                    print(f"closing {key[0]} at {key[1]}:{key[2]}: "
+                          f"no tile has asked for it")
+                    _streams.pop(key).stop()
+                    _stream_wanted.pop(key, None)
+
+
 @card.get("/spots")
 def spots():
     conf = card.settings()
@@ -163,9 +239,24 @@ def spots():
         for r in _feeds[kind].rows:
             if now - float(r.get("at") or 0) <= max_age:
                 rows.append(r)
-    rows.sort(key=lambda r: r.get("at") or 0, reverse=True)
+
+    # The telnet feeds. `watch` is the headline: on RBN, the spots *of* one
+    # callsign are every skimmer that can hear that station right now.
+    live = []
+    watch = str(conf.get("watch") or "").strip().upper()
+    if watch == "ME":
+        watch = my_call()
+    for st in stream_for(conf):
+        rows.extend(st.recent(max_age, watch))
+        live.append(st.status_line())
+
+    # `seen` breaks ties between spots stamped to the same minute, which on
+    # a live feed is most of them.
+    rows.sort(key=lambda r: (r.get("at") or 0, r.get("seen") or 0),
+              reverse=True)
     return {"spots": rows[:400], "now": now,
-            "sources": [_feeds[k].status() for k in sources.KINDS],
+            "sources": [_feeds[k].status() for k in sources.KINDS] + live,
+            "watching": watch, "my_call": my_call(),
             "max_age_s": max_age}
 
 
@@ -188,4 +279,6 @@ def refresh():
 
 
 if __name__ == "__main__":
+    threading.Thread(target=_reap_streams, daemon=True,
+                     name="spots-reaper").start()
     card.run()

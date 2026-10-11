@@ -2,9 +2,9 @@
   "id": "spots",
   "name": "Spots",
   "kind": "python",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "HamDash",
-  "description": "Who is on the air now: POTA, SOTA, the cluster, and what contest is running",
+  "description": "Who is on the air now: POTA, SOTA, the cluster, RBN, and what contest is running",
   "entry": "card.py",
   "view": "index.html",
   "w": 6,
@@ -57,6 +57,51 @@
       "label": "Clicking a frequency tunes the radio",
       "default": true,
       "help": "Off makes the frequency ordinary text, for a station where the radio is being driven by something else."
+    },
+    "show_rbn": {
+      "type": "bool",
+      "label": "Reverse Beacon Network",
+      "default": false,
+      "help": "A live telnet feed of what the skimmers are hearing. It logs in with your station callsign. Busy - five spots a second on CW - so use Watch below to narrow it."
+    },
+    "rbn_feed": {
+      "type": "select",
+      "label": "RBN feed",
+      "options": [
+        "cw",
+        "ft8"
+      ],
+      "default": "cw",
+      "help": "'cw' is the CW and RTTY skimmers, 'ft8' is FT8 and FT4. They are separate connections at the far end."
+    },
+    "watch": {
+      "type": "string",
+      "label": "Watch one callsign",
+      "default": "ME",
+      "help": "Applies to the live feeds. 'ME' means your own callsign, which on RBN is every skimmer that can hear you right now - the thing nothing else here answers. Empty shows everything, which is a lot."
+    },
+    "show_cluster": {
+      "type": "bool",
+      "label": "DX cluster (telnet)",
+      "default": false,
+      "help": "A DXSpider or CC-Cluster node. Logs in with your station callsign."
+    },
+    "cluster_host": {
+      "type": "string",
+      "label": "Cluster host",
+      "default": "",
+      "help": "e.g. dxc.ve7cc.net"
+    },
+    "cluster_port": {
+      "type": "number",
+      "label": "Cluster port",
+      "default": 23
+    },
+    "cluster_commands": {
+      "type": "string",
+      "label": "Commands to send after login",
+      "default": "",
+      "help": "One per line, or separated by semicolons. Every cluster has its own - VE7CC prints them when you connect, e.g. 'set/ft8' or 'set/skimmer'."
     }
   }
 }

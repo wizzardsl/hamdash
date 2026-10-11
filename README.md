@@ -602,15 +602,20 @@ exactly like a quiet band.
 
 ## Spots
 
-The `spots` card answers "who is on, and why is the band full". It puts four
-sources on one list:
+The `spots` card answers "who is on, and why is the band full" — and, if you
+ask it to, "who can hear *me*". It puts six sources on one list:
 
 | source | what it is | where from |
 |---|---|---|
 | **POTA** | Parks on the Air activations | `api.pota.app` |
 | **SOTA** | Summits on the Air activations | `api2.sota.org.uk` |
 | **Cluster** | human DX spots | [DX Summit](https://www.dxsummit.fi/) |
+| **RBN** | what the CW/FT8 skimmers are hearing | `telnet.reversebeacon.net` |
+| **Cluster (telnet)** | a live DXSpider or CC-Cluster node | whichever you point it at |
 | **Contests** | what is running and what is next | [QSO Dates](https://www.qsodates.com/) |
+
+The first three and the contests are polled over HTTP. The last two are live:
+one TCP connection held open, spots arriving as they happen.
 
 The chips along the filter bar are the legend as well as the switch — the
 colour beside a row is the colour on its chip. Beside them: band, mode, and a
@@ -628,6 +633,36 @@ source is asked at most once a minute, contests every six hours, and the cache
 is on disk so closing the app is not a way to ask again sooner. **Refresh**
 means "don't wait for the next poll"; it cannot ask more often than the floor
 allows. A source that is down keeps showing what it last gave, with its age.
+
+### Who is hearing me
+
+Tick **Reverse Beacon Network** in the tile's settings and the card logs in to
+RBN with your station callsign and watches the skimmers. With **Watch one
+callsign** left at its default — `ME` — the list is every automated receiver
+that can hear *you* right now, with its signal report and the speed it read
+you at. That is a question nothing else here answers: `psk_reporter` does it
+for FT8 and friends, and RBN does it for CW and RTTY, from machines listening
+all the time rather than from whoever happened to spot you.
+
+So: call CQ, and watch where you are landing. An empty list is an answer too,
+and the card says which it is — "nothing has heard you yet" with a count of
+how many other stations' spots have come in, so a quiet list is never confused
+with a dead feed.
+
+Clear **Watch** and you get the whole feed, which on CW is about five spots a
+second. The band, mode and search filters apply to it like anything else.
+
+**Cluster (telnet)** is the same machinery pointed at a DXSpider or
+CC-Cluster node — `dxc.ve7cc.net` and the like. Every node has its own
+commands (`set/ft8`, `set/skimmer`); they go in **Commands to send after
+login**, one per line.
+
+Both of these log in with the callsign from Settings → Station, and the card
+refuses to connect without one rather than inventing or omitting it — these
+are accounts on somebody else's public network. Nothing is ever sent except
+the login and the commands you configured: hamdash does not spot, announce or
+talk on either network. A feed no tile is asking for is disconnected within a
+minute and a half.
 
 ## Logbook sync
 
