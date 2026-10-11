@@ -1,0 +1,29 @@
+{
+  "id": "card_template",
+  "name": "Card template",
+  "kind": "html",
+  "version": "0.1.0",
+  "author": "you",
+  "description": "A card that already works. Copy it, rename it, change it.",
+  "view": "index.html",
+  "w": 4,
+  "h": 3,
+  "min_w": 2,
+  "min_h": 2,
+
+  "permissions": ["radio"],
+
+  "settings": {
+    "greeting": {
+      "type": "string",
+      "label": "Greeting",
+      "default": "Hello",
+      "help": "Edit this in the tile's settings and watch the card redraw."
+    },
+    "show_radio": {
+      "type": "bool",
+      "label": "Show what the radio is doing",
+      "default": true
+    }
+  }
+}

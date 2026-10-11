@@ -7,6 +7,20 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **Documentation for writing your own cards.** `docs/cards.md` is the whole
+  extension contract in one place: where a card lives, the manifest, the
+  settings schema the host renders for you, what each permission unlocks, the
+  python SDK, the browser API, and the handful of rules that are easy to get
+  wrong. `docs/card-template/` is a card that runs as it stands — copy it,
+  press **Cards → Rescan**, and it is on the board — and it carries a
+  `CLAUDE.md` written for building cards with Claude Code.
+  A test keeps the reference honest: every public SDK method, every `HD` key,
+  every permission and every settings type has to appear in it.
+- **`card.host.audio_devices()`.** Sound was the one shared service a card
+  could not reach: the radio and the logbook had helpers and audio did not,
+  so a card that wanted a device list re-derived it. The host's list is
+  already cached and folded to one row per device, which is what matching a
+  device *by name* needs.
 - **The board can be arranged from the keyboard.** Focus a card's header
   and the arrow keys move it, shift and the arrows resize it. Dragging was
   the only way before, so anyone not using a pointer could add cards and

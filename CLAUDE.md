@@ -52,6 +52,8 @@ plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
                     psk_reporter, decoder, spots, web_embed, hello_card
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
+docs/cards.md       the card author's reference - the extension contract
+docs/card-template/ a card that runs, plus a CLAUDE.md for building one
 tests/              regression guards — js_api shape, bus namespace,
                     packaging/spec drift, release notes, layout agreement
 tests/js/           the board's layout model, under `node --test`
@@ -1273,6 +1275,28 @@ the live service.
   test that passes against the old code is not testing anything.
 - **A map card re-frames its own map**, so its zoom level is not a stable
   signal; watch the call rather than the zoom.
+
+## Extending it: cards
+
+The point of the whole design is that somebody can add a card without
+touching the app. That contract is written down in `docs/cards.md`, and
+`docs/card-template/` is a working card plus a `CLAUDE.md` aimed at building
+one with Claude Code.
+
+- **`tests/test_card_docs.py` is what keeps it true.** Every public method on
+  `Card` and `HostClient`, every key on `HD`, every `guard()` permission and
+  every settings type has to appear in `docs/cards.md`, or the suite fails.
+  A reference that has drifted is worse than none: it sends an author looking
+  for a method that was renamed. It caught `card.route` on its first run.
+- **The SDK is the extension surface, so adding to it is a documentation
+  change too.** That is the whole reason the test exists.
+- **Audio was the gap.** `radio.` and the logbook were reachable from a card
+  and sound was not: `spectrum` and `decoder` each import sounddevice and
+  each re-derive the device list. `card.host.audio_devices()` now hands over
+  the host's folded, cached list, and `hamdash.services.audio` may be
+  imported directly like `bands`. Opening the stream still belongs to the
+  card - PortAudio has to be in the process that uses it - so the duplication
+  that remains is the part that cannot be shared.
 
 ## Keeping this file true
 

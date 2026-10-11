@@ -81,6 +81,20 @@ class HostClient:
     def log_qso(self, qso: dict):
         return self.post("/api/log", qso)
 
+    def audio_devices(self, refresh: bool = False):
+        """The PC's sound devices, as the host sees them.
+
+        Worth asking the host rather than calling PortAudio yourself even
+        though you will have to open the stream in your own process:
+        enumerating can block for seconds on Windows, the host caches it,
+        and the names it returns are already folded - one row per device
+        rather than one per host API, and the MME 31-character truncation
+        joined back up. A device is stored by *name*, never by index, so
+        matching against this list is the whole point.
+        """
+        return self.get("/api/audio/devices",
+                        **({"refresh": 1} if refresh else {}))
+
     def station(self):
         return self.get("/api/config").get("station", {})
 

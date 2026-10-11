@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- app.css gives you the board's theme: colours, fonts, .btn, .note. -->
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .big { font-family: var(--mono); font-size: 22px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  /* An author `display` beats the browser's own [hidden] rule, so anything
+     hidden in code needs this or it stays on screen. */
+  .row { display: flex; align-items: baseline; gap: 8px; }
+  .row[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="big" id="greeting">…</div>
+
+<div class="row" id="rig">
+  <span class="big" id="dial">--.------</span>
+  <span class="muted" id="mode"></span>
+</div>
+
+<p class="muted" id="note">Open this tile's settings (⚙) and change something.</p>
+
+<!-- hamdash.js is the whole client side: theme, settings, the bus, the
+     shared services. Load it and set your card id. -->
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'card_template';
+
+let conf = {};
+
+function draw(state) {
+  document.getElementById('greeting').textContent =
+    `${conf.greeting || 'Hello'}, ${HD.station ? '' : ''}world`;
+
+  const show = conf.show_radio !== false;
+  document.getElementById('rig').hidden = !show;
+  if (!show || !state || !state.ok) return;
+
+  // Frequency is formatted in one place, so every card reads the same.
+  document.getElementById('dial').textContent = HD.fmtHz(state.freq);
+  document.getElementById('mode').textContent =
+    [state.mode, state.band].filter(Boolean).join(' · ');
+}
+
+async function boot() {
+  conf = await HD.settings();            // this tile's settings
+  const who = await HD.station();        // the operator, from the host
+  if (who && who.callsign) {
+    document.getElementById('note').textContent =
+      `Station ${who.callsign}${who.grid ? ' · ' + who.grid : ''}`;
+  }
+
+  draw(await HD.radio.state());          // needs "radio" in card.json
+
+  // The radio tells the whole board when it moves; no polling needed.
+  HD.on('radio.state', draw);
+
+  // The operator can edit settings while the card is running.
+  HD.onSettings((values) => { conf = values; draw(null); HD.radio.state().then(draw); });
+}
+
+boot().catch((e) => {
+  // Errors name what to fix. A 403 here means a missing permission.
+  document.getElementById('note').textContent = e.message;
+});
+</script>
+</body>
+</html>

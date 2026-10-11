@@ -70,7 +70,14 @@ layout becomes.
 
 ## Writing a card
 
-Copy `plugins/hello_card` into `<HAMDASH_HOME>/cards/` and edit. Three kinds:
+**The full reference is [docs/cards.md](docs/cards.md)** — the manifest, the
+SDK, the browser API, the permissions, and the handful of things that are
+easy to get wrong. [`docs/card-template/`](docs/card-template) is a card that
+runs as it stands: copy it into your cards folder, press **Cards → Rescan**,
+and it is on the board. It carries a `CLAUDE.md` written for building cards
+with Claude Code.
+
+What follows is the shape of it. Three kinds:
 
 | kind | what it is | code needed |
 |---|---|---|
@@ -114,9 +121,15 @@ HD.on('lookup.result', (info) => console.log(info.callsign, info.locator));
 await HD.card('my_card', '/api/state');
 ```
 
-Shared services are opt-in, not mandatory: `/api/radio/*`, `/api/lookup/<call>`,
-`/api/grid/distance`, `/api/log`, `/api/bands`, `/api/publish`, `/api/events`.
-A card that wants to ignore all of it and just draw a waterfall can.
+Shared services are opt-in, not mandatory, and you declare which you use in
+`permissions`: `radio`, `log`, `lookup`, `space`. Bands, grid distance,
+station details, the sound device list and the bus need no permission. A card
+that wants to ignore all of it and just draw a waterfall can.
+
+Your card's settings are declared in `card.json` and **the host renders the
+form** — you never write a settings UI. They belong to the *tile*, so two
+tiles of one card keep separate values and those travel with the tile.
+See [docs/cards.md](docs/cards.md#settings).
 
 **If your card holds something, listen for `HD.visible`.** A card can be a tab
 in a stack, and a tab that is not on top is still loaded and still running —
