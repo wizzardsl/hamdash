@@ -5,6 +5,12 @@ Linux: no server to configure, no localhost URL to remember, nothing installed
 system-wide. Cards can be a URL in a tile or a full Python program — same board,
 same event bus.
 
+**Want your own card on the board?** [docs/cards.md](docs/cards.md) is the
+whole contract, and [docs/card-template](docs/card-template) is a card that
+runs as it stands — copy it into your cards folder, press **Rescan**, and it
+is there. It carries a `CLAUDE.md` if you would like Claude Code to write it
+with you.
+
 ## Run it
 
 ```bash
@@ -19,7 +25,17 @@ Your config, log and cards live in one directory:
 (or `HAMDASH_HOME`). Back it up by copying that folder.
 
 Out of the box the radio is in **mock mode** so everything is usable with no
-hardware. To talk to a real rig, start Hamlib's daemon and turn mock off:
+hardware. For a real rig, add it in Settings → Radio — hamdash speaks
+**flrig**, **OmniRig**, **Hamlib** and a **rigctld** you are already running,
+and starts Hamlib's daemon for you.
+
+Hamlib is a program rather than a Python package, so `pip` cannot bring it:
+
+```bash
+python tools/get_hamlib.py     # downloads the official build, checksum-verified
+```
+
+Or point hamdash at a `rigctld` you run yourself:
 
 ```bash
 rigctld -m 1035 -r /dev/ttyUSB0 -s 38400    # -m 1 is the Hamlib dummy rig
