@@ -55,9 +55,15 @@ class TestPrefixes(unittest.TestCase):
                 self.assertEqual(dxcc.iso_for(call), dxcc.iso_for(call.split("/")[0]))
 
     def test_an_unknown_prefix_says_nothing_rather_than_guessing(self):
-        d = dxcc.for_call("ZZ9ZZZ")
-        self.assertEqual(d["iso"], "")
-        self.assertEqual(d["country"], "")
+        # Not `ZZ9ZZZ`, which this used to use: ZZ turned out to be one of
+        # Brazil's real blocks, which is the sort of thing a short prefix
+        # table gets wrong until something is measured against it. `0A` and
+        # `QQ` are not allocated to anybody.
+        for call in ("0A0AAA", "QQ1QQQ"):
+            with self.subTest(call=call):
+                d = dxcc.for_call(call)
+                self.assertEqual(d["iso"], "")
+                self.assertEqual(d["country"], "")
 
     def test_empty(self):
         self.assertEqual(dxcc.iso_for(""), "")

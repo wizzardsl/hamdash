@@ -6,6 +6,21 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **A flag beside every spot.** The Where column now starts with the
+  country's flag, worked out from the callsign the same way the log does it
+  — never from what a source calls the country, since the three sources
+  spell them differently and the cluster sends none at all.
+
+### Fixed
+- **Prefixes the table could not place.** Found by measuring rather than
+  reading: Japan is allocated 7J–7N and 8J–8N and only three were listed, so
+  a board watching JA spots showed blanks; Brazil had PP–PY but not ZV–ZZ;
+  Madeira's CS3 was missing, which is the NCDXF beacon that transmits every
+  three minutes. Svalbard and Jan Mayen are there now too — they fly the
+  Norwegian flag, so that is a right answer rather than a convenient one.
+  99% of live spots carry a flag now, up from none.
+
 ### Changed
 - **The README is a landing page again.** It had grown to 1071 lines — the
   entire manual on the front page, which is a scroll rather than something

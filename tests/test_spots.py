@@ -299,3 +299,67 @@ class TestBeingAGoodCitizen(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhereInTheWorld(unittest.TestCase):
+    """A flag at the start of the Where column, worked out from the
+    callsign.
+
+    From the callsign and never from whatever the source calls the country:
+    POTA, SOTA and the cluster spell them differently and the cluster sends
+    none at all. The same rule the log already follows.
+    """
+
+    def test_a_callsign_becomes_a_flag(self):
+        from hamdash.services import dxcc
+        for call, iso in (("W1AW", "us"), ("VA7SLL", "ca"), ("G0ABC", "gb"),
+                          ("JA1XYZ", "jp"), ("VK2DEF", "au")):
+            with self.subTest(call=call):
+                self.assertEqual(dxcc.iso_for(call), iso)
+
+    def test_a_portable_callsign_still_finds_its_country(self):
+        """Spots are full of them - /P, /M, and a prefix in front."""
+        from hamdash.services import dxcc
+        self.assertEqual(dxcc.iso_for("W1AW/P"), "us")
+        self.assertEqual(dxcc.iso_for("VE3/W1AW"), "ca")
+
+    def test_the_prefixes_a_live_feed_actually_sends(self):
+        """Measured against 90 callsigns taken from this session's own
+        fixtures and the prefixes heard daily. Six had no flag, and they
+        were real: Japan is allocated 7J-7N and 8J-8N and the table had
+        three of the ten, so an FT-890 watching JA spots saw blanks.
+        CS3B is an NCDXF beacon - it is on the band every three minutes."""
+        from hamdash.services import dxcc
+        for call, iso in (("7M4QZE/7", "jp"), ("7J1AAA", "jp"),
+                          ("7N2XYZ", "jp"), ("8N1ABC", "jp"),
+                          ("CS3B", "pt")):
+            with self.subTest(call=call):
+                self.assertEqual(dxcc.iso_for(call), iso)
+
+    def test_a_longer_prefix_wins(self):
+        """CS3 is Madeira and CS is Portugal; the table is matched longest
+        first or a Madeira beacon flies the wrong flag."""
+        from hamdash.services import dxcc
+        self.assertEqual(dxcc.for_call("CS3B")["country"], "Madeira")
+        self.assertEqual(dxcc.for_call("CS7ABC")["country"], "Portugal")
+
+    def test_an_unknown_prefix_asks_for_no_flag(self):
+        """`HD.flag` draws nothing for an empty code, which is what should
+        happen rather than a broken image."""
+        from hamdash.services import dxcc
+        self.assertEqual(dxcc.iso_for("1ZZZ9"), "")
+        self.assertEqual(dxcc.iso_for(""), "")
+
+    def test_every_source_gives_a_callsign_a_flag_can_come_from(self):
+        """The column is only useful if the rows actually carry a call."""
+        from hamdash.services import dxcc
+        for name, fn, fixture in (("pota", sources.pota, POTA_ROW),
+                                  ("sota", sources.sota, SOTA_ROW),
+                                  ("dx", sources.dx, DX_ROW)):
+            with self.subTest(source=name):
+                for row in fn([fixture]):
+                    self.assertTrue(row["call"], f"{name} row with no call")
+                    # These three are real rows off the live services, so
+                    # the prefix table should know all of them.
+                    self.assertTrue(dxcc.iso_for(row["call"]),
+                                    f"{name}: no flag for {row['call']!r}")

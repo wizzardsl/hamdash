@@ -202,8 +202,9 @@ function paintSpots() {
           : `<span class="freq">${(s.hz / 1e6).toFixed(3)}</span>`) : ''}</td>
       <td class="mono dim">${esc(s.band)}</td>
       <td class="mono">${esc(s.mode)}</td>
-      <td>${esc(s.ref ? `${s.ref} ` : '')}<span class="ref">${esc(
-            [s.place, s.where].filter(Boolean).join(' · ').slice(0, 44))}</span></td>
+      <td>${HD.flag(s.iso, s.country)}${esc(s.ref ? `${s.ref} ` : '')}<span
+            class="ref">${esc([s.place, s.where].filter(Boolean)
+              .join(' · ').slice(0, 44))}</span></td>
       <td class="mono dim">${esc(s.spotter)}</td>
       <td class="dim">${s.snr_db !== undefined && s.snr_db !== null
           ? `<b>${s.snr_db} dB</b>${s.wpm ? ` · ${s.wpm} wpm` : ''} `

@@ -52,9 +52,20 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     "9Y": ("Trinidad and Tobago", "tt", "FK90"),
     "ZF": ("Cayman Islands", "ky", "EK99"),
     "C6": ("Bahamas", "bs", "FL15"), "VP9": ("Bermuda", "bm", "FM72"),
+    # VP8 (Falklands, South Georgia) is deliberately absent: the flag set
+    # bundled here has no `fk`, and `tests/test_dxcc.py` refuses a code with
+    # no file because that is a broken image beside somebody's callsign.
+    # Mapping it to `gb` instead would be worse - the Falklands have their
+    # own flag, and a wrong one is read as fact. No flag means "not known",
+    # which is what it is until the file is added.
     "OX": ("Greenland", "gl", "GP60"),
     # South America
-    "PY": ("Brazil", "br", "GG66"), "PP": ("Brazil", "br", "GG66"),
+    "PY": ("Brazil", "br", "GG66"),
+    # Brazil also has ZV-ZZ, which the table did not. ZW5K was on the
+    # band when this was checked.
+    "ZV": ("Brazil", "br", "GG66"), "ZW": ("Brazil", "br", "GG66"),
+    "ZX": ("Brazil", "br", "GG66"), "ZY": ("Brazil", "br", "GG66"),
+    "ZZ": ("Brazil", "br", "GG66"), "PP": ("Brazil", "br", "GG66"),
     "PT": ("Brazil", "br", "GG66"), "PU": ("Brazil", "br", "GG66"),
     "LU": ("Argentina", "ar", "GF05"), "CE": ("Chile", "cl", "FF46"),
     "CX": ("Uruguay", "uy", "GF15"), "CP": ("Bolivia", "bo", "FH72"),
@@ -86,7 +97,10 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     "OZ": ("Denmark", "dk", "JO65"), "OU": ("Denmark", "dk", "JO65"),
     "SM": ("Sweden", "se", "JO89"), "SA": ("Sweden", "se", "JO89"),
     "SB": ("Sweden", "se", "JO89"), "SK": ("Sweden", "se", "JO89"),
-    "LA": ("Norway", "no", "JO59"), "LB": ("Norway", "no", "JO59"),
+    "LA": ("Norway", "no", "JO59"),
+    # Svalbard and Jan Mayen: a separate DXCC entity that flies the
+    # Norwegian flag, so the flag is Norway's and the grid is its own.
+    "JW": ("Svalbard", "no", "JQ78"), "JX": ("Jan Mayen", "no", "IQ50"), "LB": ("Norway", "no", "JO59"),
     "LN": ("Norway", "no", "JO59"),
     "OH": ("Finland", "fi", "KP20"), "OF": ("Finland", "fi", "KP20"),
     "OG": ("Finland", "fi", "KP20"), "OH0": ("Aland Islands", "ax", "JP90"),
@@ -98,6 +112,7 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     "EA8": ("Canary Islands", "es", "IL18"), "EA6": ("Balearic Islands", "es", "JM19"),
     "CT": ("Portugal", "pt", "IM58"), "CR": ("Portugal", "pt", "IM58"),
     "CU": ("Azores", "pt", "HM68"), "CT3": ("Madeira", "pt", "IM12"),
+    "CS": ("Portugal", "pt", "IM58"), "CS3": ("Madeira", "pt", "IM12"),
     "HB": ("Switzerland", "ch", "JN47"), "HB0": ("Liechtenstein", "li", "JN47"),
     "OE": ("Austria", "at", "JN88"),
     "SP": ("Poland", "pl", "KO02"), "SQ": ("Poland", "pl", "KO02"),
@@ -135,8 +150,14 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     "JN": ("Japan", "jp", "PM95"), "JO": ("Japan", "jp", "PM95"),
     "JP": ("Japan", "jp", "PM95"), "JQ": ("Japan", "jp", "PM95"),
     "JR": ("Japan", "jp", "PM95"), "JS": ("Japan", "jp", "PM95"),
-    "7K": ("Japan", "jp", "PM95"), "7L": ("Japan", "jp", "PM95"),
-    "8J": ("Japan", "jp", "PM95"),
+    # Japan is allocated 7J-7N and 8J-8N, not just the three that were
+    # here. 7M4QZE/7 came off a live SOTA spot and flew no flag.
+    "7J": ("Japan", "jp", "PM95"), "7K": ("Japan", "jp", "PM95"),
+    "7L": ("Japan", "jp", "PM95"), "7M": ("Japan", "jp", "PM95"),
+    "7N": ("Japan", "jp", "PM95"),
+    "8J": ("Japan", "jp", "PM95"), "8K": ("Japan", "jp", "PM95"),
+    "8L": ("Japan", "jp", "PM95"), "8M": ("Japan", "jp", "PM95"),
+    "8N": ("Japan", "jp", "PM95"),
     "HL": ("South Korea", "kr", "PM37"), "DS": ("South Korea", "kr", "PM37"),
     "6K": ("South Korea", "kr", "PM37"), "P5": ("North Korea", "kp", "PN37"),
     "BY": ("China", "cn", "OM89"), "BA": ("China", "cn", "OM89"),

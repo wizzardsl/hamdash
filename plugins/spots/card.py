@@ -29,6 +29,8 @@ import time
 from flask import request
 
 from hamdash.sdk import Card
+# Imports nothing, like bands, so a card process may use it directly.
+from hamdash.services import dxcc
 
 import sources
 import telnet
@@ -255,7 +257,18 @@ def spots():
     # this process, so it orders them against each other as well.
     rows.sort(key=lambda r: (r.get("at") or 0, r.get("arrived") or 0),
               reverse=True)
-    return {"spots": rows[:400], "now": now,
+    rows = rows[:400]
+
+    # The flag comes from the *callsign*, never from whatever a source calls
+    # the country - they spell them differently and some send none at all.
+    # Attached here rather than stored with the spot, the same as the log:
+    # a row served from yesterday's disk cache gets today's prefix table.
+    for r in rows:
+        where = dxcc.for_call(r.get("call", ""))
+        r["iso"] = where["iso"]
+        r["country"] = where["country"]
+
+    return {"spots": rows, "now": now,
             "sources": [_feeds[k].status() for k in sources.KINDS] + live,
             "watching": watch, "my_call": my_call(),
             "max_age_s": max_age}

@@ -1136,7 +1136,22 @@ the live service.
 - The flag is derived from the **callsign**, never from a provider's country
   name: providers spell countries differently and some return none.
 - `iso` is attached when rows are served, not stored on the QSO, so a log
-  written last year gets today's table.
+  written last year gets today's table. **The spots card does the same** -
+  `dxcc` imports nothing, so a card process may use it directly like
+  `bands`, and a spot served from yesterday's disk cache gets today's
+  prefixes.
+- **A missing flag file is a broken image beside somebody's callsign**, so
+  `tests/test_dxcc.py` refuses an ISO code the bundle has no `.svg` for. It
+  caught `fk` the moment VP8 was added. That is also why VP8 and Cameroon
+  are deliberately *unflagged* rather than pointed at a neighbour: the
+  Falklands have their own flag, so flying the Union Jack would be a wrong
+  answer read as fact, and no flag already means "not known".
+- **The table's gaps are found by measuring, not by reading it.** Against 90
+  callsigns from this session's own fixtures, six had none; against 176 live
+  spots, three more. Japan turned out to hold three of its ten allocated
+  prefixes (7J-7N, 8J-8N) and Brazil half of its blocks (PP-PY but not
+  ZV-ZZ) - both common enough to see hourly. `cty.dat` remains the real
+  answer; until then, check against live traffic rather than trusting it.
 - A flag answers "where is this person", so DXCC entities collapse: GM/GW/GI
   all fly `gb`, KL7 and KH6 fly `us`. Places with their own flag keep it.
 - Flags are bundled (`static/flags/*.svg`, flag-icons, MIT). Not a CDN: it
