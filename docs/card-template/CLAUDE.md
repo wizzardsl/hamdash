@@ -192,9 +192,12 @@ Put the directory in the hamdash cards folder:
 
 Then **Cards → Rescan** in the app. No restart needed.
 
-When it misbehaves: the tile's status dot is red if the process died and
-amber if the manifest had something the host ignored (hover it). Everything
-the card prints goes to `<HAMDASH_HOME>/hamdash.log`.
+When it misbehaves the tile shows the card's own traceback, so read that
+first — you do not need to go and find a log. The tile reloads itself while
+the host is still retrying, so fixing the file brings the card back on its
+own. An amber status dot means the manifest had something the host ignored
+(hover it). Everything the card prints also goes to
+`<HAMDASH_HOME>/hamdash.log`.
 
 ## What you cannot do from here
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from html import escape
 from functools import wraps
 from pathlib import Path
 
@@ -216,7 +217,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             if worker.status == "starting":
                 return Response(_starting(worker), mimetype="text/html")
         if worker.status not in ("running", "wedged"):
-            return _worker_down(worker), 503
+            return _worker_down(worker, cfg.home), 503
         url = f"{worker.base}/{sub}"
         try:
             # The tile uid rides along in both the query string and a header,
@@ -1020,21 +1021,60 @@ def _make_lookup(cfg) -> Lookup:
                   account=c.get("account", ""))
 
 
+# The tile is where somebody writing a card is looking when it does not
+# work, so it is where the reason belongs - not only in the log, which they
+# have to be told exists before it helps.
+#
+# **Escape it.** This is a card own output rendered by the *host*, on the
+# host origin. Unescaped, a traceback "in <module>" is read as a tag and
+# silently vanishes - the single most useful word on the line - and anything
+# a card prints that contains a script tag would run.
+def _page(body: str, refresh: int = 0) -> str:
+    bits = ["<!doctype html><meta charset=utf-8>",
+            "<link rel=stylesheet href=/static/css/app.css>"]
+    if refresh:
+        bits.append(f"<meta http-equiv=refresh content={refresh}>")
+    bits.append("<style>body{font:13px system-ui,sans-serif;padding:14px;"
+                "margin:0}pre{font:12px/1.45 ui-monospace,monospace;"
+                "white-space:pre-wrap;word-break:break-word;margin:8px 0;"
+                "padding:8px;background:var(--panel-2);border-radius:6px;"
+                "max-height:60vh;overflow:auto}"
+                ".why{color:var(--alert);font-weight:600;margin:0}"
+                ".hint{color:var(--muted);margin:6px 0 0}</style>")
+    bits.append(body)
+    return "".join(bits)
+
+
 def _card_error(card):
-    return (f"<pre style='font:13px ui-monospace;padding:16px'>"
-            f"{card.id} can't load: {card.error}\n\nmanifest: {card.path}/card.json"
-            f"</pre>")
+    return _page(
+        f'<p class="why">{escape(card.id)} cannot load</p>'
+        f"<pre>{escape(card.error)}</pre>"
+        f'<p class="hint">Its manifest is {escape(str(card.path))}'
+        f"/card.json. Fix it, then Cards &rarr; Rescan.</p>")
 
 
 def _starting(worker):
-    return (f"<!doctype html><meta charset=utf-8>"
-            f"<meta http-equiv=refresh content=1>"
-            f"<link rel=stylesheet href=/static/css/app.css>"
-            f"<p style='font:13px system-ui;padding:16px;color:var(--muted)'>"
-            f"Starting {worker.card.id}…</p>")
+    return _page(
+        f'<p class="hint">Starting {escape(worker.card.id)}&hellip;</p>',
+        refresh=1)
 
 
-def _worker_down(worker):
-    tail = "\n".join(worker.log[-20:]) or "(no output)"
-    return (f"<pre style='font:13px ui-monospace;padding:16px;white-space:pre-wrap'>"
-            f"{worker.card.id} is {worker.status}\n\n{tail}</pre>")
+def _worker_down(worker, home=""):
+    """A card that will not run, said where its author is looking.
+
+    It refreshes while the supervisor is still going to try again, so a card
+    that gets fixed comes back on its own; once it has given up there is
+    nothing to wait for and the page stops reloading itself.
+    """
+    tail = ("\n".join(worker.log[-20:]) or "(no output)")
+    coming_back = not worker.status.startswith("failed")
+    log = f"{home}/hamdash.log" if home else "hamdash.log"
+    return _page(
+        f'<p class="why">{escape(worker.card.id)} is '
+        f"{escape(worker.status)}</p>"
+        f"<pre>{escape(tail)}</pre>"
+        f'<p class="hint">'
+        + ("Fix it and it will come back by itself. " if coming_back else
+           "It has stopped trying. Fix it, then restart hamdash. ")
+        + f"Everything it prints also goes to {escape(log)}.</p>",
+        refresh=5 if coming_back else 0)

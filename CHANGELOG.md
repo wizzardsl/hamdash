@@ -104,6 +104,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **A crashing card's traceback was being eaten by the browser.** The tile
+  has always shown a card's own output when it will not start, but it was not
+  escaped — and a traceback is full of angle brackets, so `in <module>`
+  was read as an unknown tag and silently disappeared, taking the most useful
+  word on the line with it. Anything a card printed containing a script tag
+  would have run. The page is escaped and themed now, says where the log is,
+  and reloads itself while the host is still going to retry — so fixing the
+  file brings the card back without touching the dashboard.
 - **Dragging a card downwards stopped scrolling at the bottom of the
   board.** The board now makes room underneath a card being carried past
   the end of it.

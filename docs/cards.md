@@ -351,10 +351,17 @@ saved index silently becomes a different device.
 
 ## When it does not work
 
-| symptom | look here |
+**The tile shows the error.** A card that will not start paints its own
+traceback where the card would have been — you do not have to go and find a
+log to see a typo. The page reloads itself while the host is still going to
+retry, so **fixing the file brings the card back without touching the
+dashboard**; once the host has given up retrying it says so and stops.
+
+| symptom | what it means |
 |---|---|
-| the tile says "Starting…" for ever | `hamdash.log` — your card's stdout is in it |
-| the status dot is **red** | the process died; the log has the traceback |
+| the tile shows a traceback | that is your card's output; fix it and the tile fills itself back in |
+| the tile says it has *stopped trying* | too many failed restarts; fix it, then restart hamdash |
+| the tile says "Starting…" for ever | the process is alive but never bound its port |
 | the status dot is **amber** | your manifest has something the host ignored; hover it |
 | a 403 with a message | add that permission to `card.json` |
 | the card is not in the menu | **Cards → Rescan**, and check `card.json` parses |

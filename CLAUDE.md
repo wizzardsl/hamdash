@@ -1283,6 +1283,18 @@ touching the app. That contract is written down in `docs/cards.md`, and
 `docs/card-template/` is a working card plus a `CLAUDE.md` aimed at building
 one with Claude Code.
 
+- **A card that will not start says so in its own tile.** The traceback was
+  already there - `Worker.log` rings 300 lines and `_worker_down` showed the
+  last 20 - but it was **not escaped**, and a traceback is full of angle
+  brackets: `in <module>` was read as a tag and silently vanished, which is
+  the one word on the line that says where it broke. Anything a card printed
+  containing a script tag would have run, on the host's origin. `html.escape`
+  now, with `tests/test_card_errors.py` pinning it.
+  The page reloads itself *while the supervisor still intends to retry*, so
+  fixing the file brings the card back with nothing to press - measured: a
+  broken card recovered five seconds after the file was saved. Once the
+  restart limit is reached there is nothing to wait for, so it stops
+  reloading and says so instead.
 - **`tests/test_card_docs.py` is what keeps it true.** Every public method on
   `Card` and `HostClient`, every key on `HD`, every `guard()` permission and
   every settings type has to appear in `docs/cards.md`, or the suite fails.
