@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **Unhandled exceptions in threads never reached the log.** The handler
+  that was supposed to record them read a field that does not exist, so
+  it raised on every call and logged its own error instead of the one it
+  was called about — since the day it was written. Most of this app is
+  threads: the rig poller, the transmit watchdog, each card's output,
+  the bus readers. A thread that dies takes its job with it while the
+  app stays up looking healthy, which is exactly what that log line
+  existed to catch.
 - **`--host 0.0.0.0` half-worked.** It bound every interface as asked, so
   a browser elsewhere on the network could reach the board — but the same
   value was handed to every card process as the address to call the host

@@ -148,10 +148,26 @@ def setup_logging(cfg) -> None:
     sys.excepthook = hook
 
     def thread_hook(args):
-        logging.getLogger("hamdash").error(
-            "unhandled exception in thread %s\n%s", args.thread_name,
-            "".join(traceback.format_exception(
-                args.exc_type, args.exc_value, args.exc_traceback)))
+        # `threading.ExceptHookArgs` carries `thread`, not `thread_name`.
+        # It was the latter, so this hook raised AttributeError every time
+        # it fired - and what reached the log was that AttributeError
+        # instead of the exception it exists to record. Every unhandled
+        # exception in a thread has been lost since it was written, which
+        # is the worst possible thing for the one piece of machinery whose
+        # whole job is to make silent failures visible. `thread` is None
+        # when the thread object has already gone, which happens during
+        # interpreter shutdown - which is exactly when this fired.
+        thread = getattr(args, "thread", None)
+        name = thread.name if thread is not None else "unknown"
+        try:
+            logging.getLogger("hamdash").error(
+                "unhandled exception in thread %s\n%s", name,
+                "".join(traceback.format_exception(
+                    args.exc_type, args.exc_value, args.exc_traceback)))
+        except Exception:                               # noqa: BLE001
+            # Logging can be half torn down at shutdown. A diagnostic that
+            # raises is worse than one that gives up.
+            pass
 
     threading.excepthook = thread_hook
 

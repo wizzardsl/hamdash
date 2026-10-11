@@ -264,6 +264,20 @@ pipe from the supervisor) is left alone.
 - `wedged` ≠ `crashed`. A card can bind its port and hang; `/‌_health` polling
   catches that. Wedged cards are deliberately not auto-restarted — restarting
   something hung while holding a serial handle makes it worse.
+- **`threading.excepthook` is handed `thread`, not `thread_name`.** The
+  hook in `run.py` read the latter, so it raised AttributeError every
+  time it fired and what reached the log was that AttributeError rather
+  than the exception it was called about. Every unhandled exception in a
+  thread had been lost since it was written - the rig poller, the PTT
+  watchdog, the card drains, the bus readers are all threads, and a
+  thread that dies takes its job with it while the process stays up
+  looking healthy. The one piece of machinery whose whole purpose is to
+  make a silent failure visible was itself failing silently. `thread` is
+  None once the object has gone, which is what happens at interpreter
+  shutdown, and shutdown is where this finally showed itself - on the
+  console, while stopping an instance, not in the log.
+  `tests/test_thread_logging.py` drives a real thread into a real
+  exception and reads it back out of the real file.
 - Log records are capped at 2000 chars, stdout/stderr are UTF-8 with
   `errors="replace"` (Windows consoles are cp1252 and a stray byte produces
   `--- Logging error ---` instead of a message).
