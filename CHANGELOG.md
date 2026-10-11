@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [0.5.0]
+
 ### Added
 - **Documentation for writing your own cards.** `docs/cards.md` is the whole
   extension contract in one place: where a card lives, the manifest, the

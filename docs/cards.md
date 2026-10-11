@@ -35,6 +35,9 @@ that runs as it stands:
 
     cp -r docs/card-template <HAMDASH_HOME>/cards/my_card
 
+If you installed the application rather than the source, the template ships
+with it: look in the hamdash folder under `_internal/docs/card-template`.
+
 Then **Cards → Rescan**. No restart: the host re-reads the directory and your
 card appears in the menu.
 

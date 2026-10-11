@@ -181,6 +181,15 @@ class TestSpec(unittest.TestCase):
                     f"{rel(path)} is read at runtime but the spec does not "
                     f"bundle it there; a frozen build would not find it")
 
+    def test_the_card_template_ships(self):
+        """`docs/cards.md` tells an author to copy `docs/card-template`.
+        Somebody who installed the binary has no repository to copy it
+        from, so it has to be in the build."""
+        dest = {d.replace("\\", "/") for _, d in self.datas()}
+        self.assertIn("docs/card-template", dest,
+                      "the docs say to copy the template and the build "
+                      "does not contain it")
+
     def test_sources_exist(self):
         for src, _ in self.datas():
             with self.subTest(src=src):

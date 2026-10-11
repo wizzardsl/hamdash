@@ -17,6 +17,9 @@ The layout below has to match `config.bundle_root()`, which resolves
 datas = [
     ("hamdash/static", "hamdash/static"),   # board, client js, themes
     ("plugins", "plugins"),                 # bundled cards
+    # The card template, because the docs say "copy this folder" and
+    # somebody who installed the binary has no repository to copy it from.
+    ("docs/card-template", "docs/card-template"),
 ]
 
 hiddenimports = [
