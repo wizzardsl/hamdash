@@ -250,9 +250,10 @@ def spots():
         rows.extend(st.recent(max_age, watch))
         live.append(st.status_line())
 
-    # `seen` breaks ties between spots stamped to the same minute, which on
-    # a live feed is most of them.
-    rows.sort(key=lambda r: (r.get("at") or 0, r.get("seen") or 0),
+    # `arrived` breaks ties between spots stamped to the same minute, which
+    # on a live feed is most of them. It is a counter shared by every feed in
+    # this process, so it orders them against each other as well.
+    rows.sort(key=lambda r: (r.get("at") or 0, r.get("arrived") or 0),
               reverse=True)
     return {"spots": rows[:400], "now": now,
             "sources": [_feeds[k].status() for k in sources.KINDS] + live,

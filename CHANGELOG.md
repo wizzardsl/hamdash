@@ -43,6 +43,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **Live spots arriving in the same burst came out oldest first.** The feeds
+  carry HHMM and nothing finer, so a tie-break is needed, and it was stamping
+  the wall clock — which ticks about every 15.6 ms on Windows, so a burst all
+  got the same stamp and the sort fell back to insertion order. It counts now
+  instead, with one counter shared by every feed so they also order against
+  each other. Neither a live RBN session nor the local suite showed it; CI's
+  Windows 3.11 runner did.
 - **A log with less than one page in it drew an empty Prev/Next bar.** The
   pager is hidden in code, but an author `display: flex` beats the browser's
   own `[hidden]` rule outright, so it stayed on screen offering to page

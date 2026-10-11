@@ -10,6 +10,7 @@ Run with:  python -m unittest discover -s tests
 import sys
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent
@@ -37,6 +38,12 @@ NOISE = [
 
 # 03:40Z on an arbitrary day, so the HHMM anchoring can be reasoned about.
 NOW = 1760000000.0
+
+# The fixtures are stamped 0336Z, and `recent()` measures against the real
+# clock - so a window of an hour only passes while the machine's clock
+# happens to be near 03:36 UTC, which is exactly when CI first ran these.
+# Where the window is not what is being tested, it is taken out of the way.
+ANY_AGE = 10 ** 9
 
 
 class TestTheLineFormat(unittest.TestCase):
@@ -163,7 +170,7 @@ class TestWhatItKeeps(unittest.TestCase):
         st._line(RBN_CW)                               # KN3A
         st._line(RBN_CW.replace("KN3A", "VA7SLL"))
         st._line(RBN_CW.replace("KN3A", "VA7SLL").replace("KM3T-3", "W3OA"))
-        mine = st.recent(3600, "VA7SLL")
+        mine = st.recent(ANY_AGE, "VA7SLL")
         self.assertEqual(len(mine), 2)
         self.assertEqual({s["spotter"] for s in mine},
                          {"KM3T-3-#", "W3OA-#"})
@@ -172,12 +179,12 @@ class TestWhatItKeeps(unittest.TestCase):
         st = self.a_stream()
         st._line(RBN_CW)
         st._line(RBN_CW.replace("KN3A", "VA7SLL"))
-        self.assertEqual(len(st.recent(3600, "")), 2)
+        self.assertEqual(len(st.recent(ANY_AGE, "")), 2)
 
     def test_the_case_of_the_callsign_does_not_matter(self):
         st = self.a_stream()
         st._line(RBN_CW.replace("KN3A", "VA7SLL"))
-        self.assertEqual(len(st.recent(3600, "va7sll")), 1)
+        self.assertEqual(len(st.recent(ANY_AGE, "va7sll")), 1)
 
     def test_old_spots_fall_out_of_the_window(self):
         st = self.a_stream()
@@ -194,7 +201,7 @@ class TestWhatItKeeps(unittest.TestCase):
         now = time.time()
         st.spots[0]["at"] = now - 600               # KN3A, ten minutes ago
         st.spots[1]["at"] = now - 10                # W1AW, just now
-        self.assertEqual([s["call"] for s in st.recent(3600, "")],
+        self.assertEqual([s["call"] for s in st.recent(ANY_AGE, "")],
                          ["W1AW", "KN3A"])
 
     def test_spots_in_the_same_minute_come_out_newest_first(self):
@@ -206,8 +213,35 @@ class TestWhatItKeeps(unittest.TestCase):
             st._line(RBN_CW.replace("KN3A", call))
         same = {s["at"] for s in st.spots}
         self.assertEqual(len(same), 1, "the fixture should tie on time")
-        self.assertEqual([s["call"] for s in st.recent(3600, "")],
+        self.assertEqual([s["call"] for s in st.recent(ANY_AGE, "")],
                          ["THIRD", "SECOND", "FIRST"])
+
+    def test_the_tie_break_does_not_read_a_clock(self):
+        """It used to stamp `time.time()`, which ticks about every 15.6 ms on
+        Windows - so a burst of spots all carried the same stamp, the sort
+        stayed stable, and the oldest came out on top again. CI caught it;
+        a live feed did not, because five spots a second are further apart
+        than the tick. Here the clock is stopped dead."""
+        st = self.a_stream()
+        with unittest.mock.patch("telnet.time.time", lambda: NOW):
+            for call in ("FIRST", "SECOND", "THIRD"):
+                st._line(RBN_CW.replace("KN3A", call))
+            self.assertEqual(len({s["arrived"] for s in st.spots}), 3,
+                             "two spots were given the same arrival order")
+            self.assertEqual([s["call"] for s in st.recent(ANY_AGE, "")],
+                             ["THIRD", "SECOND", "FIRST"])
+
+    def test_arrival_order_is_shared_across_feeds(self):
+        """One list on screen merges them, so RBN and a cluster have to be
+        orderable against each other, not just each against itself."""
+        rbn, cluster = self.a_stream(), self.a_stream()
+        rbn._line(RBN_CW.replace("KN3A", "EARLY"))
+        cluster._line(RBN_CW.replace("KN3A", "MIDDLE"))
+        rbn._line(RBN_CW.replace("KN3A", "LATE"))
+        merged = rbn.recent(ANY_AGE, "") + cluster.recent(ANY_AGE, "")
+        merged.sort(key=lambda s: (s["at"], s["arrived"]), reverse=True)
+        self.assertEqual([s["call"] for s in merged],
+                         ["LATE", "MIDDLE", "EARLY"])
 
     def test_chatter_does_not_become_a_spot(self):
         st = self.a_stream()

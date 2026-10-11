@@ -27,6 +27,7 @@ Three things were read off the live services rather than assumed:
 """
 from __future__ import annotations
 
+import itertools
 import re
 import socket
 import threading
@@ -57,6 +58,14 @@ WPM = re.compile(r"(\d+)\s*WPM\b", re.IGNORECASE)
 GRID = re.compile(r"\b([A-R]{2}\d{2})\b")
 MODES = ("CW", "RTTY", "PSK31", "PSK63", "FT8", "FT4", "JT9", "JT65", "SSB",
          "USB", "LSB", "AM", "FM", "DATA", "BPSK", "MFSK")
+
+# Arrival order, across every feed in this process. A wall clock cannot do
+# this job: `time.time()` ticks about every 15.6 ms on Windows, so a burst of
+# spots all carry the same stamp, the sort stays stable, and the oldest of
+# them comes out on top - which is the bug this exists to fix. It survived a
+# live test because RBN's five a second are further apart than the tick.
+_arrivals = itertools.count()          # next() is atomic; no lock needed
+
 
 # How many spots a feed keeps. At RBN's five a second this is about a
 # minute and a half of everything, which is far more than the page shows -
@@ -252,8 +261,9 @@ class SpotStream:
             # The wire carries HHMM and nothing finer, so every spot in the
             # same minute has the same time - and a sort on that alone falls
             # back to insertion order, which puts the oldest of them on top.
-            # `at` stays honest; `seen` breaks the tie.
-            spot["seen"] = time.time()
+            # `at` stays honest; `arrived` breaks the tie, and it counts
+            # rather than reading a clock (see `_arrivals`).
+            spot["arrived"] = next(_arrivals)
             self.spots.append(spot)
             self.seq += 1
         if self.on_spot:
@@ -275,7 +285,7 @@ class SpotStream:
             rows = list(self.spots)
         out = [s for s in rows if s["at"] >= cutoff
                and (not want or s["call"] == want)]
-        out.sort(key=lambda s: (s["at"], s.get("seen") or 0), reverse=True)
+        out.sort(key=lambda s: (s["at"], s.get("arrived") or 0), reverse=True)
         return out
 
     def status_line(self) -> dict:

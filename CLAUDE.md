@@ -840,8 +840,19 @@ the live service.
   live. A spot stamped 2359 arriving at 0001 has to be dated *yesterday*, or
   it sorts a day into the future and sits at the top of the list for ever.
   And most spots on a busy feed tie on time, so sorting on `at` alone falls
-  back to insertion order and puts the oldest of them on top - `seen` is the
-  tie-break, stamped on arrival, and `at` stays honest.
+  back to insertion order and puts the oldest of them on top - `arrived` is
+  the tie-break and `at` stays honest. **The tie-break counts, it does not
+  read a clock.** It was `time.time()`, which ticks about every 15.6 ms on
+  Windows: a burst of spots all got the same stamp, the sort stayed stable,
+  and the oldest came back out on top. A live feed did not show it (RBN's
+  five a second are further apart than the tick) and neither did this
+  machine - CI's Windows 3.11 runner did. `_arrivals` is one counter for
+  every feed in the process, so it orders them against each other too.
+- **A test whose fixture carries a time must not be read against the real
+  clock.** These lines are stamped `0336Z`, so `recent(3600)` passed only
+  while the machine's clock sat near 03:36 UTC - which is exactly when CI
+  first ran them. `ANY_AGE` takes the window out of every test that is not
+  about the window.
 - **These are logins on somebody else's public network**, which is the whole
   reason the shape is what it is. A feed will not start without a configured
   callsign (inventing one, or connecting anonymously, is not a thing to do on
