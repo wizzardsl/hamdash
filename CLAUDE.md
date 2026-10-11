@@ -59,6 +59,8 @@ docs/card-template/ a card that runs, plus a CLAUDE.md for building one
 tests/              regression guards — js_api shape, bus namespace,
                     packaging/spec drift, release notes, layout agreement
 tests/js/           the board's layout model, under `node --test`
+spikes/             throwaway code kept for its answer; NOT loaded by the
+                    app - registry reads plugins/ and <home>/cards/ only
 tools/              release_notes.py (release notes), smoke_frozen.py (build check)
 hamdash.spec        PyInstaller build definition — onedir, see invariant 7
 .github/workflows/  ci.yml (tests), build.yml (frozen apps), release.yml (on tag)
@@ -669,6 +671,50 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
 - pywin32 is optional and imported inside the COM thread, so nothing outside
   Windows pays for it and a missing install names the fix.
 
+## The card path, and the Windows timer tick
+
+Every card is polled - that is the house pattern, because a stream holds a
+server thread (invariant 4). So the per-request cost of the card path is
+not a micro-optimisation: it is the frame rate of the spectrum, the
+decoder and the spots card. It was **34.5 ms median / 43.7 p95** and is
+**2.3 / 3.5**, and none of the four causes is visible from reading the
+code. `tests/test_card_latency.py` guards the shape of each.
+
+- **The proxy built a fresh `requests.Session` per call.**
+  `requests.request(...)` constructs adapters and a connection pool and
+  throws them away again: 15.6 ms against 1.1 ms for a session that is
+  kept. Thread-local, because requests does not promise a Session is safe
+  across threads and waitress hands every request to a different one.
+- **A generator response costs waitress a timer tick.** 15.1 ms against
+  1.07 ms for the identical bytes returned directly, measured on a Flask
+  app with nothing else in it. The proxy streamed *everything*, so every
+  few-kB JSON reply paid it. Small replies are bytes now; over
+  `STREAM_CHUNK` still streams, because holding a card page with images
+  in memory to save a tick is the wrong trade.
+- **A *failed* `card.settings()` was retried on every request.** A card
+  asked about a uid the host will not answer for - a page opened outside
+  the board, a tile that has gone - paid a round trip to the host on each
+  request for the life of the process and printed a line about it every
+  time: 30.8 ms against 2.5 ms, and thousands of log lines a minute.
+  Exactly the bug `Lookup._refused` already fixed once; a failure is
+  remembered for `_settings_retry` now. Success was always cached - only
+  the failure path was unbounded, which is why nobody saw it.
+- **Cards served on werkzeug's development server.** 7.7 ms median and
+  26.4 ms p95 against waitress' 1.0 and 1.5 on the same Flask app.
+  waitress is already a dependency and already what the host runs on.
+  The p95 is the half that shows: a polled card turns jitter into
+  visible stutter.
+
+**That is the 15.6 ms Windows timer tick appearing for the second, third
+and fourth time in this tree** (the first was the spots tie-break). When
+something on Windows costs suspiciously close to 15.6 ms, it is not
+“slow”, it is waiting on that clock - look for a fresh object, a fresh
+connection or a generator, not for an algorithm.
+
+**Measure the card's own port before blaming the proxy, and the proxy
+before blaming the design.** Every wrong guess in this chain was fixed by
+splitting it: client -> host -> proxy -> card, timed separately. The
+first hypothesis (connection setup) was measured at 0.4 ms and was wrong.
 ## Audio cards
 
 `plugins/spectrum` is the first card that owns a hardware resource, and the
@@ -1348,6 +1394,24 @@ the live service.
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"
   event and feeding it guesses would be worse than silence.
+- **Remote operation over the LAN.** Spiked and measured, not built:
+  `spikes/remote_audio/FINDINGS.md`. The transport question is answered -
+  the radio's receive audio reaches a browser by ordinary polling at 50
+  blocks/s with 0 dropped, 40 ms arrival lag and 192 kbit/s, with no new
+  dependency, no new open port and no held thread - so **WebRTC and
+  aiortc are not needed**, which matters because a frozen card runs
+  inside the hamdash binary and a card's dependency is every build's.
+  Control is already done: the board is a web app and `/api/radio/*`
+  never cared where a request came from. What is NOT answered: transmit
+  (`getUserMedia` needs a secure context, so a mic means HTTPS or a
+  tailnet), sharing one capture device with the spectrum card, a proper
+  anti-alias filter on the decimation, and real network jitter. And
+  **the host has no authentication of any kind**, which is a nicety
+  until it is remote control of a transmitter, and then it is not.
+- `--host` binds the board off localhost and is undocumented on purpose
+  for now: with no auth, anyone who can route to it can key the rig,
+  delete QSOs and overwrite config. Document it with that caveat, or
+  add auth first.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a
   pip-installable pywebview backend, Linux needs system GTK/WebKit packages

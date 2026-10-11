@@ -6,6 +6,18 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **Every card got about fifteen times faster to talk to.** A card
+  request was 34.5 ms at the median and 43.7 ms at the 95th percentile;
+  it is 2.3 and 3.5 now. Four separate causes, each costing roughly a
+  Windows timer tick: the card proxy built a fresh HTTP session for every
+  call, it streamed replies that were small enough to just send, a failed
+  tile-settings lookup was retried on every single request (and logged
+  every time), and cards were served by Flask's development server rather
+  than the one the app already ships. Every polled card is affected — the
+  spectrum, the decoder, PSK Reporter, spots — and the 95th percentile is
+  the half that showed, because a polled card turns jitter into stutter.
+
 ### Changed
 - **Clicking a contest opens its rules.** The name is the link now. The
   calendar this comes from has no rules pages in it — the `website` field

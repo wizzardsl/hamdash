@@ -1,0 +1,36 @@
+{
+  "id": "remote_audio",
+  "name": "Remote audio (spike)",
+  "kind": "python",
+  "version": "0.0.1",
+  "author": "HamDash",
+  "description": "SPIKE: the radio's receive audio in a browser on the LAN, with the numbers that say whether it is good enough",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 5,
+  "h": 4,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": ["radio"],
+  "settings": {
+    "device": {
+      "type": "string",
+      "label": "Audio input",
+      "default": "mock",
+      "help": "Part of the input's name. 'mock' synthesises a test signal carrying a click on every whole second, which is what makes latency measurable without a radio. 'rig' follows the audio input set on the active radio."
+    },
+    "rate": {
+      "type": "select",
+      "label": "Send rate",
+      "options": ["8000", "12000", "16000", "24000", "48000"],
+      "default": "12000",
+      "help": "A receiver's audio is about 3 kHz wide, so 8-12 kHz carries all of it. 48000 is here to measure what the bandwidth actually costs."
+    },
+    "block_ms": {
+      "type": "number",
+      "label": "Block (ms)",
+      "default": 20,
+      "help": "How much audio is in one numbered block. Smaller is lower latency and more overhead."
+    }
+  }
+}
