@@ -6,13 +6,7 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
-### Changed
-- **The "not done yet" list is true again.** It still claimed ADIF import
-  dedupe, the per-card settings UI and LoTW/QRZ upload were outstanding; all
-  three have been done for a while, and a stale list of missing features is
-  worse than none because it sends somebody off to build what already
-  exists. There is one list now, in `CLAUDE.md`, and the README points at it
-  rather than keeping a copy that drifts.
+## [0.5.1]
 
 ### Added
 - **A flag beside every spot.** The Where column now starts with the
@@ -26,6 +20,22 @@ versions follow [SemVer](https://semver.org/). The version of record is
   speech bubble, a pair of radio waves — keeping the colour as well, and
   the same mark sits on the filter chip so the chip still reads as the
   legend for the column.
+
+### Changed
+- **The "not done yet" list is true again.** It still claimed ADIF import
+  dedupe, the per-card settings UI and LoTW/QRZ upload were outstanding; all
+  three have been done for a while, and a stale list of missing features is
+  worse than none because it sends somebody off to build what already
+  exists. There is one list now, in `CLAUDE.md`, and the README points at it
+  rather than keeping a copy that drifts.
+
+- **The README is a landing page again.** It had grown to 1071 lines — the
+  entire manual on the front page, which is a scroll rather than something
+  you read. The detail moved into `docs/`, indexed by `docs/README.md` and
+  grouped the way you would look for it: using the board, radios, logging,
+  the bundled cards, the bus, troubleshooting, building. Nothing was thrown
+  away. A test keeps every link and anchor resolving and the front page
+  short.
 
 ### Fixed
 - **Skimmer spots said nothing about where the station was.** An RBN or
@@ -54,15 +64,6 @@ versions follow [SemVer](https://semver.org/). The version of record is
   three minutes. Svalbard and Jan Mayen are there now too — they fly the
   Norwegian flag, so that is a right answer rather than a convenient one.
   99% of live spots carry a flag now, up from none.
-
-### Changed
-- **The README is a landing page again.** It had grown to 1071 lines — the
-  entire manual on the front page, which is a scroll rather than something
-  you read. The detail moved into `docs/`, indexed by `docs/README.md` and
-  grouped the way you would look for it: using the board, radios, logging,
-  the bundled cards, the bus, troubleshooting, building. Nothing was thrown
-  away. A test keeps every link and anchor resolving and the front page
-  short.
 
 ## [0.5.0]
 
