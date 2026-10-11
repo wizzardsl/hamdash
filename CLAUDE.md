@@ -52,6 +52,8 @@ plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
                     psk_reporter, decoder, spots, web_embed, hello_card
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
+docs/               README.md indexes them; board, radios, logging,
+                    built-in-cards, bus, troubleshooting, building
 docs/cards.md       the card author's reference - the extension contract
 docs/card-template/ a card that runs, plus a CLAUDE.md for building one
 tests/              regression guards — js_api shape, bus namespace,
@@ -1326,6 +1328,20 @@ one with Claude Code.
   imported directly like `bands`. Opening the stream still belongs to the
   card - PortAudio has to be in the process that uses it - so the duplication
   that remains is the part that cannot be shared.
+
+## The documentation
+
+`README.md` is a landing page and nothing else. It was 1071 lines once - the
+whole manual on the front page - and the detail now lives in `docs/`, indexed
+by `docs/README.md`. `tests/test_docs_links.py` keeps it that way: every
+relative link and every `#anchor` across the README, this file and `docs/`
+has to resolve, every page has to be listed in the index, and the README has
+to stay under 250 lines. A dead link on the front page is the first thing a
+visitor meets, and it is exactly the rot nobody sees from inside the repo.
+
+Two of these are generated from the code rather than written beside it, and
+both have their own guard: `docs/cards.md` (`test_card_docs.py`) and the
+release notes cut from `CHANGELOG.md` (`tools/release_notes.py`).
 
 ## Keeping this file true
 

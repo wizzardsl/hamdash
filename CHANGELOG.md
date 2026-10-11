@@ -6,6 +6,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Changed
+- **The README is a landing page again.** It had grown to 1071 lines — the
+  entire manual on the front page, which is a scroll rather than something
+  you read. The detail moved into `docs/`, indexed by `docs/README.md` and
+  grouped the way you would look for it: using the board, radios, logging,
+  the bundled cards, the bus, troubleshooting, building. Nothing was thrown
+  away. A test keeps every link and anchor resolving and the front page
+  short.
+
 ## [0.5.0]
 
 ### Added
