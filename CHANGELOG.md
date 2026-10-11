@@ -21,6 +21,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   spell them differently and the cluster sends none at all.
 
 ### Fixed
+- **Countries are recognised from their whole callsign block.** The prefix
+  table held whichever prefixes somebody had needed along the way — Germany
+  twelve of its eighteen letters, Sweden four of thirteen — so ordinary
+  callsigns showed no country and no flag. 106 prefixes added across 24
+  countries, every one reusing an entry already there. Measured against 45
+  seconds of live spots: 1409 of 1409 sightings now resolve, where seven
+  everyday callsigns had nothing before.
 - **Prefixes the table could not place.** Found by measuring rather than
   reading: Japan is allocated 7J–7N and 8J–8N and only three were listed, so
   a board watching JA spots showed blanks; Brazil had PP–PY but not ZV–ZZ;

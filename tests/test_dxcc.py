@@ -99,3 +99,74 @@ class TestFlagFiles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWholeBlocks(unittest.TestCase):
+    """Each country gets its whole ITU call-sign block, not the prefixes
+    somebody happened to need.
+
+    The table used to hold twelve of Germany's eighteen letters and four of
+    Sweden's thirteen. Forty-five seconds of live spots turned up SZ1A,
+    DP75, SE5E, DR4W, DE1L, 9W2E and AO5C with no country between them -
+    none of them unusual, all of them invisible from reading the table.
+    """
+
+    def test_the_callsigns_that_were_live_and_unflagged(self):
+        for call, iso in (("SZ1A", "gr"), ("DP75AB", "de"), ("SE5E", "se"),
+                          ("DR4W", "de"), ("DE1L", "de"), ("9W2E", "my"),
+                          ("AO5C", "es")):
+            with self.subTest(call=call):
+                self.assertEqual(dxcc.iso_for(call), iso)
+
+    def test_a_block_is_whole(self):
+        """Spot checks across the letters that were missing."""
+        for call, iso in (("DI2ABC", "de"), ("DN1ABC", "de"), ("DQ4ABC", "de"),
+                          ("SC3ABC", "se"), ("SJ9ABC", "se"), ("SL0ABC", "se"),
+                          ("LC1ABC", "no"), ("LM9ABC", "no"),
+                          ("PC2ABC", "nl"), ("PH1ABC", "nl"),
+                          ("OP4ABC", "be"), ("OT5ABC", "be"),
+                          ("UE3ABC", "ru"), ("UZ1ABC", "ua"), ("EM5ABC", "ua"),
+                          ("PR7ABC", "br"), ("XB2ABC", "mx"),
+                          ("SR5ABC", "pl"), ("HF0ABC", "pl"), ("3Z9ABC", "pl")):
+            with self.subTest(call=call):
+                self.assertEqual(dxcc.iso_for(call), iso)
+
+
+class TestTheExceptionsSurvivedTheExpansion(unittest.TestCase):
+    """Filling in a block must never swallow the entity sitting inside it.
+
+    These are the ones that would be wrong and look right: HB is
+    Switzerland in the middle of nothing, CN is Morocco where Cuba's
+    letters run, OX and OY are Greenland and the Faroes inside Denmark's,
+    BV is Taiwan inside China's, OH0 is Aland inside Finland's. Longest
+    match is what keeps them, and this is the test that says so.
+    """
+
+    def test_a_neighbour_is_not_swallowed(self):
+        for call, country in (("HB9ABC", "Switzerland"),
+                              ("HB0ABC", "Liechtenstein"),
+                              ("CN8ABC", "Morocco"),
+                              ("OX3ABC", "Greenland"),
+                              ("OY1ABC", "Faroe Islands"),
+                              ("BV1ABC", "Taiwan"),
+                              ("OH0ABC", "Aland Islands"),
+                              ("UN7ABC", "Kazakhstan"),
+                              ("UK8ABC", "Uzbekistan"),
+                              ("HA5ABC", "Hungary"),
+                              ("EA8ABC", "Canary Islands"),
+                              ("EA6ABC", "Balearic Islands"),
+                              ("CT3ABC", "Madeira"),
+                              ("CU2ABC", "Azores"),
+                              ("KL7ABC", "Alaska"),
+                              ("KH6ABC", "Hawaii"),
+                              ("LZ1ABC", "Bulgaria")):
+            with self.subTest(call=call):
+                self.assertEqual(dxcc.for_call(call)["country"], country)
+
+    def test_china_and_taiwan_share_a_letter_and_not_an_entity(self):
+        """BA-BL and BT, BY-BZ are China; BM-BQ and BU-BX are Taiwan. Both
+        are in the table now, which they were not before."""
+        self.assertEqual(dxcc.iso_for("BY1ABC"), "cn")
+        self.assertEqual(dxcc.iso_for("BJ1ABC"), "cn")
+        self.assertEqual(dxcc.iso_for("BX1ABC"), "tw")
+        self.assertEqual(dxcc.iso_for("BM2ABC"), "tw")

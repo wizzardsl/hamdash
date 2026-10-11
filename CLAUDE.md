@@ -1146,6 +1146,19 @@ the live service.
   are deliberately *unflagged* rather than pointed at a neighbour: the
   Falklands have their own flag, so flying the Union Jack would be a wrong
   answer read as fact, and no flag already means "not known".
+- **A country gets its whole ITU block, not the prefixes somebody needed.**
+  That was the actual shape of the problem: Germany had twelve of its
+  eighteen letters, Sweden four of thirteen, Japan three of ten. Forty-five
+  seconds of live spots turned up SZ1A, DP75, SE5E, DR4W, DE1L, 9W2E and
+  AO5C - none of them unusual, all invisible from reading the table. 106
+  prefixes were added at once, every one of them reusing a country, an ISO
+  code and a grid already present, so no addition was a fresh guess.
+- **Expanding a block must not swallow the entity sitting inside it.** That
+  is the way to get this wrong and have it look right: HB is Switzerland,
+  CN is Morocco where Cuba's letters run, OX and OY are Greenland and the
+  Faroes inside Denmark's, BV is Taiwan inside China's, OH0 is Aland inside
+  Finland's. Longest match is what saves them and
+  `TestTheExceptionsSurvivedTheExpansion` is what says so.
 - **The table's gaps are found by measuring, not by reading it.** Against 90
   callsigns from this session's own fixtures, six had none; against 176 live
   spots, three more. Japan turned out to hold three of its ten allocated
@@ -1236,7 +1249,17 @@ the live service.
   `docs/cards.md` both carry the measurement.
 - Popped-out tiles still hold their grid slot. Optional "free the space".
 - LoTW user-activity list ("is this station on LoTW"), from the public CSV.
-- `cty.dat` for real DXCC, replacing the short PREFIX table.
+- `cty.dat` for real DXCC, replacing the PREFIX table. Weighed and deferred
+  rather than forgotten: **country-files.com answers an automated request
+  with 403** and its terms could not be read from here, and this tree has
+  already turned down WA7BNM over exactly that. It would not fix flags by
+  itself either - cty.dat carries DXCC entities, CQ and ITU zones and
+  lat/lon, and no ISO codes, so flags would still need an entity-to-ISO map
+  of some 340 entries, many of which have no ISO code at all. What it does
+  buy is entity names, zones and callsign-level exceptions like `4U1UN`. The
+  table was grown and measured instead; 1409 of 1409 live sightings resolve.
+  If it is picked up again, read it from a file the operator supplies rather
+  than fetching or shipping it.
 - Rig depth: sharing the rig with WSJT-X. VFO A/B, split and the meters
   are done; RIT/XIT and the sub-receiver are not.
 - PTT is proven through flrig on an FT-890, into a dummy load, operator
