@@ -283,6 +283,83 @@ window.HDMap = (function () {
     return builtInBasemap(lines);
   }
 
+  // ---- the wheel, which is two gestures ------------------------------------
+  // A trackpad pinch arrives as a wheel event with `ctrlKey` set - every
+  // major browser synthesises it that way - and a two-finger scroll arrives
+  // without it. So the two are told apart by asking, rather than by guessing
+  // at deltas, and a plain scroll is simply not ours: left alone, it chains
+  // out of the iframe and scrolls the board behind it.
+  //
+  // A mouse has no pinch, so ctrl+wheel does the same job, and the hint says
+  // so the first time somebody scrolls over a map. The zoom buttons are
+  // there for anyone who does neither.
+  const PINCH_PER_LEVEL = 50;   // px of pinch that makes one zoom level
+  const GESTURE_GAP = 300;      // ms of quiet that ends a gesture
+  const HINT_FOR = 1400;        // ms the hint stays up
+  const HINT_EVERY = 8000;      // ms before it is worth saying again
+
+  // How many zoom levels a gesture has earned, and what is left over.
+  // Counted first and applied once: Leaflet applies a zoom asynchronously,
+  // so a loop that re-read `getZoom()` between steps asked for the same
+  // level twice - a pinch worth two levels moved one.
+  function zoomSteps(acc, deltaY) {
+    acc += deltaY;
+    let steps = 0;
+    while (acc <= -PINCH_PER_LEVEL) { acc += PINCH_PER_LEVEL; steps += 1; }
+    while (acc >= PINCH_PER_LEVEL) { acc -= PINCH_PER_LEVEL; steps -= 1; }
+    return { acc, steps };
+  }
+
+  function wheelZoom(map) {
+    // Not the `el` create() was handed: that may be an element *or* an id,
+    // because `L.map` takes either and both map cards pass a string. The
+    // container is the one thing that is always an element.
+    const el = map.getContainer();
+    let acc = 0;
+    let last = 0;
+    let saidAt = 0;
+    let hint = null;
+    let hide = null;
+
+    const say = () => {
+      const now = Date.now();
+      if (now - saidAt < HINT_EVERY) return;
+      saidAt = now;
+      if (!hint) {
+        hint = L.DomUtil.create('div', '', el);
+        hint.textContent = 'Pinch, or hold Ctrl and scroll, to zoom';
+        hint.style.cssText =
+          'position:absolute;inset:auto 0 8px 0;margin:0 auto;width:fit-content;'
+          + 'z-index:1000;pointer-events:none;padding:4px 10px;border-radius:999px;'
+          + 'font:12px/1 system-ui,sans-serif;opacity:0;transition:opacity .15s;'
+          + 'background:var(--panel-2,#222);color:var(--ink,#eee);'
+          + 'border:1px solid var(--rule,#444)';
+      }
+      hint.style.opacity = '1';
+      clearTimeout(hide);
+      hide = setTimeout(() => { hint.style.opacity = '0'; }, HINT_FOR);
+    };
+
+    el.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) {
+        // Not ours. No preventDefault, so it scrolls the board.
+        say();
+        return;
+      }
+      // Ours, and the browser would otherwise zoom the whole page.
+      e.preventDefault();
+      const now = Date.now();
+      if (now - last > GESTURE_GAP) acc = 0;
+      last = now;
+      const got = zoomSteps(acc, e.deltaY);
+      acc = got.acc;
+      if (got.steps) {
+        map.setZoomAround(map.mouseEventToContainerPoint(e),
+                          map.getZoom() + got.steps);
+      }
+    }, { passive: false });
+  }
+
   // ---- the map itself ------------------------------------------------------
   function create(el, opts = {}) {
     azimuthal = !!opts.azimuthal;
@@ -300,7 +377,13 @@ window.HDMap = (function () {
       o.maxBounds = L.latLngBounds([[-85, -WORLD_EDGE], [85, WORLD_EDGE]]);
       o.maxBoundsViscosity = 1;
     }
+    // **Scrolling the board must not zoom the map.** A tile is something
+    // you scroll past, and a map that grabs the wheel stops the dashboard
+    // dead under the cursor. Leaflet's own handler zooms on any wheel, so
+    // it is off and `wheelZoom` takes its place.
+    o.scrollWheelZoom = false;
     const map = L.map(el, Object.assign(o, opts.leaflet || {}));
+    wheelZoom(map);
     // Same z-index as the tile pane: the built-in basemap is a basemap, and
     // every overlay belongs on top of it.
     map.createPane('basemap').style.zIndex = 200;
@@ -448,6 +531,8 @@ window.HDMap = (function () {
   }
 
   return {
+    zoomSteps,
+
     theme, readTheme, D2R,
     toLatLon, toGrid, unwrapLon, endpoint, greatCircle,
     copies, each, shift, WORLD_EDGE,

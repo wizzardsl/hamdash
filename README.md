@@ -363,6 +363,13 @@ that stops honest cards colliding, not as protection from a hostile one.
 
 ## Following one station
 
+**Scrolling over a map scrolls the board, not the map.** A dashboard is
+something you scroll down, and a map that grabs the wheel stops it dead
+under the cursor. To zoom a map: **pinch on a trackpad, hold Ctrl and
+scroll, or use the + / - buttons**. A hint says so the first time you scroll
+across one.
+
+
 Three cards show the same station without knowing about each other. The host
 publishes `lookup.result` whenever anything looks a callsign up, and the map
 and the path card draw from it:

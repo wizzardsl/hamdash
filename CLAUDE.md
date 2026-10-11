@@ -937,6 +937,33 @@ QRM or fading.
 - `path_map` is Leaflet-based. The
   offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the
   same picker as tile basemaps.
+- **The wheel over a map is two different gestures, and the browser already
+  tells them apart.** A trackpad pinch arrives as a `wheel` event with
+  `ctrlKey` set - every major browser synthesises it that way - and a
+  two-finger scroll arrives without it. So `scrollWheelZoom` is off and
+  `wheelZoom` in `hdmap.js` zooms only on the ctrl form. A map that grabs
+  every wheel stops the dashboard dead the moment the pointer crosses a
+  tile, which is how this was reported.
+  **The plain wheel must not be `preventDefault`ed**: left alone it chains
+  out of the card's iframe and scrolls the board behind it. Measured with
+  real input, pointer over a map card: the board moved 107 -> 507 px and the
+  map did not zoom. That chaining works because a card page is
+  `overflow: hidden` and so has nothing of its own to scroll.
+- **`HDMap.create` may be handed an element id, not an element.** `L.map`
+  takes either and both map cards pass a string, so anything wanting the
+  DOM node must use `map.getContainer()`. Calling `addEventListener` on the
+  argument threw *after* the map was built, which broke both map cards at
+  once and left a half-initialised container behind - the next attempt then
+  failed with Leaflet's "Map container is already initialized", which names
+  the symptom and not the cause.
+- **Count the zoom levels, then move once.** Leaflet applies a zoom
+  asynchronously, so a loop that re-read `getZoom()` between steps asked for
+  the same level twice and a two-level pinch moved one. `zoomSteps` is pure
+  and tested in `tests/js/hdmap.test.js`; the rest was measured in a
+  browser, since what the wheel does is not something a unit test can see.
+- **A map card re-frames its own map**, so its zoom level is not a reliable
+  signal in a test: `map.zoomIn()` appears to do nothing because the card's
+  next poll fits the view again. Watch the call rather than the zoom.
 - **Leaflet writes colours into SVG presentation attributes**, where
   `var(--x)` does not resolve. Read the theme's values with `getComputedStyle`
   instead, or the map ignores the theme.

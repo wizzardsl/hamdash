@@ -82,6 +82,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **Scrolling the dashboard no longer zooms a map you pass over.** A map
+  card grabbed every scroll wheel event, so moving down a long board stopped
+  dead the moment the pointer crossed one and the map zoomed instead. Plain
+  scrolling now goes to the board; **pinch on a trackpad, or hold Ctrl and
+  scroll, to zoom the map**, and a hint says so the first time. The zoom
+  buttons are unchanged.
 - **Every mode change failed on some Hamlib radios.** hamdash asked for the
   rig's default passband, which is what a 0 means in Hamlib's protocol, and
   some backends refuse it outright — an FT-900 and an FT-890 both do. It
