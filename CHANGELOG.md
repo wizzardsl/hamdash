@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **`tools/get_hamlib.py` fetches Hamlib for you.** Hamlib is a native
+  program rather than a Python package, so `pip install -r requirements.txt`
+  cannot bring it. The script downloads the official 3 MB Windows build,
+  verifies it against the SHA-256 Hamlib publishes beside it, and unpacks it
+  where hamdash looks — after which a Hamlib radio in Settings just works.
+  It is fetched rather than bundled because rigctld is GPL and hamdash is
+  MIT; on macOS and Linux it prints the one-line package-manager command
+  instead. The "rigctld was not found" error now names the script.
 - **Dragging a card to the edge scrolls the board.** Moving a card from the
   bottom of a long dashboard to the top used to mean dropping it, scrolling,
   picking it up again, over and over. Hold it near the top or bottom and the
@@ -74,6 +82,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **Every mode change failed on some Hamlib radios.** hamdash asked for the
+  rig's default passband, which is what a 0 means in Hamlib's protocol, and
+  some backends refuse it outright — an FT-900 and an FT-890 both do. It
+  now falls back to "leave the passband alone" when no width was asked for,
+  while a width you *did* ask for still reports its error.
+- **The second VFO was dropped on Hamlib radios.** rigctld answers the
+  query with bare values and hamdash was looking for labelled ones, so VFO B
+  never appeared even though the number was in the reply.
 - **A radio that cannot report PTT disarmed the transmit watchdog.** Some
   key perfectly and go on reporting "receiving" — an FT-900 through OmniRig
   does. The watchdog read that as "the transmission ended without us", so

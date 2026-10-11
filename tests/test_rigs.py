@@ -255,7 +255,11 @@ class TestHamlibWithoutHamlib(unittest.TestCase):
         with mock.patch.object(rigs, "find_rigctld", return_value=""):
             with self.assertRaises(rigs.RigError) as got:
                 rigs.HamlibBackend(model=1, port="COM3")
-        self.assertIn("Install Hamlib", str(got.exception))
+        # The message names what to do, not just what failed: the fetch
+        # script first, since that is the one that needs no decisions.
+        said = str(got.exception)
+        self.assertIn("tools/get_hamlib.py", said)
+        self.assertIn("Settings -> Radio", said)
 
     def test_a_rig_with_no_port_is_refused_before_spawning_anything(self):
         with mock.patch.object(rigs, "find_rigctld", return_value="rigctld"):
@@ -272,3 +276,70 @@ class TestHamlibWithoutHamlib(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRigctldModeWidth(unittest.TestCase):
+    """Measured against an FT-900 on COM13 through rigctld 4.7.2, and the
+    same on Hamlib's FT-890 backend: `M USB 0` is refused. 0 is the
+    documented "use the rig's default passband", so a card that does not
+    care about the width could not change mode at all on that radio."""
+
+    def a_rig(self, refuse):
+        b = rigs.RigctldBackend()
+        b.sent = []
+
+        def cmd(line):
+            b.sent.append(line)
+            if line in refuse:
+                raise rigs.RigError(f"rig returned error -1 for {line!r}")
+            return []
+        b._cmd = cmd
+        return b
+
+    def test_a_refused_default_width_falls_back_to_no_change(self):
+        b = self.a_rig({"M USB 0"})
+        b.set_mode("USB")
+        self.assertEqual(b.sent, ["M USB 0", "M USB -1"])
+
+    def test_a_rig_that_takes_it_is_asked_once(self):
+        b = self.a_rig(set())
+        b.set_mode("USB")
+        self.assertEqual(b.sent, ["M USB 0"])
+
+    def test_a_width_we_were_given_is_not_second_guessed(self):
+        """A refused *explicit* width is a real error - the operator asked
+        for 500 Hz and the radio said no, which they need to hear."""
+        b = self.a_rig({"M CW 500"})
+        with self.assertRaises(rigs.RigError):
+            b.set_mode("CW", 500)
+        self.assertEqual(b.sent, ["M CW 500"])
+
+
+class TestRigctldSecondVfo(unittest.TestCase):
+    def a_rig(self, answers):
+        b = rigs.RigctldBackend()
+        b._cmd = lambda line: answers[line]
+        return b
+
+    def test_the_other_vfo_comes_back_as_bare_values(self):
+        """rigctld 4.7.2 answers `\get_vfo_info VFOB` with one value per
+        line and no labels: ['14300000', 'USB', '2200', '0', '0']. Looking
+        for a "Freq:" label found nothing and dropped the second VFO with
+        the number sitting right there."""
+        b = self.a_rig({
+            "f": ["7041000"], "m": ["USB", "2200"], "t": ["0"],
+            "v": ["VFOA"], "s": ["0", "VFOA"],
+            "\get_vfo_info VFOB": ["14300000", "USB", "2200", "0", "0"],
+        })
+        st = b.state()
+        self.assertEqual(st["freq_a"], 7_041_000)
+        self.assertEqual(st["freq_b"], 14_300_000)
+        self.assertEqual(st["vfo"], "A")
+
+    def test_a_labelled_answer_still_works(self):
+        b = self.a_rig({
+            "f": ["7041000"], "m": ["USB", "2200"], "t": ["0"],
+            "v": ["VFOA"], "s": ["0", "VFOA"],
+            "\get_vfo_info VFOB": ["Freq: 14300000", "Mode: USB"],
+        })
+        self.assertEqual(b.state()["freq_b"], 14_300_000)

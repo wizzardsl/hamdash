@@ -536,8 +536,28 @@ reaches it:
 | **Simulated** | nothing | the board works with the shack powered down |
 | **OmniRig** | which slot, 1 or 2 | Windows. Needs `pip install pywin32` |
 | **flrig** | host and port | an flrig already running; default `127.0.0.1:12345` |
-| **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; needs Hamlib installed |
+| **Hamlib** | model, port, baud, data/stop bits, parity, handshake | hamdash starts `rigctld` for you; run `tools/get_hamlib.py` once |
 | **rigctld** | host and port | a daemon you are already running |
+
+### Getting Hamlib
+
+Hamlib is a program, not a Python package, so `pip install -r
+requirements.txt` cannot bring it. One command does:
+
+```bash
+python tools/get_hamlib.py
+```
+
+It downloads the official Windows build (3 MB), checks it against the
+SHA-256 that Hamlib publishes beside it, and unpacks it into your hamdash
+config directory, where hamdash looks for it. Then add a **Hamlib** radio in
+Settings → Radio, pick your model, and set the port and baud.
+
+hamdash does not ship Hamlib: `rigctld` is GPL and hamdash is MIT, so you
+download it from the Hamlib project rather than from us. On macOS and Linux
+the script prints the one-line package command (`brew install hamlib`,
+`apt install libhamlib-utils`) instead, since Hamlib publishes binaries for
+Windows only.
 
 ### Two VFOs, split, and the meter
 

@@ -357,14 +357,23 @@ class RigctldBackend(Backend):
             # not the other VFO is simply not reported. A missing number is
             # better than the dial's number labelled as the other VFO.
             other = "B" if which == "A" else "A"
-            got = self._maybe(f"\\get_vfo_info VFO{other}")
-            for line in got:
-                if line.lower().startswith("freq:"):
-                    try:
-                        out["freq_" + other.lower()] = int(float(
-                            line.split(":", 1)[1]))
-                    except ValueError:
-                        pass
+            # `\get_vfo_info VFOB` answers with bare values, one per line -
+            # measured against rigctld 4.7.2 on an FT-900:
+            # ['14300000', 'USB', '2200', '0', '0']. Looking for a "Freq:"
+            # label (which other versions and the -b modes do print) found
+            # nothing and dropped the second VFO silently, with the number
+            # sitting right there in the reply.
+            for line in self._maybe(f"\\get_vfo_info VFO{other}"):
+                line = line.strip()
+                if line.lower().startswith("freq") and ":" in line:
+                    line = line.split(":", 1)[1].strip()
+                elif not line.isdigit():
+                    continue
+                try:
+                    out["freq_" + other.lower()] = int(float(line))
+                    break
+                except ValueError:
+                    continue
         split = self._maybe("s")
         if split:
             try:
@@ -402,7 +411,20 @@ class RigctldBackend(Backend):
         self._cmd(f"F {int(hz)}")
 
     def set_mode(self, mode: str, width: int = 0) -> None:
-        self._cmd(f"M {mode.upper()} {int(width)}")
+        try:
+            self._cmd(f"M {mode.upper()} {int(width)}")
+        except RigError:
+            if int(width):
+                raise
+            # A passband of 0 means "the rig's own default" in Hamlib's
+            # protocol, and some backends simply refuse it: measured
+            # against one FT-900 on COM13, where `M USB 0` is an error and
+            # `M USB -1` is fine - and the same on Hamlib's FT-890 backend,
+            # so it is not one rig file being odd. -1 is "leave the
+            # passband alone", which is the honest fallback when we were
+            # never given a width to ask for. Without this, every mode
+            # change from the card failed on that radio.
+            self._cmd(f"M {mode.upper()} -1")
 
     def set_ptt(self, on: bool) -> None:
         self._cmd(f"T {1 if on else 0}")
@@ -686,7 +708,8 @@ class HamlibBackend(RigctldBackend):
         exe = find_rigctld(self.rigctld_path)
         if not exe:
             raise RigError(
-                "rigctld was not found. Install Hamlib and put it on PATH, or "
+                "rigctld was not found. Run `python tools/get_hamlib.py` to "
+                "fetch it, or install Hamlib yourself and put it on PATH, or "
                 "set the path to rigctld in Settings -> Radio.")
         if not self.model:
             raise RigError("this rig has no Hamlib model set")
@@ -1049,6 +1072,19 @@ def find_rigctld(hint: str = "") -> str:
     found = shutil.which("rigctld") or shutil.which("rigctld.exe")
     if found:
         return found
+    # Where `tools/get_hamlib.py` puts it. Imported here rather than at the
+    # top: a card process imports this module for `band_for`, and config is
+    # not its business.
+    try:
+        from ..config import default_home
+
+        base = default_home() / "hamlib"
+        for name in ("rigctld.exe", "rigctld"):
+            for found in sorted(base.glob(f"**/{name}"), reverse=True):
+                if found.is_file():
+                    return str(found)
+    except Exception:                               # noqa: BLE001
+        pass
     # The usual Windows installs, since Hamlib's own installer does not put
     # itself on PATH.
     for base in (os.environ.get("ProgramFiles", ""),

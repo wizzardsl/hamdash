@@ -613,6 +613,33 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   share between the polling thread and a request thread, and a transport
   subclass to give it a timeout - the stdlib one has none, and the thread
   waiting is one of the server's (invariant 4).
+- **Hamlib is not a Python package**, so it cannot go in
+  `requirements.txt`. `tools/get_hamlib.py` fetches the official Windows
+  zip (3 MB), checks it against the SHA-256 Hamlib publishes beside it, and
+  unpacks it into `<home>/hamlib`, which `find_rigctld` searches. **It is
+  fetched, not bundled, on purpose**: `rigctl` and `rigctld` are
+  GPL-2.0-or-later and hamdash is MIT, so shipping them in our builds would
+  put their licence and a source offer on every artifact we publish.
+  Running them as a separate process is nobody's problem. Hamlib publishes
+  binaries for Windows only; the script prints the package-manager line for
+  macOS and Linux rather than building from their tarball behind the
+  operator's back.
+- **`M <mode> 0` is refused by some Hamlib backends**, and 0 is the
+  documented "use the rig's own default passband". Measured against an
+  FT-900 on COM13: `M USB 0` is an error and `M USB -1` is fine - and the
+  same through Hamlib's **FT-890** backend, so it is not one rig file being
+  odd. `set_mode` falls back to `-1` ("leave the passband alone") only when
+  it was given no width to ask for; a refused *explicit* width is a real
+  error the operator asked for and needs to hear. Without this every mode
+  change from the card failed on that radio.
+- **`\get_vfo_info VFOB` answers with bare values, one per line** -
+  `['14300000', 'USB', '2200', '0', '0']` from rigctld 4.7.2. Parsing it
+  for a `Freq:` label (which other versions do print) found nothing and
+  dropped the second VFO silently, with the number sitting right there in
+  the reply.
+- **Do not send `\dump_caps` to a running rigctld.** It killed the daemon
+  mid-session here, which then made the next write fail with "no rigctld"
+  and left the radio in whatever mode the probe had put it.
 - **Hamlib entries spawn their own `rigctld`** (`-m model -r port -t <free>`)
   and kill it when deselected: two rigctlds on one port is the same mistake as
   two programs. The model list comes from `rigctl -l`, never a copy here -
@@ -1118,9 +1145,16 @@ the live service.
   unkeys** (dummy load, operator watching) and the watchdog takes an unheld
   transmission off the air at `PTT_HOLD` - though the radio never reports
   the transmission at all, which is what the `_ptt_confirmed` rule above is
-  for. Nothing on Hamlib is proven: `\get_vfo_info` and `l STRENGTH` have
-  never run against a rigctld, because neither rigctl nor rigctld is
-  installed on this machine.
+  for.
+- **Hamlib is proven too, against the same FT-900** (model 1013, COM13,
+  4800 8N2 no handshake, OmniRig shut down): it reads frequency, mode and
+  width, **and the VFO, which OmniRig on this radio cannot** - so the
+  per-backend honesty is not theoretical. Both VFOs read, `set_freq`,
+  `set_mode`, `set_vfo` and `set_split` all reach the radio and it was
+  returned exactly as found. `l STRENGTH` gives a real dB-relative-to-S9
+  reading; `l RFPOWER_METER` and `l SWR` are refused by this rig, so the
+  transmit meters come back empty rather than as zeroes. **PTT is not
+  proven on Hamlib.**
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,
