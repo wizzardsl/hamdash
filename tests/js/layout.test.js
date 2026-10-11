@@ -232,3 +232,76 @@ test('what forSave produces normalises back to what it came from', () => {
     before.map((t) => t.active));
   assert.deepStrictEqual(L.cardOf(after, 'a').settings, { q: 1 });
 });
+
+/* ---- compact ----------------------------------------------------------
+ *
+ * The Tidy up button. Unticking cards leaves holes, and the board does not
+ * close them by itself on purpose; this is the one press that does.
+ */
+
+const box = (uid, x, y, w, h) => ({ uid, x, y, w, h, active: 0, cards: [] });
+
+test('compact pulls a tile up into the gap above it', () => {
+  const tiles = [box('a', 0, 0, 3, 2), box('b', 0, 7, 3, 2)];
+  const moved = L.compact(tiles);
+  assert.strictEqual(moved, 1);
+  assert.strictEqual(tiles[1].y, 2, 'b should sit straight under a');
+});
+
+test('compact leaves an already tidy board alone, and says so', () => {
+  const tiles = [box('a', 0, 0, 3, 2), box('b', 0, 2, 3, 2)];
+  assert.strictEqual(L.compact(tiles), 0);
+  assert.deepStrictEqual(tiles.map((t) => t.y), [0, 2]);
+});
+
+test('compact never moves a tile sideways', () => {
+  // Where a tile sits across the board is arranged deliberately; which row
+  // it lands on usually is not. Sliding left would close more whitespace
+  // and shuffle a layout somebody chose.
+  const tiles = [box('a', 6, 4, 3, 2)];
+  L.compact(tiles);
+  assert.strictEqual(tiles[0].x, 6);
+  assert.strictEqual(tiles[0].y, 0);
+});
+
+test('compact keeps tiles in the column order they were in', () => {
+  const tiles = [box('top', 0, 1, 3, 2), box('mid', 0, 5, 3, 2),
+    box('low', 0, 9, 3, 2)];
+  L.compact(tiles);
+  assert.deepStrictEqual(tiles.map((t) => t.y), [0, 2, 4]);
+});
+
+test('compact does not stack tiles that sit side by side', () => {
+  // Two columns rise independently: b must not be pulled under a.
+  const tiles = [box('a', 0, 3, 3, 2), box('b', 3, 6, 3, 2)];
+  L.compact(tiles);
+  assert.deepStrictEqual(tiles.map((t) => [t.x, t.y]), [[0, 0], [3, 0]]);
+});
+
+test('compact never leaves two tiles overlapping', () => {
+  // The property that matters: whatever it does, the board stays legal.
+  const tiles = [box('a', 0, 5, 6, 3), box('b', 4, 9, 4, 2),
+    box('c', 0, 12, 2, 2), box('d', 6, 1, 3, 4)];
+  L.compact(tiles);
+  tiles.forEach((t) => tiles.forEach((o) => {
+    if (t.uid !== o.uid) {
+      assert.ok(!L.overlap(t, o), `${t.uid} overlaps ${o.uid}`);
+    }
+  }));
+});
+
+test('compact is idempotent', () => {
+  // A second press must do nothing, or the button lies about what it did.
+  const tiles = [box('a', 0, 4, 3, 2), box('b', 3, 9, 3, 2),
+    box('c', 0, 11, 6, 2)];
+  L.compact(tiles);
+  const after = tiles.map((t) => ({ ...t }));
+  assert.strictEqual(L.compact(tiles), 0);
+  assert.deepStrictEqual(tiles, after);
+});
+
+test('compact reaches row zero when nothing is in the way', () => {
+  const tiles = [box('only', 2, 20, 4, 3)];
+  assert.strictEqual(L.compact(tiles), 1);
+  assert.strictEqual(tiles[0].y, 0);
+});

@@ -24,6 +24,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **A Tidy up button**, in the Cards menu. Unticking a few cards leaves
+  holes in the board, and it does not close them by itself on purpose — a
+  layout that rearranged whenever something was removed would move cards
+  you had placed deliberately. The cost was rows of nothing to scroll
+  past, and closing them meant dragging every remaining tile. This does
+  the lot in one press, pulling tiles straight up into the space above
+  them and never sideways, so your left-to-right arrangement survives. It
+  offers Undo, and says “Already tidy” rather than pretending to work.
 - **Hear the radio in the browser, including from another machine.** A
   new **Receive audio** card plays the receiver's audio in a tile, which
   is what was missing for operating from another PC on the network — the

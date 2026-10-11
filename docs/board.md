@@ -51,6 +51,14 @@ so a row with more than one shows a count and unticking takes all of them off
 at once. That would throw away per-tile settings, so instead of asking first
 the toast offers **Undo**, which puts them back with their settings intact.
 
+**Tidy up**, also in that menu, pulls every tile straight up into the empty
+space above it. Taking a few cards off the board leaves holes — the board
+does not close them by itself, because a layout that rearranged itself every
+time you removed something would move the tiles you had placed on purpose —
+and this closes them all in one press. It only moves tiles **up**, never
+sideways, so how you arranged them left to right survives. It offers
+**Undo**, and tells you if there was nothing to do.
+
 **Browse & drag…** in that menu opens the older sheet, where a row can be
 dragged out and dropped exactly where you want it on the board.
 

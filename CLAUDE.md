@@ -382,6 +382,24 @@ README and is guesswork as a result.
   harness built from the same shim was used to check the test fails against
   the pre-fix file and passes against the fixed one, which is the thing
   worth checking about any regression test.
+- **Tidy up pulls the tiles into the gaps, and nothing else does.** The
+  board deliberately does not close holes by itself: a layout that
+  rearranged whenever a card was removed would move tiles the operator
+  had placed on purpose. The cost of that is rows of nothing to scroll
+  past after unticking a few cards, and closing them by hand is a drag
+  per tile. `HDLayout.compact` is the one press that does it, in the
+  Cards menu because unticking is what makes the gaps.
+  **Upwards only, never sideways**, for the same reason `resolve` pushes
+  down only: where a tile sits across the board is arranged deliberately
+  and which row it lands on usually is not. Sliding tiles left would
+  close more whitespace and shuffle a layout somebody chose.
+  It is **not** part of `normalise`, and must not become part of it -
+  normalising runs on every save, so a board would then tidy itself
+  whether or not anybody asked.
+  Tiles rise in the order they already sit in, so a lower tile cannot
+  overtake the one above it: dropping the sort leaves two tiles
+  overlapping, which `tests/js/layout.test.js` checks as a property
+  rather than by listing positions.
 - **`.toast` is `pointer-events: none`** so a status message never swallows a
   click on the board. A toast with a button has to add `.has-action` or the
   button is unclickable and silently does nothing.

@@ -409,6 +409,35 @@
       $('#cards-menu-btn').focus();
     }
   });
+  /* Pull the tiles up into the gaps.
+   *
+   * Unticking a few cards leaves holes, and the board deliberately does not
+   * close them by itself - a layout that rearranged whenever something was
+   * removed would move cards somebody had placed on purpose. The cost is
+   * rows of nothing to scroll past, and closing them by hand is a drag per
+   * tile. This is the same thing in one press, and it lives in the Cards
+   * menu because unticking is what makes the gaps.
+   *
+   * It moves every tile, so it offers Undo like the other two things here
+   * that rearrange the board.
+   */
+  $('#menu-tidy').onclick = () => {
+    openMenu(false);
+    const before = JSON.parse(JSON.stringify(board.tiles));
+    const moved = HDLayout.compact(board.tiles);
+    if (!moved) { toast('Already tidy'); return; }
+    board.setTiles(board.tiles);
+    saveLayout(board.tiles);
+    toast(`Tidied up — ${moved} tile${moved === 1 ? '' : 's'} moved`, {
+      label: 'Undo',
+      fn: () => {
+        board.setTiles(before);
+        saveLayout(board.tiles);
+        toast('Put back');
+      },
+    });
+  };
+
   $('#menu-rescan').onclick = rescan;
   $('#menu-browse').onclick = () => {
     openMenu(false);

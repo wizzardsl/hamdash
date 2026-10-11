@@ -214,6 +214,41 @@
 
   const nextRow = (tiles) => tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
 
+  /* Pull every tile up into the empty space above it.
+   *
+   * Closing a few cards leaves holes, and the board does not close them by
+   * itself: tiles stay where they were put, which is right - a layout that
+   * rearranged itself whenever something was removed would move cards the
+   * operator had deliberately placed. But it leaves rows of nothing to
+   * scroll past, and fixing it by hand is a drag per tile.
+   *
+   * Upwards only, and never sideways, for the reason `resolve` pushes down
+   * only: where a tile sits across the board is arranged deliberately and
+   * which row it lands on usually is not. Sliding cards left to fill gaps
+   * would close more whitespace and would also shuffle a layout somebody
+   * chose, which is a worse trade than one empty column.
+   *
+   * Tiles rise in the order they already sit in, so their relative order
+   * survives. Returns how many actually moved, so the caller can say
+   * nothing happened rather than claiming it tidied an already tidy board.
+   */
+  function compact(tiles) {
+    const placed = [];
+    let moved = 0;
+    [...tiles]
+      .sort((a, b) => (a.y - b.y) || (a.x - b.x))
+      .forEach((t) => {
+        const was = t.y;
+        while (t.y > 0) {
+          t.y -= 1;
+          if (placed.some((p) => overlap(t, p))) { t.y += 1; break; }
+        }
+        if (t.y !== was) moved += 1;
+        placed.push(t);
+      });
+    return moved;
+  }
+
   /* ---- what goes to the host ------------------------------------------ */
 
   /* The board sends exactly this; anything the Board keeps for its own use
@@ -230,6 +265,6 @@
   }));
 
   return { asStack, normalise, cardOf, stackOf, allCards, removeCard, dock,
-    undock, overlap, resolve, nextRow, forSave, clamp, uid,
+    undock, overlap, resolve, compact, nextRow, forSave, clamp, uid,
     ENTRY_KEYS, STACK_KEYS };
 }));
