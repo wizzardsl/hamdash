@@ -30,6 +30,7 @@ class El {
     this.children = [];
     this.parent = null;
     this.dataset = {};
+    this.style = {};
     this._classes = new Set();
     this.textContent = '';
     this.classList = {
@@ -44,6 +45,14 @@ class El {
     this._classes = new Set(String(v).split(/\s+/).filter(Boolean));
   }
   appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  setAttribute(k, v) { this.attrs = Object.assign(this.attrs || {}, { [k]: v }); }
+  getAttribute(k) { return (this.attrs || {})[k]; }
+  addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }
+  fire(type, ev) {
+    const fn = (this.listeners || {})[type];
+    if (fn) fn({ preventDefault() {}, target: this, ...ev });
+  }
+  scrollIntoView() {}
   /* Laid out by the test, since nothing here does layout. */
   setRect(r) {
     this.rect = { ...r, right: r.left + r.width, bottom: r.top + r.height };
@@ -262,4 +271,113 @@ test('a drop beside the board docks into nothing', () => {
   const self = aLaidOutBoard();
   assert.strictEqual(under(self, 20, 10), null);
   assert.strictEqual(under(self, 900, 10), null);
+});
+
+
+/* ---- moving a tile without a pointer ---------------------------------
+ * Dragging was the only way to arrange the board, so anybody not using a
+ * pointer could add cards and never place them.
+ */
+function aKeyedTile(over = {}) {
+  const node = new El('section');
+  const head = new El('header');
+  head.className = 'tile-head';
+  node.appendChild(head);
+  const t = Object.assign({ uid: 't1', x: 2, y: 3, w: 4, h: 3, active: 'c1',
+    cards: [{ uid: 'c1', card: 'spots', title: 'Spots' }] }, over);
+  const saved = [];
+  const self = {
+    cols: 12, rowPx: 80, gap: 10, tiles: [t],
+    _nodes: new Map([['t1', node]]),
+    _place() {}, _resolve() {}, reflow() {},
+    onChange: () => saved.push(1),
+    _sayPlace: Board.prototype._sayPlace,
+  };
+  Board.prototype._wireKeys.call(self, t, node);
+  return { t, head, saved };
+}
+
+const press = (k, ev = {}) => ({ key: k, ...ev });
+
+test('the arrow keys move a tile', () => {
+  const k = aKeyedTile();
+  k.head.fire('keydown', press('ArrowRight'));
+  assert.strictEqual(k.t.x, 3);
+  k.head.fire('keydown', press('ArrowDown'));
+  assert.strictEqual(k.t.y, 4);
+  k.head.fire('keydown', press('ArrowLeft'));
+  k.head.fire('keydown', press('ArrowUp'));
+  assert.deepStrictEqual([k.t.x, k.t.y], [2, 3], 'it did not come back');
+});
+
+test('shift and the arrows resize it', () => {
+  const k = aKeyedTile();
+  k.head.fire('keydown', press('ArrowRight', { shiftKey: true }));
+  assert.strictEqual(k.t.w, 5);
+  assert.strictEqual(k.t.x, 2, 'resizing moved it');
+  k.head.fire('keydown', press('ArrowDown', { shiftKey: true }));
+  assert.strictEqual(k.t.h, 4);
+});
+
+test('a tile cannot be walked off the board', () => {
+  const k = aKeyedTile({ x: 0, y: 0 });
+  k.head.fire('keydown', press('ArrowLeft'));
+  k.head.fire('keydown', press('ArrowUp'));
+  assert.deepStrictEqual([k.t.x, k.t.y], [0, 0]);
+});
+
+test('a tile cannot be made narrower than its card allows', () => {
+  const k = aKeyedTile({ w: 3, min_w: 3 });
+  k.head.fire('keydown', press('ArrowLeft', { shiftKey: true }));
+  assert.strictEqual(k.t.w, 3);
+});
+
+test('every move is saved', () => {
+  // A board that forgets what the keyboard did is worse than one that
+  // cannot be moved by keyboard at all.
+  const k = aKeyedTile();
+  k.head.fire('keydown', press('ArrowRight'));
+  assert.strictEqual(k.saved.length, 1);
+});
+
+test('the arrows belong to the buttons inside the header', () => {
+  const k = aKeyedTile();
+  const btn = new El('button');
+  k.head.fire('keydown', { key: 'ArrowRight', target: btn });
+  assert.strictEqual(k.t.x, 2, 'it moved the tile from inside a button');
+});
+
+test('other keys are left alone', () => {
+  const k = aKeyedTile();
+  k.head.fire('keydown', press('Enter'));
+  k.head.fire('keydown', press('a'));
+  assert.deepStrictEqual([k.t.x, k.t.y], [2, 3]);
+  assert.strictEqual(k.saved.length, 0);
+});
+
+test('the header says where the tile is', () => {
+  const k = aKeyedTile();
+  k.head.fire('keydown', press('ArrowRight'));
+  const said = k.head.getAttribute('aria-label');
+  assert.ok(/column 4/.test(said), `said: ${said}`);
+  assert.ok(/row 4/.test(said), `said: ${said}`);
+  assert.ok(/Arrow keys/.test(said), 'it does not say what the keys do');
+});
+
+/* ---- room to drag into ------------------------------------------------ */
+test('the board grows under a tile dragged past the bottom', () => {
+  const spacer = new El('div');
+  spacer.style.height = '100px';
+  const self = { gap: 10, rowPx: 80, _spacer: spacer };
+  Board.prototype._growExtent.call(self, { y: 10, h: 3 });
+  assert.strictEqual(spacer.style.height, `${10 * 2 + 13 * 90}px`);
+});
+
+test('it never shrinks mid-drag', () => {
+  // Shrinking would move the ground under the tile being carried.
+  const spacer = new El('div');
+  spacer.style.height = '5000px';
+  const self = { gap: 10, rowPx: 80, _spacer: spacer };
+  Board.prototype._growExtent.call(self, { y: 0, h: 1 });
+  assert.strictEqual(spacer.style.height, '5000px');
 });

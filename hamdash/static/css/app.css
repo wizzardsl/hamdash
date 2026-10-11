@@ -132,6 +132,9 @@ html, body {
 }
 .tile-status.up { background: var(--signal); }
 .tile-status.down { background: var(--alert); }
+/* The card runs, but the host threw part of its manifest away. Not a
+   failure, so not the alert colour - something to notice, not to panic at. */
+.tile-status.warn, .tab-dot.warn { background: var(--accent); }
 .tile-spacer { flex: 1; }
 
 /* ---- tabs -----------------------------------------------------------
@@ -199,6 +202,11 @@ html, body {
 .tile-btn:hover { color: var(--ink); background: var(--panel); }
 .tile-grip { cursor: grab; color: var(--grip); letter-spacing: 1px; }
 .arranging .tile-head { cursor: grab; }
+/* The header is a real control now - focus has to be visible, or keyboard
+   arranging is a thing you can do without being able to see where you are. */
+.tile-head:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
 .tile-body { flex: 1; min-height: 0; position: relative; }
 /* Every card in a stack stays mounted; only one is on show. `display: none`
    rather than visibility or opacity, because a hidden-but-laid-out iframe

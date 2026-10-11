@@ -57,11 +57,17 @@
       // Closing a card throws away its per-tile settings, so the board gets
       // to decide what that costs - it is the only part that can offer Undo.
       this.onClose = opts.onClose || ((uid) => this.remove(uid));
+      // "You can drop this on a tab strip" is worth saying once, and only
+      // to somebody who has never done it. The board decides that; this
+      // just says when a drag starts and when one ends in a dock.
+      this.onHint = opts.onHint || (() => {});
+      this.onDocked = opts.onDocked || (() => {});
       this.isPoppedOpen = opts.isPoppedOpen || (() => true);
       this.tiles = [];
       this.arranging = false;
       this._nodes = new Map();          // tile uid -> element
       this._state = new Map();          // card id -> process status
+      this._warnings = new Map();       // card id -> manifest complaints
       global.addEventListener('resize', () => this.reflow());
       this._dropTarget();
     }
@@ -229,7 +235,7 @@
       node.className = 'tile';
       node.dataset.uid = t.uid;
       node.innerHTML = `
-        <header class="tile-head">
+        <header class="tile-head" tabindex="0">
           <span class="tile-grip" aria-hidden="true">···</span>
           <span class="tile-status" title="status"></span>
           <span class="tile-tabs"></span>
@@ -245,9 +251,11 @@
       this._nodes.set(t.uid, node);
       this._paintTabs(t, node);
       this._paintBody(t, node);
+      this._sayPlace(t, node.querySelector('.tile-head'));
 
       // The header buttons act on whichever card is showing, not on the box.
       const live = () => this.get(t.active) || t.cards[0];
+      this._wireKeys(t, node);
       node.querySelector('[data-act="close"]').onclick = () =>
         this.onClose(t.active);
       node.querySelector('[data-act="reload"]').onclick = () => {
@@ -440,6 +448,7 @@
       const ch = this.rowPx + this.gap;
       let willPop = false;
       let onto = null;                 // the tile this one would dock into
+      let hinted = false;
       node.classList.add('dragging');
       // Throws if the pointer is no longer active - it went up inside the
       // handler, or the event was synthesised. Uncaught it leaves the drag
@@ -480,11 +489,26 @@
           }
           t.x = clamp(orig.x + dx, 0, this.cols - t.w);
           t.y = Math.max(0, orig.y + dy);
+          // Once it has actually left where it started this is a real
+          // drag, and worth a word about where it can be dropped. From
+          // `dx`/`dy` rather than from `t`: `t` is assigned on the lines
+          // just above, so reading it any earlier compared the tile with
+          // itself and the hint waited for a *second* pointermove.
+          if (!hinted && (dx || dy)) {
+            hinted = true;
+            this.onHint('drag');
+          }
         } else {
           t.w = clamp(orig.w + dx, t.min_w || 2, this.cols - t.x);
           t.h = Math.max(t.min_h || 2, orig.h + dy);
         }
         this._place(t, node);
+        // Dragging towards the bottom used to stop scrolling at whatever
+        // the board already extended to, because the spacer is only sized
+        // on reflow. A tile being carried below that is a good enough
+        // reason for the board to get taller; the drop recomputes it
+        // properly.
+        if (mode === 'move') this._growExtent(t);
       };
 
       const move = (ev) => {
@@ -570,6 +594,7 @@
           const moving = t.cards.map((c) => c.uid);
           const target = onto.uid;
           moving.forEach((cardUid) => this.dock(cardUid, target));
+          this.onDocked();
           return;
         }
         if (mode === 'resize') { t.pop_w = null; t.pop_h = null; }
@@ -684,6 +709,67 @@
       return L.nextRow(this.tiles);
     }
 
+    /* Moving a tile without a pointer.
+     *
+     * Dragging was the only way to arrange the board, which means anybody
+     * who cannot use a pointer - or is simply not using one right now -
+     * could add cards and never place them. The header is the handle for a
+     * drag, so it is the handle for this too: focus it and the arrows move
+     * the tile, with Shift to resize.
+     *
+     * Only when the header itself has focus. The buttons inside it are
+     * controls of their own and arrow keys belong to them.
+     */
+    _wireKeys(t, node) {
+      const head = node.querySelector('.tile-head');
+      if (!head) return;
+      const STEP = {
+        ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+        ArrowUp: [0, -1], ArrowDown: [0, 1],
+      };
+      head.addEventListener('keydown', (e) => {
+        if (e.target !== head) return;
+        const d = STEP[e.key];
+        if (!d) return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          t.w = clamp(t.w + d[0], t.min_w || 2, this.cols - t.x);
+          t.h = Math.max(t.min_h || 2, t.h + d[1]);
+          t.pop_w = null;
+          t.pop_h = null;
+        } else {
+          t.x = clamp(t.x + d[0], 0, this.cols - t.w);
+          t.y = Math.max(0, t.y + d[1]);
+        }
+        this._place(t, node);
+        this._resolve(t);
+        this.reflow();
+        this.onChange(this.tiles);
+        head.scrollIntoView({ block: 'nearest' });
+        this._sayPlace(t, head);
+      });
+    }
+
+    /* Say where it landed, because a tile moving is the only feedback a
+       sighted operator needs and no feedback at all otherwise. */
+    _sayPlace(t, head) {
+      const card = t.cards.find((c) => c.uid === t.active) || t.cards[0];
+      const name = (card && (card.title || card.card)) || 'card';
+      head.setAttribute('aria-label',
+        `${name}: column ${t.x + 1}, row ${t.y + 1}, ${t.w} by ${t.h}. `
+        + 'Arrow keys move it, shift and arrow keys resize it.');
+    }
+
+    /* Make room under a tile being dragged past the current bottom. Only
+       ever grows: shrinking mid-drag would move the ground underfoot. */
+    _growExtent(t) {
+      if (!this._spacer) return;
+      const need = this.gap * 2 + (t.y + t.h) * (this.rowPx + this.gap);
+      if (need > (parseFloat(this._spacer.style.height) || 0)) {
+        this._spacer.style.height = `${need}px`;
+      }
+    }
+
     _place(t, node) {
       const cw = this.cellW;
       node.style.left = `${this.gap + t.x * (cw + this.gap)}px`;
@@ -727,19 +813,40 @@
        its own, so a card that has fallen over on a background tab says so
        without having to be looked at. */
     _paintStatus(t, node) {
-      const mark = (dot, state) => {
+      const mark = (dot, cardId) => {
         if (!dot) return;
-        dot.classList.toggle('up', state === 'running');
+        const state = this._state.get(cardId);
+        const warn = this._warnings.get(cardId) || [];
+        dot.classList.toggle('up', state === 'running' && !warn.length);
         dot.classList.toggle('down', state !== 'running' && state !== 'n/a'
                                      && state !== undefined);
-        dot.title = state || '';
+        // A manifest the host had to ignore. The card runs, so it is not a
+        // failure - but something the author wrote is being thrown away,
+        // and it used to be computed, returned by /api/cards and shown to
+        // nobody.
+        dot.classList.toggle('warn', !!warn.length && state === 'running');
+        dot.title = [state || '', ...warn].filter(Boolean).join(' · ');
       };
       t.cards.forEach((c) => {
-        mark(node.querySelector(`.tab[data-uid="${c.uid}"] .tab-dot`),
-             this._state.get(c.card));
+        mark(node.querySelector(`.tab[data-uid="${c.uid}"] .tab-dot`), c.card);
       });
       const active = t.cards.find((c) => c.uid === t.active) || t.cards[0];
-      mark(node.querySelector('.tile-status'), this._state.get(active.card));
+      mark(node.querySelector('.tile-status'), active.card);
+    }
+
+    /* What the host could not make sense of in a card's manifest. */
+    warn(cardId, list) {
+      const had = (this._warnings.get(cardId) || []).join('|');
+      const now = (list || []).join('|');
+      if (had === now) return;
+      if (now) this._warnings.set(cardId, list.slice());
+      else this._warnings.delete(cardId);
+      this.tiles.forEach((t) => {
+        const node = this._nodes.get(t.uid);
+        if (node && t.cards.some((c) => c.card === cardId)) {
+          this._paintStatus(t, node);
+        }
+      });
     }
   }
 

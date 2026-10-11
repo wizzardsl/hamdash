@@ -139,6 +139,10 @@ enter first. **Arrange** just turns on the grid guides and keeps the resize
 handles visible. Overlaps are resolved by pushing tiles *down*, never sideways:
 horizontal position is what people place deliberately, vertical order isn't.
 
+**The board can be arranged without a mouse**: tab to a card's header and
+the arrow keys move it, shift and the arrows resize it. The header says
+where the card has landed as you go.
+
 **Escape puts a drag back** where it started — nothing docks, nothing moves,
 nothing is saved. **Hold a card near the top or bottom edge and the board
 scrolls under it**,
@@ -146,6 +150,10 @@ faster the closer you get to the edge, so moving a card from the bottom of a
 long dashboard to the top is one gesture rather than drop-scroll-repeat. While
 there is still board above to reach, dragging up means scroll; only once there
 is none does leaving the top mean pop the card out into its own window.
+
+A card's status dot turns **amber** when the host could not make sense of
+part of its `card.json` — the card still runs, but something its author
+wrote is being ignored, and the dot says which. Hover it.
 
 Adding and removing a card: the **Cards** menu lists everything installed with
 a tick beside whatever is on the board. Tick to put a card on, untick to take

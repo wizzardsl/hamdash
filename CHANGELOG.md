@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **The board can be arranged from the keyboard.** Focus a card's header
+  and the arrow keys move it, shift and the arrows resize it. Dragging was
+  the only way before, so anyone not using a pointer could add cards and
+  never place them.
+- **A card whose manifest the host could not use now says so.** Its status
+  dot goes amber and names the problem — that has been computed and
+  returned by the API all along, and shown to nobody, so a card with a bad
+  `publishes` entry simply did not publish and never explained why.
 - **`tools/get_hamlib.py` fetches Hamlib for you.** Hamlib is a native
   program rather than a Python package, so `pip install -r requirements.txt`
   cannot bring it. The script downloads the official 3 MB Windows build,
@@ -82,6 +90,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **Dragging a card downwards stopped scrolling at the bottom of the
+  board.** The board now makes room underneath a card being carried past
+  the end of it.
 - **A drag could only be finished, never called off.** Press **Escape** and
   the tile goes back where it started, docking nothing and saving nothing.
   Dropping is the step that is hard to undo, so the way out matters most.

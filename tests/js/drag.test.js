@@ -74,6 +74,7 @@ function aDrag() {
   const saved = [];
   const docked = [];
   const popped = [];
+  const hints = [];
   const self = {
     el: Object.assign(new El('main'), {
       rect: { left: 0, top: 0, width: 1200, height: 800, right: 1200, bottom: 800 },
@@ -84,17 +85,20 @@ function aDrag() {
     _nodes: new Map([['t1', node]]),
     _place() {},
     _resolve() {},
+    _growExtent() {},
     _tileUnder() { return null; },
     reflow() {},
     onChange: (tiles) => saved.push(JSON.parse(JSON.stringify(tiles))),
     dock: (...a) => docked.push(a),
     popOut: (...a) => { popped.push(a); return Promise.resolve(); },
     onError() {},
+    onHint: (what) => hints.push(what),
+    onDocked: () => hints.push('docked'),
   };
   Board.prototype._drag.call(self, {
     button: 0, clientX: 300, clientY: 300, pointerId: 1, preventDefault() {},
   }, t, node, 'move');
-  return { self, t, node, saved, docked, popped };
+  return { self, t, node, saved, docked, popped, hints };
 }
 
 test('a drag that is escaped puts the tile back', () => {
@@ -143,3 +147,28 @@ test('escape after the drag has ended does nothing', () => {
 function node_move(d, x, y) {
   d.node.fire('pointermove', { clientX: x, clientY: y });
 }
+
+
+test('the first real move offers the hint, once', () => {
+  // It used to read `t.x` before the line that assigns it, so the tile was
+  // compared with itself and the hint waited for a second pointermove.
+  const d = aDrag();
+  node_move(d, 700, 300);
+  assert.deepStrictEqual(d.hints, ['drag'], 'not said on the first move');
+  node_move(d, 760, 320);
+  assert.deepStrictEqual(d.hints, ['drag'], 'it said it twice');
+});
+
+test('a drag that never leaves the spot says nothing', () => {
+  const d = aDrag();
+  node_move(d, 302, 301);           // a wobble, not a drag
+  assert.deepStrictEqual(d.hints, []);
+});
+
+test('docking says so, so the hint can stop', () => {
+  const d = aDrag();
+  d.self._tileUnder = () => ({ uid: 'other' });
+  node_move(d, 700, 300);
+  d.node.fire('pointerup', {});
+  assert.ok(d.hints.includes('docked'), 'nothing marked it as learned');
+});

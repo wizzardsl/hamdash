@@ -829,6 +829,25 @@ QRM or fading.
 - **`elementFromPoint` cannot find a drop target under a drag**: the dragged
   tile is under the cursor by definition, so `_tileUnder` walks the tiles and
   compares rectangles instead.
+- **A tile can be moved from the keyboard.** Dragging was the only way to
+  arrange the board, so anybody not using a pointer could add cards and
+  never place them. The header is the handle for a drag, so it is the
+  handle for this: focus it, arrows move, shift and arrows resize, and the
+  header's `aria-label` says where the tile now is because a tile moving is
+  feedback only to somebody who can see it. Only when the header itself has
+  focus - the buttons inside it are controls of their own and the arrow
+  keys belong to them.
+- **Manifest warnings reach the operator.** `/api/cards` has returned them
+  all along and nothing drew them; a card whose `publishes` entry the host
+  threw away just quietly did not publish. The status dot goes amber
+  (`--accent`, not `--alert`: the card *runs*, so it is not a failure) and
+  the dot's title carries the text, which already names the fix.
+- **A hint is for somebody who has not done the thing yet.** The dock
+  target moved to the tab strip, so anyone who knew the old behaviour will
+  think docking broke - said once per page load, never again once they have
+  actually docked something, remembered in `localStorage` under
+  `hd.learned.*`. That is a fact about this person at this screen, so it
+  must not go in `layout.json`, and losing it costs nothing.
 - **Escape puts a drag back.** Without it a drag could only be *finished*,
   and finishing is the part that is hard to undo - a tile heading for the
   wrong tab strip had to be dropped and then unpicked by hand. The cancel
@@ -1234,6 +1253,26 @@ the live service.
   account; nothing in the repo is blocking it.
 - An icon. `hamdash.spec` sets none, so the binary carries PyInstaller's.
 - Bundling Hamlib (`rigctld`) rather than asking the operator to install it.
+
+## Testing the UI from here
+
+- **The Browser pane can be hidden, and a hidden page does not paint.**
+  `requestAnimationFrame` never fires, so CSS transitions do not advance
+  and `getComputedStyle` reports a transitioning property at its *start*
+  value - a toast with `.show` on it reads `opacity: 0` for ever, and even
+  an inline `opacity: 1` reads 0. Assert on classes and on the calls a
+  handler makes, never on an animated value. The same thing makes
+  frame-rate measurements meaningless: the drag auto-scroll measured
+  anywhere between 34 and 830 px/s on one board, which is why that rate is
+  worked out from the clock rather than per frame.
+- **Node is not installed on this machine**, so `node --test` only runs in
+  CI. The pattern that works: build a page that loads the real file the way
+  the node test does (`new Function('window','document',src)`) with the
+  same shim and assertions, serve it from a dev server, and read the
+  result. Then run it against `git show HEAD:<file>` too - a regression
+  test that passes against the old code is not testing anything.
+- **A map card re-frames its own map**, so its zoom level is not a stable
+  signal; watch the call rather than the zoom.
 
 ## Keeping this file true
 

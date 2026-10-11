@@ -71,6 +71,12 @@
     isPoppedOpen: (uid) => HDPopout.isOpen(uid),
     onSettings: (entry) => openTileSettings(entry),
     onClose: (cardUid) => closeCard(cardUid),
+    // Docking moved to the tab strip, so anybody who used to drop a card
+    // anywhere will think it broke. Said once, to somebody who has never
+    // docked anything - and never again once they have, because by then
+    // they know and a hint that keeps coming back is just noise.
+    onHint: (what) => { if (what === 'drag') hintDock(); },
+    onDocked: () => { learned('dock'); },
     // One card, in its holder inside the tile. A tile may hold several and
     // shows one at a time; every one of them is mounted, so this runs once
     // per card rather than once per tile.
@@ -360,6 +366,27 @@
         toast(`${name} back`);
       },
     });
+  }
+
+  /* Hints the operator only needs until they have done the thing once.
+     localStorage because it is a fact about this person at this screen,
+     not about the board - it must not travel in layout.json, and a shack
+     computer that loses it has lost nothing that matters. */
+  function hasLearned(what) {
+    try { return localStorage.getItem(`hd.learned.${what}`) === '1'; }
+    catch { return true; }        // no storage: say nothing rather than nag
+  }
+
+  function learned(what) {
+    try { localStorage.setItem(`hd.learned.${what}`, '1'); } catch { /* fine */ }
+  }
+
+  let hintedThisLoad = false;
+  function hintDock() {
+    if (hintedThisLoad || hasLearned('dock')) return;
+    hintedThisLoad = true;
+    toast('Drop a card on another card’s tab strip to make it a tab',
+          { label: 'Got it', fn: () => learned('dock') });
   }
 
   function openMenu(open) {
@@ -1134,6 +1161,7 @@
   };
 
   board.setTiles(layout.tiles || []);
+  cards.forEach((c) => board.warn(c.id, c.warnings));
   renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';
 
@@ -1166,7 +1194,10 @@
   setInterval(async () => {
     try {
       const fresh = await HD.get('/api/cards');
-      fresh.forEach((c) => board.status(c.id, (c.runtime || {}).status));
+      fresh.forEach((c) => {
+        board.status(c.id, (c.runtime || {}).status);
+        board.warn(c.id, c.warnings);
+      });
       cards = fresh;
     } catch { /* host restarting; the next tick will catch up */ }
   }, 5000);
