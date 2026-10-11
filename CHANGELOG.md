@@ -61,6 +61,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **Popping a card back in left the tile showing "Bring it back" instead of
+  the card.** The card *did* come back — it was mounted correctly and pushed
+  out of sight underneath the "Running in its own window" panel, which the
+  pop-in never removed. The panel is full height, so the tile looked like a
+  pop-in that had failed, and its "Bring it back" button did nothing because
+  the tile was already back. Restarting the app was the only way out. Found
+  on the map card, but it affected every card.
 - **Live spots arriving in the same burst came out oldest first.** The feeds
   carry HHMM and nothing finer, so a tie-break is needed, and it was stamping
   the wall clock — which ticks about every 15.6 ms on Windows, so a burst all

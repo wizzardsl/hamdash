@@ -319,9 +319,19 @@
         // that is still in this tile must not be rebuilt because one of its
         // neighbours moved: rebuilding reloads the page and loses whatever
         // was on it.
+        //
+        // *Everything* that is not a wanted card goes, not just cards that
+        // have left. This used to prune `.tile-card` only, so the "Running
+        // in its own window" placeholder outlived the pop-in that ended it:
+        // it is `height: 100%`, so the card came back mounted but pushed
+        // out of sight underneath it, and the stale "Bring it back" button
+        // did nothing because the tile was already back. It read as the
+        // pop-in being broken, and only a restart cleared it.
         const want = new Set(t.cards.map((c) => c.uid));
-        body.querySelectorAll('.tile-card').forEach((n) => {
-          if (!want.has(n.dataset.uid)) n.remove();
+        [...body.children].forEach((n) => {
+          const keep = n.classList.contains('tile-card')
+                    && want.has(n.dataset.uid);
+          if (!keep) n.remove();
         });
         t.cards.forEach((c) => {
           if (body.querySelector(`.tile-card[data-uid="${c.uid}"]`)) return;

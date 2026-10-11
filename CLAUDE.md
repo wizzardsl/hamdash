@@ -319,6 +319,26 @@ README and is guesswork as a result.
   tick is per card and a card can have many tiles. That discards per-tile
   settings, so the toast offers Undo: `board.add()` honours a `uid` you pass
   it, which is what makes restoring them exact.
+- **A tile's body owns everything in it, not just the cards.** Popping a
+  card out replaces the body with a "Running in its own window"
+  placeholder; popping it back in used to prune `.tile-card` nodes only, so
+  that placeholder survived the thing that ended it. It is `height: 100%`,
+  so the card came back *mounted and correct* but pushed out of sight
+  underneath it, and its stale "Bring it back" button did nothing because
+  the tile was already back. It reads as pop-in being broken, and only
+  restarting the app clears it - which is exactly how it was reported.
+  `_paintBody` now drops anything in the body that is not a wanted card.
+  **A repaint that adds without removing is the bug to look for here**: the
+  rest of the function exists to *avoid* rebuilding a card that has not
+  moved (rebuilding reloads the iframe and loses a decoder's text or a
+  half-typed contact), and that care is what made it additive.
+- **`tests/js/tile-body.test.js` is the first test of `grid.js`.** It drives
+  the real `_paintBody` through a DOM shim small enough to read, by calling
+  it on a stand-in `this` rather than building a Board. Node is not
+  installed on this machine, so `node --test` only runs in CI; a browser
+  harness built from the same shim was used to check the test fails against
+  the pre-fix file and passes against the fixed one, which is the thing
+  worth checking about any regression test.
 - **`.toast` is `pointer-events: none`** so a status message never swallows a
   click on the board. A toast with a button has to add `.has-action` or the
   button is unclickable and silently does nothing.
