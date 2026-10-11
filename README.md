@@ -156,6 +156,25 @@ the toast offers **Undo**, which puts them back with their settings intact.
 **Browse & drag…** in that menu opens the older sheet, where a row can be
 dragged out and dropped exactly where you want it on the board.
 
+## The transmitter
+
+hamdash can key your radio, so it also takes the transmission off the air
+when nobody is holding it. A card keys the rig and keeps saying it still
+wants to transmit; if it stops saying so — tile closed, card crashed, browser
+gone — the host unkeys within a few seconds. There is also a ceiling on any
+one transmission, `radio.ptt_timeout` in `config.json`, two minutes by
+default; set it to 0 to remove the ceiling (the keep-alive still applies).
+Closing hamdash while it is transmitting unkeys on the way out.
+
+Only transmissions **hamdash started** are ever ended. If you key the rig
+from its mic, a footswitch or another program, hamdash leaves it alone.
+
+**It cannot save you from everything.** If the host is killed outright —
+Task Manager, a power cut on the computer but not the radio — nothing in
+software runs, and the rig stays keyed. Set your radio's own time-out timer;
+that is the backstop, and it is the only one that works when the computer
+has stopped being part of the story.
+
 ## Stacking cards
 
 Drag a tile onto another and it docks as a **tab**: one box, a strip of names

@@ -43,7 +43,11 @@ DEFAULTS = {
     # one. rigctld_host/port survive from the single-rig shape so an upgrade
     # keeps working; services.rigs.ensure_rigs turns them into an entry.
     "radio": {"rigctld_host": "127.0.0.1", "rigctld_port": 4532, "mock": True,
-              "rigs": [], "active": "", "rigctld_path": ""},
+              "rigs": [], "active": "", "rigctld_path": "",
+              # Seconds before a transmission hamdash started is taken off
+              # the air. 0 removes the ceiling - the keep-alive still
+              # applies, so a card that dies still unkeys the rig.
+              "ptt_timeout": 120},
     "callsign_lookup": {"provider": "auto", "user": "", "password": "",
                         "account": "", "cache_days": 30},
     "logbook_sync": {"lotw_user": "", "lotw_password": "",

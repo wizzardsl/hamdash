@@ -79,12 +79,25 @@ let live = null;              // the last state the rig gave us
 let stepping = false;         // one request at a time while a key is held
 let transmitting = false;     // what the *radio* last said, not this page
 
+let holding = null;           // the keep-alive while we are transmitting
+
 function setPtt(on) {
+  const was = transmitting;
   transmitting = on;
   const b = $('#ptt');
-  if (!b) return;
-  b.textContent = on ? 'Stop transmitting' : 'Transmit';
-  b.classList.toggle('on-air', on);
+  if (b) {
+    b.textContent = on ? 'Stop transmitting' : 'Transmit';
+    b.classList.toggle('on-air', on);
+  }
+  if (on === was) return;
+  // Hold the transmission while this page is the one transmitting. The host
+  // takes the rig off the air a few seconds after these stop - which is
+  // what happens when the tile is closed, the card crashes or the browser
+  // goes away, and is the only thing that would.
+  clearInterval(holding);
+  holding = on ? setInterval(() => {
+    HD.radio.ptt(true).catch(() => { /* the host's watchdog has it */ });
+  }, 2000) : null;
 }
 
 function stepHz() {
@@ -116,7 +129,9 @@ function paint(s) {
     $('#state').className = 'state';
     return;
   }
-  $('#err').textContent = '';
+  // The host says when it took a transmission off the air, so the operator
+  // is told rather than the rig just stopping.
+  $('#err').textContent = s.ptt_dropped || '';
   const mhz = HD.fmtHz(s.freq);
   const [whole, frac] = mhz.split('.');
   $('#dial').innerHTML = `${whole}.<span class="frac">${frac}</span>`;

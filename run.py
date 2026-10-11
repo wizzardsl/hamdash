@@ -196,6 +196,39 @@ def main() -> int:
                                native=not args.browser)
     url = f"http://{args.host}:{port}"
 
+    # Closing has to happen once, and it has to happen on the ways out that
+    # actually occur. The `finally` around the server covers a clean return;
+    # it does not run when the process is interrupted, which on Windows is
+    # most of the time - and the rig manager's shutdown is what takes a
+    # transmitter off the air. A hard kill still cannot be caught by
+    # anything, which is why the radio's own timeout is the real backstop.
+    closing = threading.Lock()
+    closed = []
+
+    def close_once():
+        with closing:
+            if closed:
+                return
+            closed.append(True)
+        try:
+            native_windows.close_all()
+        except Exception:                               # noqa: BLE001
+            pass
+        shutdown()
+
+    def _on_signal(signum, _frame):
+        close_once()
+        sys.exit(0)
+
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            pass            # not the main thread, or not deliverable here
+
     from waitress import serve as wsgi_serve
     # Event streams hold a thread each for their (bounded) life: the board,
     # every card page, and every card process keeps one. channel_timeout sits
@@ -209,7 +242,7 @@ def main() -> int:
         try:
             wsgi_serve(app, **kwargs)
         finally:
-            shutdown()
+            close_once()
         return 0
 
     try:
@@ -221,7 +254,7 @@ def main() -> int:
         try:
             wsgi_serve(app, **kwargs)
         finally:
-            shutdown()
+            close_once()
         return 0
 
     threading.Thread(target=wsgi_serve, kwargs={"app": app, **kwargs},
@@ -229,23 +262,18 @@ def main() -> int:
     if not wait_for(url):
         print("server did not come up in time; check the output above",
               file=sys.stderr)
-        shutdown()
+        close_once()
         return 1
 
     native_windows.configure(url)
     popouts = native_windows.PopoutApi()
 
-    def stop_everything():
-        native_windows.close_all()
-        shutdown()
-
-    signal.signal(signal.SIGINT, lambda *_: (stop_everything(), sys.exit(0)))
     window = webview.create_window("hamdash", url, width=1440, height=900,
                                    min_size=(960, 640), js_api=popouts)
     native_windows.attach_main(window)
-    window.events.closed += stop_everything
+    window.events.closed += close_once
     webview.start()
-    stop_everything()
+    close_once()
     return 0
 
 

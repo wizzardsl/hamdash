@@ -63,6 +63,32 @@ FLRIG_PORT = 12345
 # mid-call, because the thread waiting is one of the server's (invariant
 # 4) rather than one of ours.
 FLRIG_TIMEOUT = 2.0
+
+# --------------------------------------------------------------- PTT safety
+# Nothing else in the shack will take hamdash's transmission off the air. A
+# card that keys the rig and then crashes, or a board that is closed mid
+# transmission, leaves a transmitter running into an antenna with nobody
+# watching - the one failure here with consequences outside the computer.
+#
+# Two clocks, because there are two ways to lose the operator:
+#
+#   PTT_HOLD     whoever keyed it has to keep saying so. The card pings
+#                while it transmits; the pings stop when the page is closed,
+#                the tile removed, the card crashes or the browser dies, and
+#                a few seconds later the rig is unkeyed.
+#   PTT_TIMEOUT  a ceiling on any one transmission, for when the pings keep
+#                coming but nobody is there - the board left open on a
+#                keyed rig.
+#
+# **Only transmissions hamdash started are ever ended.** If the rig reports
+# PTT and hamdash did not key it - the operator on the mic, a footswitch,
+# another program - it is left alone. Cutting somebody off mid-over because
+# a dashboard thought it knew better is worse than the thing being guarded
+# against.
+PTT_HOLD = 6.0
+PTT_TIMEOUT = 120.0
+# How long the card goes on saying why a transmission ended.
+PTT_DROP_NOTICE = 30.0
 MAX_RIGS = 10
 
 
@@ -876,6 +902,13 @@ class RigManager:
         self._active = ""
         self._error = ""
         self._stop = threading.Event()
+        # When we keyed, when somebody last said they still wanted it, and
+        # why it was last taken off the air. Zero means the rig is not
+        # transmitting on our account - see PTT_HOLD.
+        self._ptt_since = 0.0
+        self._ptt_seen = 0.0
+        self._ptt_drop = ""
+        self._ptt_drop_at = 0.0
         self.select(self.conf().get("active", ""), announce=False)
 
     # --- configuration ---------------------------------------------------
@@ -934,7 +967,19 @@ class RigManager:
         if not self._backend:
             return {**base, "ok": False,
                     "error": "No radio selected. Add one in Settings -> Radio."}
-        return {**base, **self._backend.state()}
+        out = {**base, **self._backend.state()}
+        # Why the radio stopped transmitting, so the card can say rather than
+        # the transmission just ending. It expires: a message about something
+        # that happened ten minutes ago, still on screen, reads as a fault
+        # happening now.
+        if self._ptt_drop:
+            if time.time() - self._ptt_drop_at < PTT_DROP_NOTICE:
+                out["ptt_dropped"] = self._ptt_drop
+            else:
+                self._ptt_drop, self._ptt_drop_at = "", 0.0
+        if self._ptt_since:
+            out["ptt_ours"] = True
+        return out
 
     def _do(self, fn, *a):
         if self._error or not self._backend:
@@ -949,7 +994,68 @@ class RigManager:
         return self._do(lambda b, m, w: b.set_mode(m, w), mode, width)
 
     def set_ptt(self, on: bool) -> dict:
-        return self._do(lambda b, v: b.set_ptt(v), on)
+        """Key or unkey, and start (or refresh) the watchdog.
+
+        Called again with `on=True` while already transmitting, this is the
+        keep-alive: it refreshes the hold without touching the radio.
+        """
+        now = time.time()
+        if on and self._ptt_since:
+            self._ptt_seen = now            # a ping, not a fresh key-down
+            return self.state()
+        got = self._do(lambda b, v: b.set_ptt(v), on)
+        if on:
+            self._ptt_since = self._ptt_seen = now
+            self._ptt_drop, self._ptt_drop_at = "", 0.0
+        else:
+            self._ptt_since = self._ptt_seen = 0.0
+        return got
+
+    def ptt_limits(self) -> tuple[float, float]:
+        """The hold and the ceiling, from config, with 0 meaning no ceiling."""
+        conf = self.conf()
+        try:
+            ceiling = float(conf.get("ptt_timeout", PTT_TIMEOUT))
+        except (TypeError, ValueError):
+            ceiling = PTT_TIMEOUT
+        return PTT_HOLD, max(0.0, ceiling)
+
+    def _watch_ptt(self, st: dict) -> dict:
+        """Take our own transmission off the air if nobody is holding it.
+
+        Runs on the polling thread, so it keeps working when the thing that
+        keyed the rig has stopped running - which is the whole point.
+        """
+        if not self._ptt_since:
+            # Not ours. A rig transmitting because the operator is on the
+            # mic is not hamdash's to interrupt.
+            return st
+        if st.get("ok") and st.get("ptt") is False:
+            # It stopped without us - the rig's own timeout, or the operator.
+            # Holding a transmission that is not happening would have us send
+            # a pointless unkey a few seconds later.
+            self._ptt_since = self._ptt_seen = 0.0
+            return st
+        hold, ceiling = self.ptt_limits()
+        now = time.time()
+        why = ""
+        if now - self._ptt_seen > hold:
+            why = (f"nothing has been holding the transmission for "
+                   f"{hold:.0f}s")
+        elif ceiling and now - self._ptt_since > ceiling:
+            why = f"transmission reached the {ceiling:.0f}s limit"
+        if not why:
+            return st
+        print(f"unkeying: {why}")
+        self._ptt_since = self._ptt_seen = 0.0
+        self._ptt_drop, self._ptt_drop_at = why, now
+        try:
+            self._do(lambda b: b.set_ptt(False))
+        except Exception as exc:                        # noqa: BLE001
+            # Worth shouting about: the radio may still be transmitting.
+            self._ptt_drop = f"{why}, and unkeying it failed: {exc}"
+            print(f"UNKEY FAILED: {exc}")
+        return {**self.state(), "ptt_dropped": self._ptt_drop}
 
     def backend(self) -> Backend | None:
         return self._backend
@@ -959,7 +1065,7 @@ class RigManager:
         def loop():
             last = None
             while not self._stop.wait(1.0 / hz):
-                st = self.state()
+                st = self._watch_ptt(self.state())
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
                        st.get("ok"), st.get("rig_id"),
                        st.get("audio_in"), st.get("audio_out"))
@@ -970,6 +1076,16 @@ class RigManager:
 
     def stop(self) -> None:
         self._stop.set()
+        # Closing the app while it is transmitting must not leave the
+        # transmitter on. The watchdog cannot help here - it is going away
+        # with everything else - so this is the last thing that can.
+        if self._ptt_since and self._backend:
+            try:
+                self._backend.set_ptt(False)
+                print("unkeying: hamdash is shutting down")
+            except Exception as exc:                    # noqa: BLE001
+                print(f"UNKEY ON SHUTDOWN FAILED: {exc}")
+        self._ptt_since = self._ptt_seen = 0.0
         with self._lock:
             if self._backend:
                 self._backend.close()

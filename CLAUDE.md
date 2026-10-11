@@ -415,6 +415,24 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   owns the rig type, port and baud, and two programs cannot share a serial
   port - that is the whole reason to use it. `configure()` opens their dialog
   rather than offering a second set of fields to disagree with it.
+- **A transmission nobody is holding is taken off the air**, and the
+  watchdog lives on the host's polling thread because that is the one still
+  running when whatever keyed the rig is not - a card that crashes cannot
+  unkey itself, which is the entire point. `PTT_HOLD` is the keep-alive the
+  card sends while it transmits; `radio.ptt_timeout` is the ceiling on one
+  transmission. **Only transmissions hamdash started are ever ended** - a
+  rig keyed from its mic or by another program is left alone, because
+  cutting somebody off mid-over is worse than the thing being guarded
+  against. A rig that unkeys itself is noticed, so a pointless unkey is not
+  sent later, and a failed unkey is shouted about: the radio may still be
+  transmitting and that must not be swallowed.
+- **The `finally` around the server does not run when the process is
+  interrupted.** On Windows that is most of the time - a plain
+  `Stop-Process` terminated it with the transmitter still keyed, which is
+  how this was found. `run.py` installs SIGINT, SIGTERM and SIGBREAK
+  handlers that close once, and the `--browser` path had no signal handling
+  at all. **A hard kill still cannot be caught by anything**, so the radio's
+  own time-out timer is the real backstop and the README says so.
 - **The Transmit button reads the radio, never its own flag.** It kept `tx`
   in the page, so a reload while keyed brought it back saying "Transmit"
   with the radio still on the air, and that press told an already
@@ -881,11 +899,9 @@ the live service.
 - `cty.dat` for real DXCC, replacing the short PREFIX table.
 - Rig depth: VFO A/B, split, PTT timeout, sharing the rig with WSJT-X.
 - PTT is proven through flrig on an FT-890, into a dummy load, operator
-  present: `set_ptt` keys and unkeys, flrig reports the change in about 150
-  ms because it waits for it, and the card's button keys and unkeys. Not
-  proven on OmniRig or Hamlib. Nothing times out a transmission - a PTT
-  timeout is still an open thread, and it is the one that matters, because
-  the failure mode is a transmitter left on the air.
+  present: `set_ptt` keys and unkeys, the card's button does both, the
+  watchdog takes an unheld transmission off the air in about six seconds,
+  and a clean exit unkeys. Not proven on OmniRig or Hamlib.
 - The decoder's other modes. RTTY and PSK31 are the next two and are a
   different shape of problem - both are continuous rather than keyed, so the
   tone tracking and the speed estimate here do not carry over, but the card,

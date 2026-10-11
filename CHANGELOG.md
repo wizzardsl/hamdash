@@ -6,6 +6,22 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **A transmission nobody is holding is taken off the air.** Nothing else in
+  the shack would: a card that keys the rig and then crashes, a tile closed
+  mid transmission, a browser that dies — the transmitter just keeps going.
+  The watchdog runs on the host's polling thread, which is still there when
+  whatever keyed the rig is not. Two clocks: the card has to keep saying it
+  still wants the transmission (it stops saying so within a few seconds of
+  going away), and there is a ceiling on any one transmission —
+  `radio.ptt_timeout`, two minutes by default, 0 for no ceiling. Closing
+  hamdash while transmitting unkeys too.
+  **Only transmissions hamdash started are ever ended.** A rig keyed from
+  its own mic, a footswitch or another program is left alone; cutting
+  somebody off mid-over because a dashboard thought it knew better is worse
+  than the thing being guarded against. The card says why a transmission
+  ended rather than it just stopping.
+
 ### Fixed
 - **The Transmit button could get out of step with the radio.** It kept
   whether it was transmitting in the page rather than reading it from the
