@@ -400,6 +400,22 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   live follow or - if it marks them as the operator's - boxes that silently
   stop following something nobody touched. Prefill supplies the grid and the
   station details; the dial supplies the dial.
+- **The frequency box reads hertz, kilohertz or megahertz, by magnitude.**
+  It was megahertz only (`parseFloat(v) * 1e6`), so `7041` - which is how
+  most of the world writes 40m - asked the radio for 7041 MHz. Not an
+  error, just somewhere else entirely. `7.041`, `7041` and `7041000` now
+  all mean the same place. The one ambiguity is documented rather than
+  guessed at: `136` is 136 MHz, so 2200m is typed `0.136` or `136000`.
+- **Out of band is said, never prevented.** The band chip used to go blank
+  outside a ham band, which reads as the card failing to work something
+  out; it has an answer, and an operator about to log a contact should see
+  it. But nothing refuses the frequency: a radio is a general-coverage
+  receiver, and validating the dial against a band plan would be this
+  program deciding what somebody's licence says.
+- **A radio with no transmit meter says so.** The meter vanishing at the
+  moment the radio goes on the air reads as the card breaking, when it only
+  means this rig does not measure power - an FT-900 through Hamlib refuses
+  `RFPOWER_METER` outright.
 - **A guessed band must not go stale.** The logbook guesses from the
   frequency; a frequency on no band clears the guess rather than leaving the
   previous one, or 15 MHz reads "2m" and that is what gets logged. A band
@@ -813,6 +829,17 @@ QRM or fading.
 - **`elementFromPoint` cannot find a drop target under a drag**: the dragged
   tile is under the cursor by definition, so `_tileUnder` walks the tiles and
   compares rectangles instead.
+- **Escape puts a drag back.** Without it a drag could only be *finished*,
+  and finishing is the part that is hard to undo - a tile heading for the
+  wrong tab strip had to be dropped and then unpicked by hand. The cancel
+  flag is checked in `up()` before anything is committed, so an escaped
+  drag docks nothing, pops nothing out and saves nothing.
+- **✕ on a tile offers Undo, like the Cards menu does.** It is the *more*
+  destructive of the two routes - it takes one tile's settings with it, and
+  those live on the tile (invariant 5) - so having Undo on the menu and not
+  here left the easier button as the unrecoverable one. Both snapshot the
+  whole board and put it back, which is the only way "where it was"
+  survives for a card that was the third tab of a stack.
 - **A tab is torn off, not dragged**: a tab has to travel `TEAR_OFF` pixels
   before it leaves its stack, or every click on one would undock it.
 - Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per

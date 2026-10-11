@@ -54,6 +54,9 @@
       this.onPopIn = opts.onPopIn || (() => {});
       this.onReopen = opts.onReopen || (() => {});
       this.onSettings = opts.onSettings || (() => {});
+      // Closing a card throws away its per-tile settings, so the board gets
+      // to decide what that costs - it is the only part that can offer Undo.
+      this.onClose = opts.onClose || ((uid) => this.remove(uid));
       this.isPoppedOpen = opts.isPoppedOpen || (() => true);
       this.tiles = [];
       this.arranging = false;
@@ -246,7 +249,7 @@
       // The header buttons act on whichever card is showing, not on the box.
       const live = () => this.get(t.active) || t.cards[0];
       node.querySelector('[data-act="close"]').onclick = () =>
-        this.remove(t.active);
+        this.onClose(t.active);
       node.querySelector('[data-act="reload"]').onclick = () => {
         const f = node.querySelector(`iframe[data-uid="${t.active}"]`);
         if (f) f.src = f.src;
@@ -298,7 +301,7 @@
           this._dragTab(e, t, node, cardUid);
         });
         tab.addEventListener('click', (e) => {
-          if (e.target.closest('[data-close]')) { this.remove(cardUid); return; }
+          if (e.target.closest('[data-close]')) { this.onClose(cardUid); return; }
           this.show(cardUid);
         });
       });
@@ -525,13 +528,33 @@
       };
       scrolling = requestAnimationFrame(tick);
 
+      // Escape puts it back. Without this a drag can only be finished, so
+      // a tile heading for the wrong tab strip has to be dropped and then
+      // undone by hand - and dropping is the part that is hard to undo.
+      let cancelled = false;
+      const abort = (ev) => {
+        if (ev.key !== 'Escape' || cancelled) return;
+        cancelled = true;
+        ev.preventDefault();
+        Object.assign(t, orig);
+        this._place(t, node);
+        up();
+      };
+      global.addEventListener('keydown', abort, true);
+
       const up = () => {
         cancelAnimationFrame(scrolling);
+        global.removeEventListener('keydown', abort, true);
         node.classList.remove('dragging', 'will-pop', 'will-dock');
         this._nodes.get(onto?.uid)?.classList.remove('dock-target');
         node.removeEventListener('pointermove', move);
         node.removeEventListener('pointerup', up);
         node.removeEventListener('pointercancel', up);
+        if (cancelled) {
+          // Back where it started, and nothing is docked, popped or saved.
+          this._nodes.get(onto?.uid)?.classList.remove('dock-target');
+          return;
+        }
         if (willPop && !t.popped) {
           Object.assign(t, orig);                 // snap back, then pop out
           this._place(t, node);

@@ -139,7 +139,9 @@ enter first. **Arrange** just turns on the grid guides and keeps the resize
 handles visible. Overlaps are resolved by pushing tiles *down*, never sideways:
 horizontal position is what people place deliberately, vertical order isn't.
 
-**Hold a card near the top or bottom edge and the board scrolls under it**,
+**Escape puts a drag back** where it started — nothing docks, nothing moves,
+nothing is saved. **Hold a card near the top or bottom edge and the board
+scrolls under it**,
 faster the closer you get to the edge, so moving a card from the bottom of a
 long dashboard to the top is one gesture rather than drop-scroll-repeat. While
 there is still board above to reach, dragging up means scroll; only once there
@@ -149,7 +151,8 @@ Adding and removing a card: the **Cards** menu lists everything installed with
 a tick beside whatever is on the board. Tick to put a card on, untick to take
 it off — and closing a tile with its own **✕** unticks it there, so the menu is
 always a true picture of the board rather than a separate thing to keep in
-sync.
+sync. Either way a toast offers **Undo**: a card carries its own per-tile
+settings, so closing one is not a thing to have to be sure about.
 
 It is a dropdown rather than a dialog, because ticking a few cards on and off
 is something you do in a run and a modal makes you reopen it each time.
@@ -680,6 +683,11 @@ one TCP connection held open, spots arriving as they happen.
 The chips along the filter bar are the legend as well as the switch — the
 colour beside a row is the colour on its chip. Beside them: band, mode, and a
 box that searches callsign, park, summit, spotter and comment at once.
+**Type a frequency however you think of it** — `7.041`, `7041` and `7041000`
+all mean the same place. Nothing is refused for sitting outside a ham band;
+the band simply reads *out of band*, which is worth seeing before you log a
+contact from there.
+
 **Clicking a frequency tunes the radio** (and sets the mode when the spot
 carries one; cluster spots do not). It is the frequency rather than the whole
 row on purpose, so a mis-click cannot move the rig.

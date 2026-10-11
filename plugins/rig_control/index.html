@@ -9,6 +9,8 @@
   .dial .frac { color: var(--muted); }
   .line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .band { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  /* Not an error - plenty of listening happens outside the ham bands. */
+  .band.off-band { color: var(--muted); font-family: inherit; }
   .state { color: var(--muted); font-size: 12px; }
   .state.tx { color: var(--alert); }
   .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
@@ -215,9 +217,21 @@ function paintMeter(m) {
   box.hidden = false;
   box.classList.toggle('tx', tx);
   const pct = tx ? m.power_pct : m.s_pct;
-  // A meter that did not answer is not a zero. Hide it rather than draw a
-  // flat bar, which reads as a dead band instead of as no reading.
-  if (pct === undefined || pct === null) { box.hidden = true; return; }
+  const bar = box.querySelector('.bar');
+  // A meter that did not answer is not a zero, so there is no bar to draw.
+  // While transmitting, say which it is: the meter vanishing at the moment
+  // the radio goes on the air reads as the card breaking, when all it
+  // means is that this rig does not measure power. Plenty do not - an
+  // FT-900 through Hamlib refuses RFPOWER_METER outright.
+  if (pct === undefined || pct === null) {
+    if (!tx) { box.hidden = true; return; }
+    box.hidden = false;
+    bar.hidden = true;
+    $('#m-scale').innerHTML = '';
+    $('#m-read').textContent = 'This radio does not report transmit power';
+    return;
+  }
+  bar.hidden = false;
   $('#m-fill').style.width = `${Math.max(0, Math.min(100, pct))}%`;
   $('#m-scale').innerHTML = (tx ? P_SCALE : S_SCALE)
     .map((t) => `<span>${t}</span>`).join('');
@@ -261,6 +275,32 @@ function startMetering() {
   tick();
 }
 
+// What somebody typed, in hertz.
+//
+// It used to be megahertz and nothing else - `parseFloat(v) * 1e6` - so
+// `7041`, which is how most of the world writes 40m, asked the radio for
+// 7041 MHz. Not an error, just somewhere else entirely. The three natural
+// spellings of one frequency now land on the same place:
+//
+//   7.041  ->  7041000      MHz, the way a band plan reads
+//   7041   ->  7041000      kHz, the way a spot reads
+//   7041000->  7041000      Hz,  the way a log reads
+//
+// **No band checking.** A radio is a general-coverage receiver and where it
+// is tuned is the operator's business; refusing a frequency because it is
+// outside a ham band would be this program deciding what their licence
+// says. Out of band is said, not prevented.
+function parseFreq(text) {
+  const v = parseFloat(String(text).replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  // Magnitude alone: nobody has a radio that reaches 1000 MHz and also
+  // needs to type 1000 kHz as "1000", so the units are never ambiguous in
+  // practice. Written out, 1 MHz is "1", 1000 kHz is "1000", 1000000 Hz is
+  // "1000000" - and all three are 1 MHz.
+  const unit = v < 1000 ? 1e6 : (v < 1e6 ? 1e3 : 1);
+  return Math.round(v * unit);
+}
+
 function stepHz() {
   return Number($('#step').value) || 1000;
 }
@@ -297,7 +337,13 @@ function paint(s) {
   const mhz = HD.fmtHz(s.freq);
   const [whole, frac] = mhz.split('.');
   $('#dial').innerHTML = `${whole}.<span class="frac">${frac}</span>`;
-  $('#band').textContent = s.band;
+  // A blank where the band goes reads as the card failing to work out an
+  // answer. It has one: the radio is outside the ham bands, which is a
+  // perfectly ordinary place for a general-coverage receiver to be and
+  // worth knowing before a contact gets logged from it. Said, never
+  // prevented - where the dial goes is the operator's business.
+  $('#band').textContent = s.band || (s.freq ? 'out of band' : '');
+  $('#band').classList.toggle('off-band', !s.band && !!s.freq);
   $('#state').textContent = s.ptt ? 'transmitting' : `${s.mode}${s.mock ? ' · simulated' : ''}`;
   $('#state').className = s.ptt ? 'state tx' : 'state';
   // The Transmit button follows the radio, not a flag of its own. It used
@@ -344,9 +390,13 @@ async function boot() {
   $('#mode').onchange = (e) => HD.radio.mode(e.target.value).then(paint).catch(fail);
 
   $('#tune').onclick = () => {
-    const v = parseFloat($('#freq-in').value);
-    if (!v) { $('#err').textContent = 'Enter a frequency in MHz, like 14.074'; return; }
-    HD.radio.freq(Math.round(v * 1e6)).then(paint).catch(fail);
+    const hz = parseFreq($('#freq-in').value);
+    if (!hz) {
+      $('#err').textContent =
+        'Enter a frequency: 14.074, 14074 or 14074000 all mean the same thing';
+      return;
+    }
+    HD.radio.freq(hz).then(paint).catch(fail);
   };
   $('#freq-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#tune').click(); });
 

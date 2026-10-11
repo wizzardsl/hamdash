@@ -82,6 +82,23 @@ versions follow [SemVer](https://semver.org/). The version of record is
   ended rather than it just stopping.
 
 ### Fixed
+- **A drag could only be finished, never called off.** Press **Escape** and
+  the tile goes back where it started, docking nothing and saving nothing.
+  Dropping is the step that is hard to undo, so the way out matters most.
+- **Closing a card with ✕ now offers Undo**, like unticking it in the Cards
+  menu already did. ✕ is the more destructive of the two — it takes that
+  tile's own settings with it — so it was the wrong one to leave without a
+  way back.
+- **The frequency box only understood megahertz.** Typing `7041`, which is
+  how most of the world writes 40m, asked the radio for 7041 MHz — not an
+  error, just somewhere else entirely. `7.041`, `7041` and `7041000` now all
+  mean the same place. Nothing is refused for being outside a ham band.
+- **Outside the ham bands the band simply went blank**, which reads as the
+  card failing rather than as an answer. It says *out of band* now, quietly,
+  which is worth seeing before a contact is logged from there.
+- **A radio that cannot measure transmit power made the meter disappear**
+  the moment it went on the air, which looks like a fault. It says so
+  instead.
 - **Scrolling the dashboard no longer zooms a map you pass over.** A map
   card grabbed every scroll wheel event, so moving down a long board stopped
   dead the moment the pointer crossed one and the map zoomed instead. Plain

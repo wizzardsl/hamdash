@@ -70,6 +70,7 @@
     onReopen: (entry) => HDPopout.popOut(entry),
     isPoppedOpen: (uid) => HDPopout.isOpen(uid),
     onSettings: (entry) => openTileSettings(entry),
+    onClose: (cardUid) => closeCard(cardUid),
     // One card, in its holder inside the tile. A tile may hold several and
     // shows one at a time; every one of them is mounted, so this runs once
     // per card rather than once per tile.
@@ -332,6 +333,33 @@
               } });
     }
     renderCardsMenu();
+  }
+
+  /* Closing a card from its own tile, or its tab.
+   *
+   * The same Undo the Cards menu offers, for the same reason and then one
+   * more: ✕ is the *more* destructive of the two routes, because it takes
+   * one tile's settings with it rather than a whole card's worth, and those
+   * settings live on the tile (invariant 5). Having Undo on the menu and
+   * not here left the easier button as the unrecoverable one.
+   */
+  function closeCard(cardUid) {
+    const entry = board.get(cardUid);
+    if (!entry) return;
+    const card = cards.find((c) => c.id === entry.card);
+    const name = (card && card.name) || entry.card;
+    const before = JSON.parse(JSON.stringify(board.tiles));
+    board.remove(cardUid);
+    renderCardsMenu();
+    toast(`${name} closed`, {
+      label: 'Undo',
+      fn: () => {
+        board.setTiles(before);
+        saveLayout(board.tiles);
+        renderCardsMenu();
+        toast(`${name} back`);
+      },
+    });
   }
 
   function openMenu(open) {
