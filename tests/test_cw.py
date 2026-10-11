@@ -14,14 +14,27 @@ import unittest
 from difflib import SequenceMatcher
 from pathlib import Path
 
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent
                        / "plugins" / "decoder"))
 
-import cw                                               # noqa: E402
+# numpy belongs to the decoder card, not to the host, and CI installs only
+# what the host needs - the same reason it installs no pywebview. Skipping
+# says "not checked here" where an ImportError said "the suite is broken".
+try:
+    import numpy as np
+    import cw                                           # noqa: E402
+    HAVE_NUMPY = True
+except ImportError:                                     # pragma: no cover
+    HAVE_NUMPY = False
 
 CQ = "CQ CQ DE VA7ABC K"
+
+pytestmark = unittest.skipUnless(HAVE_NUMPY, "numpy is not installed")
+
+
+def setUpModule():
+    if not HAVE_NUMPY:
+        raise unittest.SkipTest("numpy is not installed; the decoder needs it")
 
 
 def decode(audio, samplerate=48000):

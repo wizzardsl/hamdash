@@ -69,12 +69,39 @@ class TestRunCardSeesItsOwnDirectory(unittest.TestCase):
         self.assertEqual(run.run_card(str(ROOT / "nope" / "card.py")), 2)
 
 
+def declared_dependencies() -> set[str]:
+    """Import names hamdash says it ships, from requirements.txt.
+
+    A card may import numpy without this environment having numpy: CI
+    installs only what the *host* needs, deliberately, the same way it
+    installs no pywebview. Checking against what happens to be installed
+    turns a card's declared dependency into a test failure on every machine
+    that has not got round to installing it.
+    """
+    names = set()
+    for line in (ROOT / "requirements.txt").read_text(
+            encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if not line:
+            continue
+        dist = re.split(r"[<>=!;\[ ]", line)[0].strip().lower()
+        if dist:
+            names.add(dist)
+    # The two whose import name is not their package name.
+    if "pywebview" in names:
+        names.add("webview")
+    if "pywin32" in names:
+        names.update({"win32com", "pythoncom", "win32api"})
+    return names
+
+
 class TestEveryCardImports(unittest.TestCase):
     """A card that cannot be imported is a card that cannot start, and the
     board only says "no response"."""
 
     def test_what_a_card_imports_is_findable(self):
         import importlib.util
+        shipped = declared_dependencies()
         for manifest in sorted((ROOT / "plugins").glob("*/card.json")):
             meta = json.loads(manifest.read_text(encoding="utf-8"))
             if meta.get("kind") != "python":
@@ -101,15 +128,15 @@ class TestEveryCardImports(unittest.TestCase):
                             continue
                         # Either a file beside the card - which only
                         # resolves because run_card puts that directory on
-                        # sys.path - or something this interpreter can find
-                        # on its own.
+                        # sys.path - something hamdash ships, or something
+                        # this interpreter can find on its own.
                         beside = (manifest.parent / f"{top}.py").exists()
-                        found = (beside
+                        found = (beside or top.lower() in shipped
                                  or importlib.util.find_spec(top) is not None)
                         self.assertTrue(
                             found,
-                            f"{entry.name} imports {top!r}, which is "
-                            f"neither beside it nor importable")
+                            f"{entry.name} imports {top!r}, which is neither "
+                            f"beside it, in requirements.txt, nor importable")
 
 
 class TestBundlePaths(unittest.TestCase):
