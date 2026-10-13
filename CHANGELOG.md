@@ -6,6 +6,35 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **The path readout has a bottom as well as a top.** It gave the MUF and
+  the highest band and nothing about what the ionosphere was taking away
+  underneath, so a daytime path offered 80 m as readily as 20 m. There are
+  now three lines under it: **D-layer loss** in dB for the bands in play,
+  a **Daylight floor** in MHz, and the existing flare line.
+  The loss model is in `prop.js` beside the MUF, with no DOM and no clock,
+  and `tests/js/prop.test.js` drives it.
+- **It says which numbers are measured and which are modelled, because
+  they are not the same kind of claim.** The MUF comes from ionosondes
+  that physically sounded the layer. Nothing sounds the D layer — it is
+  too low and too collisional — so the floor is computed, and the line
+  says so. The shape is solid physics (1/(f + f_H)², solar zenith angle,
+  solar activity, once per hop); the constant is calibrated. Read the dB
+  as an ordering rather than a measurement: what it is reliably right
+  about is that 160 m is shut in daylight and 20 m is barely touched.
+- **Nothing is called a LUF, deliberately.** Absorption is a property of
+  the path; a LUF is a property of your station. 5 W of FT8, 100 W of CW
+  and a linear have three different answers over the same path at the
+  same second, which is why VOACAP asks for power and antenna gain. So
+  the dB are shown and you apply your own judgement, and the one line
+  that does turn them into a frequency says how much loss it assumed.
+
+### Fixed
+- **A flare floor below the HF bands is no longer reported.** D-RAP reads
+  a megahertz or two on a perfectly quiet day, and "absorbed below 1 MHz"
+  is a line about nothing — there is no band down there to lose. Harmless
+  while it was the only floor on screen, clutter now there are two.
+
 ## [0.6.0]
 
 ### Added

@@ -175,3 +175,90 @@ test('nothing at all is not an error', () => {
   assert.deepStrictEqual(P.bandsBetween(null, 5, 15), []);
   assert.deepStrictEqual(P.bandsBetween({}, 5, 15), []);
 });
+
+/* ---- the bottom of the window -----------------------------------------
+ *
+ * The MUF above is measured and can be checked against somebody else's
+ * number. This cannot: nothing sounds the D layer, so the floor is a
+ * model and `K_ABS` is calibrated rather than derived.
+ *
+ * So these test the *shape*, which is the physics and is not in doubt,
+ * and they pin the one calibration the comment claims. Asserting a table
+ * of dB would be asserting against the same guess the code makes - the
+ * mistake `bandsBetween` already made once in this very file.
+ */
+const SUN = { lat: 0, lon: 0 };          // subsolar point on the equator
+
+test('absorption goes as 1/(f + fH)^2, so the low bands pay', () => {
+  const c = P.hopConstant(20, 1500, 93);
+  const low = P.absorptionAt(c, 3.5);
+  const high = P.absorptionAt(c, 14);
+  // Not exactly 16x: the gyrofrequency offset softens it, which is the
+  // whole reason fH is in there rather than a bare 1/f^2.
+  assert.ok(low / high > 8 && low / high < 12,
+    `80 m is ${(low / high).toFixed(1)}x of 20 m`);
+});
+
+test('the calibration the comment claims is the one in the code', () => {
+  // 1500 km, near-overhead sun, moderate activity, 80 m -> about 15 dB.
+  const db = P.hopAbsorption(20, 3.5, 1500, 93);
+  assert.ok(Math.abs(db - 15) < 1.5, `got ${db.toFixed(1)} dB, not ~15`);
+});
+
+test('night has no D layer at all', () => {
+  assert.strictEqual(P.hopAbsorption(95, 3.5, 1500, 93), 0);
+  assert.strictEqual(P.hopAbsorption(180, 1.8, 1500, 200), 0);
+  // And so nothing is reported as shut, which is the normal night answer.
+  assert.strictEqual(P.absorptionFloor(P.hopConstant(95, 1500, 93), 20), 0);
+});
+
+test('noon absorbs more than the late afternoon', () => {
+  assert.ok(P.hopAbsorption(10, 3.5, 1500, 93)
+          > P.hopAbsorption(70, 3.5, 1500, 93));
+});
+
+test('a quiet sun absorbs less than an active one', () => {
+  assert.ok(P.hopAbsorption(20, 3.5, 1500, 0)
+          < P.hopAbsorption(20, 3.5, 1500, 200));
+});
+
+test('zenith angle is the angular distance from the subsolar point', () => {
+  assert.ok(Math.abs(P.zenith({ lat: 0, lon: 0 }, SUN)) < 0.01);
+  assert.ok(Math.abs(P.zenith({ lat: 0, lon: 90 }, SUN) - 90) < 0.01);
+  assert.ok(Math.abs(P.zenith({ lat: 90, lon: 0 }, SUN) - 90) < 0.01);
+});
+
+test('more hops cost more, because each one crosses the layer', () => {
+  const at = [{ at: { lat: 0, lon: 0 } }];
+  const one = P.absorptionConstant(at, 1500, 1, SUN, 93);
+  const three = P.absorptionConstant(at, 1500, 3, SUN, 93);
+  assert.ok(Math.abs(three / one - 3) < 1e-9);
+});
+
+test('a path in darkness reports no floor rather than a small one', () => {
+  // The antipode of the subsolar point: midnight.
+  const dark = [{ at: { lat: 0, lon: 180 } }];
+  const c = P.absorptionConstant(dark, 1500, 2, SUN, 93);
+  assert.strictEqual(c, 0);
+  assert.strictEqual(P.absorptionFloor(c, 20), 0);
+});
+
+test('the floor and the dB are the same model read two ways', () => {
+  const c = P.absorptionConstant([{ at: { lat: 0, lon: 0 } }], 1500, 2,
+                                 SUN, 93);
+  const f = P.absorptionFloor(c, 20);
+  // At the floor the absorption is the budget, by construction.
+  assert.ok(Math.abs(P.absorptionAt(c, f) - 20) < 1e-6);
+});
+
+test('a bigger budget puts the floor lower', () => {
+  const c = P.absorptionConstant([{ at: { lat: 0, lon: 0 } }], 1500, 2,
+                                 SUN, 93);
+  assert.ok(P.absorptionFloor(c, 40) < P.absorptionFloor(c, 10));
+});
+
+test('no sun passed means no claim', () => {
+  assert.strictEqual(P.absorptionConstant([{ at: { lat: 0, lon: 0 } }],
+                                          1500, 2, null, 93), 0);
+  assert.strictEqual(P.absorptionConstant([], 1500, 2, SUN, 93), 0);
+});

@@ -1404,6 +1404,41 @@ number.** `tests/js/prop.test.js` drives it.
   That is the data being honest about thirty sounders, not the drawing
   being broken, and it is worth knowing before concluding the overlay
   does nothing.
+- **The floor is modelled and the ceiling is measured, and that line is
+  the feature.** Nothing sounds the D layer - too low, too collisional -
+  so there is no `prop.kc2g.com` for absorption and a floor has to be
+  computed. The shape is not in doubt: `1/(f + F_H)^2`, `cos^0.75(chi)`,
+  `(1 + 0.0037*SSN)`, once per hop, times `secant(hopKm, 100)` - the
+  *same* secant the F2 reflection uses, at D-layer height instead of 300
+  km. **`K_ABS` is calibrated, not derived** (1500 km hop, overhead sun,
+  SSN 93 -> ~15 dB on 80 m, the conventional figure), so the dB are an
+  ordering and not a measurement. Checked twice over: the JS and an
+  independent Python implementation agree to rounding, and three
+  plausible mistakes were mutated in to confirm the tests bite - no night
+  guard gives 2.5 dB at midnight, no obliquity drops the calibration to
+  2.8 dB, a bare `1/f^2` moves the 80m:20m ratio from 10 to 16.
+- **Nothing is called a LUF, and that is the point.** Absorption is a
+  property of the path; a LUF is a property of the *station*. 5 W of FT8,
+  100 W of CW and a linear have three different answers over one path at
+  one moment, which is why VOACAP asks for power and antenna gain and we
+  do not have them. So `absorptionAt` reports dB and the operator judges;
+  `absorptionFloor` turns dB into MHz only against a stated `BUDGET_DB`,
+  and the line on screen says what it assumed. Adding power and mode
+  settings is what would make a real LUF honest - until then the word
+  must not appear.
+- **The zenith angle is the angular distance from the subsolar point**,
+  which is why `prop.js` needs no clock and no almanac: the caller passes
+  `HDMap.subsolar(new Date())` - the same one that draws the greyline -
+  and `distance()` was already here. Keeping the clock out is what lets
+  the model be driven with a fixed sun in a test.
+- **Absorption is `C / (f + F_H)^2`, so the constant is computed once
+  without the frequency in it.** That one number answers both "how many
+  dB on 40 m" and "what frequency costs 20 dB" in closed form - no
+  solving, and the two readings cannot disagree, which a test pins by
+  checking the floor round-trips to exactly the budget.
+- **D-RAP is reported only above the HF floor now.** It reads 1-2 MHz on
+  an undisturbed day, and "absorbed below 1 MHz" names no band anybody
+  can lose. It was harmless while it was the only floor on screen.
 - **A legend belongs to its layer.** Turning the overlay off left the
   scale behind, which is a box in the corner describing nothing.
 - **`HD.bands()` returns `{bands: [[start, end, name], ...], names: []}`**

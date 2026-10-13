@@ -179,6 +179,12 @@ one.
   ionosondes, via prop.kc2g.com and GIRO. Points, not a field: the familiar
   smooth MUF map is an interpolation of exactly these stations, and plotting
   the measurements says what is known and where without inventing the rest.
+- **Band to here (MUF)** — the same path calculation swept across the whole
+  map: for every place, the highest frequency that will carry a path from
+  *your* station to it. Not the familiar MUF chart, which plots MUF(3000) at
+  each point and says nothing about where you are standing. It fades out where
+  the nearest sounding is far from the path, so the oceans look like the guess
+  they are.
 - **Clouds** — OpenWeatherMap, and the only layer here that needs an account.
   Paste a key in the tile's settings; without one the layer is hidden rather
   than offered and broken.
@@ -186,6 +192,41 @@ one.
   through the host, which caches it for five minutes and drops the cells at
   zero: the raw grid is about 1.5 MB of mostly nothing, and every open tile
   polling NOAA directly would be both rude and slow.
+
+## The top of the window is measured; the bottom is not
+
+Click a station and the card gives you a path readout. The two halves of it
+are different kinds of claim, and it says which is which rather than running
+them together.
+
+**Path MUF** is a measurement. Ionosondes physically sound the F2 layer and
+publish foF2 and M(3000)F2; the card takes the nearest live one to each place
+the path has to bounce, and tells you which station answered and how far away
+it was. The worst control point governs — a path is only as good as the worst
+place it has to refract.
+
+**D-layer loss** is a model, and labelled as one on screen. Nothing sounds the
+D layer: it is too low and too collisional to be sounded the way F2 is, so
+there is no network of measurements to read and a floor has to be computed.
+The shape of the model is solid physics — absorption goes as 1/(f + f_H)²,
+follows the solar zenith angle, scales with solar activity, and is paid once
+per hop — but the constant is calibrated rather than derived. **Read the dB as
+an ordering, not as a measurement.** What it is reliably good for is that 160m
+is shut in daylight while 20m is barely touched, and that is worth knowing.
+
+**Daylight floor** turns those dB into a frequency, and says what it assumed
+when it does. That assumption is unavoidable: *absorption is a property of the
+path, but a LUF is a property of your station.* Five watts of FT8, a hundred
+of CW and a linear have three different answers over the same path at the same
+second. So nothing here is called a LUF, the dB are shown so you can apply
+your own judgement, and the line says how much loss it treated as too much.
+
+**Absorbed below** is measured again — NOAA's D-RAP, which covers the
+*flare-driven* absorption only. On a quiet day it is zero, and that does not
+mean 160m is open to Europe at noon; the modelled line above is what covers
+ordinary daytime absorption. It is only reported when it reaches the HF bands,
+because D-RAP reads a megahertz or two on a perfectly undisturbed day and
+"absorbed below 1 MHz" is a line about nothing.
 
 ## Filling in your grid
 

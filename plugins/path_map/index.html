@@ -103,6 +103,7 @@ let sounders = [];       // live ionosondes, for the path MUF
 let bandTable = [];      // the host's one band table
 let drapGrid = null;     // absorption raster, sampled over the path
 let drapBytes = null;
+let ssn = 0;             // sunspot number, for the modelled D-layer floor
 const L_ = {};          // layers, by name
 
 function wantAzimuthal() {
@@ -166,6 +167,13 @@ async function loadProp() {
     bandTable = await HD.bands();
   } catch (e) { bandTable = []; }
   try {
+    // Only the sunspot number, and only for the absorption model. The
+    // rail already draws the rest of this; the host caches it for
+    // fifteen minutes, so asking again costs nothing.
+    const d = await HD.get('/api/space/solar');
+    ssn = Number(d && d.ssn) > 0 ? Number(d.ssn) : 0;
+  } catch (e) { ssn = 0; }
+  try {
     const d = await HD.get('/api/space/drap', { threshold: 1, grid: 1 });
     drapGrid = (d && d.grid && d.grid.data) ? d.grid : null;
     if (drapGrid) {
@@ -227,24 +235,58 @@ function propRows(add, target) {
      version listed everything under the MUF and proudly offered 2200 m
      and 630 m, which propagate by a different mechanism entirely and
      were never a claim worth making. */
-  const low = absorptionOver(p.controls);
+  const flare = absorptionOver(p.controls);
+
+  /* The modelled part. Two floors, from two different kinds of thing:
+     the flare one is derived from a measurement and is usually zero, the
+     daytime one is a model and is usually the one that bites. The higher
+     of them governs, and each is reported in its own words so neither is
+     mistaken for the other. */
+  const sun = HDMap.subsolar(new Date());
+  const absC = HDProp.absorptionConstant(p.controls, p.hopKm, p.hops, sun, ssn);
+  const dayFloor = HDProp.absorptionFloor(absC, HDProp.BUDGET_DB);
+
   const HF_FLOOR = 1.8;           // below this is not an F2 question
-  const open = HDProp.bandsBetween(bandTable, Math.max(low, HF_FLOOR),
-                                   p.mhz);
+  const low = Math.max(flare, dayFloor, HF_FLOOR);
+  const open = HDProp.bandsBetween(bandTable, low, p.mhz);
   if (open.length) {
     const best = open[open.length - 1];
     const rest = open.slice(0, -1).slice(-2).reverse();
-    add('Highest band', best + (rest.length ? ` (then ${rest.join(' ')})` : ''));
+    add('Best band', best + (rest.length ? ` (then ${rest.join(' ')})` : ''));
   } else {
-    add('Highest band', low > 0
+    add('Best band', low > HF_FLOOR
       ? 'nothing between the absorption and the MUF'
       : 'the MUF is below the HF bands');
   }
-  if (low > 0) {
-    // Only when there is something to report: a flare is the one thing
-    // that takes the bottom of the window away on a timescale anybody
-    // notices.
-    add('Absorbed below', `${low} MHz — solar flare`);
+
+  if (absC > 0) {
+    // The dB, not just the frequency: a LUF is a property of your
+    // station and these are a property of the path, so the operator gets
+    // the number and decides what their own signal can afford. Shown for
+    // the bands that are actually in play.
+    const shown = [1.8, 3.5, 7, 14].filter((f) => f < p.mhz);
+    const parts = shown.map((f) => {
+      const name = (HDProp.bandsBetween(bandTable, f, f)[0]) || `${f} MHz`;
+      return `${name} ${HDProp.absorptionAt(absC, f).toFixed(0)}`;
+    });
+    if (parts.length) add('D-layer loss', `${parts.join(' · ')} dB — modelled`);
+  }
+
+  if (dayFloor > HF_FLOOR) {
+    add('Daylight floor', `below ${dayFloor.toFixed(1)} MHz the path costs `
+      + `more than ${HDProp.BUDGET_DB} dB — modelled, not measured`);
+  }
+  if (flare > HF_FLOOR) {
+    // Measured, unlike the line above, and worth separating: a flare is
+    // the one thing that takes the bottom out of the window on a
+    // timescale anybody notices.
+    //
+    // Only above the bottom of the HF bands. D-RAP reads 1-2 MHz on a
+    // perfectly quiet day, and "absorbed below 1 MHz" is a line about
+    // nothing - there is no band down there to lose. It was reported
+    // from any non-zero value, which was harmless while it was the only
+    // floor on screen and is clutter now there are two.
+    add('Absorbed below', `${flare} MHz — solar flare`);
   }
   // Which sounding this rests on, and how far away it was. The whole
   // point: a number from 4000 km away is a different claim from one

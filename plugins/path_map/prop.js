@@ -195,6 +195,114 @@
     };
   }
 
+  /* ---- the bottom of the window ---------------------------------------
+
+     The MUF is measured; this is not, and the difference is the whole
+     reason it is reported separately and labelled.
+
+     **Nothing sounds the D layer.** It is too low and too collisional to
+     be sounded the way the F2 layer is, so there is no network of
+     measurements to read and a floor has to be computed from a model.
+     D-RAP covers only the *flare-driven* part, which is zero on a quiet
+     day - and a quiet day is not 160 m open to Europe at noon.
+
+     The shape is the physics and is not in doubt:
+       - absorption goes as 1/(f + f_H)^2, the collision-dominated law;
+       - it follows the D layer's electron density, which follows the
+         solar zenith angle as roughly cos^0.75;
+       - it scales with solar activity;
+       - and every hop crosses the layer, obliquely, so a long hop pays
+         sec(i) at D-layer height - the same secant this file already
+         computes for the F2 reflection, at 100 km instead of 300.
+
+     `K_ABS` is the part that is **calibrated rather than derived**: it is
+     set so a single 1500 km hop under a near-overhead sun at moderate
+     solar activity costs about 15 dB on 80 m, which is the conventional
+     figure. Treat the dB as an order of magnitude, not a measurement.
+     What it is good for is the *ordering* - that 160 m is shut in
+     daylight while 20 m is barely touched - and that ordering is solid.
+  */
+
+  /* Electron gyrofrequency, MHz. It varies with latitude; one number is
+     the usual simplification and moves the answer far less than the
+     model's own uncertainty. */
+  const F_H = 1.4;
+
+  /* Where the absorbing layer is. */
+  const D_HEIGHT = 100;
+
+  const CHI_EXP = 0.75;
+
+  const K_ABS = 53;
+
+  /* How much absorption a path is assumed to be able to afford, for the
+     purpose of saying a band is shut. This is the subjective part, and
+     it is subjective because **absorption is a property of the path and
+     a LUF is a property of your station**: 5 W of FT8, 100 W of CW and a
+     linear have three different answers over the same path at the same
+     second. So nothing here is called a LUF, the dB are reported, and
+     anything that turns them into a frequency says what it assumed. */
+  const BUDGET_DB = 20;
+
+  /* The solar zenith angle at a point, in degrees.
+
+     It is just the angular distance from the subsolar point, which is
+     why this file needs no clock and no almanac: the caller passes the
+     subsolar point (`HDMap.subsolar`, the same one that draws the
+     greyline) and the geometry is already here. */
+  function zenith(point, sun) {
+    return distance(point, sun) * R2D / R;
+  }
+
+  /* Everything about one hop's absorption except the frequency.
+
+     Kept frequency-free on purpose: absorption is `C / (f + F_H)^2`, so
+     one C answers both "how many dB on 40 m" and "what frequency costs
+     20 dB" without solving anything numerically. */
+  function hopConstant(chiDeg, hopKm, ssn) {
+    const cos = Math.cos(chiDeg * D2R);
+    if (!(cos > 0)) return 0;            // night: the layer has gone
+    const solar = 1 + 0.0037 * (Number(ssn) > 0 ? Number(ssn) : 0);
+    return K_ABS * solar * Math.pow(cos, CHI_EXP) * secant(hopKm, D_HEIGHT);
+  }
+
+  /* The absorption one hop costs at one frequency, in dB. */
+  function hopAbsorption(chiDeg, fMhz, hopKm, ssn) {
+    return absorptionAt(hopConstant(chiDeg, hopKm, ssn), fMhz);
+  }
+
+  /* Everything the frequency does not depend on, gathered once.
+
+     Absorption is `C / (f + F_H)^2`, so computing C once gives both the
+     dB at any frequency and the frequency at any dB without solving
+     anything numerically.
+
+     Each control point stands for its own hop, so their absorption is
+     averaged and charged once per hop - the points are the middles of
+     the first and last hops and the convention is that they stand in
+     for the rest. */
+  function absorptionConstant(controls, hopKm, hops, sun, ssn) {
+    const pts = (controls || []).map((c) => c.at || c).filter(Boolean);
+    if (!pts.length || !sun) return 0;
+    const each = pts.map((at) => hopConstant(zenith(at, sun), hopKm, ssn));
+    const mean = each.reduce((a, b) => a + b, 0) / each.length;
+    return mean * Math.max(1, hops);
+  }
+
+  /* What the path costs at this frequency, in dB. */
+  function absorptionAt(c, fMhz) {
+    return c > 0 ? c / Math.pow(fMhz + F_H, 2) : 0;
+  }
+
+  /* The frequency at which that absorption equals the budget - below
+     here, on this model, the path is shut. Returns 0 when there is
+     nothing to report, which at night is the normal answer. */
+  function absorptionFloor(c, budgetDb) {
+    const budget = budgetDb > 0 ? budgetDb : BUDGET_DB;
+    if (!(c > 0)) return 0;
+    return Math.max(0, Math.sqrt(c / budget) - F_H);
+  }
+
   /* Which ham bands sit inside a window.
 
      Takes what `HD.bands()` actually returns, which is
@@ -271,6 +379,10 @@
   return { secant, hopsFor, distance, along, controlPoints, nearest,
            asList,
            mufField,
+           zenith, hopConstant, hopAbsorption, absorptionConstant,
+           absorptionAt,
+           absorptionFloor,
            hopMuf, pathMuf, bandsBetween,
-           R, H_DEFAULT, MAX_HOP, FRESH_HOURS, FAR_KM };
+           R, H_DEFAULT, MAX_HOP, FRESH_HOURS, FAR_KM,
+           F_H, D_HEIGHT, K_ABS, BUDGET_DB };
 }));
