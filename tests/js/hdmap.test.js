@@ -152,3 +152,47 @@ test('hex2rgb reads the shapes a stylesheet actually yields', () => {
   // which paints nothing and reads as the overlay being broken.
   assert.deepStrictEqual(M.hex2rgb('rebeccapurple'), [255, 255, 255]);
 });
+
+/* ---- world copies ------------------------------------------------------
+ *
+ * The flat map used to draw exactly three worlds with `maxBounds` stopping
+ * the pan at 1.5 either side. That is a wall: drag far enough west and the
+ * map simply refuses, where a tile basemap repeats for ever. The span
+ * follows the view now, so panning is unbounded and the cost is flat.
+ */
+
+test('a view of one world needs the copies it touches', () => {
+  // zoom 1 showing -180..180
+  assert.deepStrictEqual(M.worldSpan(-180, 180), { lo: -1, hi: 1 });
+});
+
+test('the span follows the view east, it does not stretch to reach it', () => {
+  // Eight worlds east. Growing-only was the first version and it leaked:
+  // four drags reached nine worlds and 630 land paths, never given back.
+  const far = M.worldSpan(2000, 2400);
+  assert.ok(far.lo >= 5, `lo ${far.lo} is still anchored near zero`);
+  assert.ok(far.hi - far.lo <= 3, `span of ${far.hi - far.lo} worlds is leaking`);
+});
+
+test('the span follows the view west too', () => {
+  const far = M.worldSpan(-2400, -2000);
+  assert.ok(far.hi <= -5, `hi ${far.hi} is still anchored near zero`);
+  assert.ok(far.hi - far.lo <= 3);
+});
+
+test('a wider view needs more copies', () => {
+  const near = M.worldSpan(-180, 180);
+  const wide = M.worldSpan(-900, 900);
+  assert.ok(wide.hi - wide.lo > near.hi - near.lo);
+});
+
+test('the span is never empty', () => {
+  const s = M.worldSpan(10, 20);        // a sliver inside one world
+  assert.ok(s.hi >= s.lo);
+});
+
+test('a junk bound falls back to the three it always drew', () => {
+  // Leaflet can hand back Infinity before the map has a size.
+  assert.deepStrictEqual(M.worldSpan(NaN, NaN), { lo: -1, hi: 1 });
+  assert.deepStrictEqual(M.worldSpan(-Infinity, Infinity), { lo: -1, hi: 1 });
+});

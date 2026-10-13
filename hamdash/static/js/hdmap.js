@@ -48,7 +48,86 @@ window.HDMap = (function () {
   const WORLD_EDGE = COPY_SPAN * 1.5;
   let azimuthal = false;          // set by create(); there are no copies in aeqd
 
-  const copies = () => (azimuthal ? [0] : [-COPY_SPAN, 0, COPY_SPAN]);
+  /* How many worlds are drawn, and why it is not a constant.
+   *
+   * It was exactly three, with `maxBounds` stopping the pan at 1.5 worlds
+   * either side so you could never reach the edge of them. That is a wall:
+   * drag west far enough and the map simply refuses, where a tile basemap
+   * repeats for ever. The wall was the honest thing to do while the number
+   * was fixed - panning into blank background is worse - but the number
+   * does not have to be fixed.
+   *
+   * It follows the view instead. Crossing into a world nobody has drawn
+   * yet moves the span and redraws whatever registered an interest, so
+   * there is always land - and aurora, and greyline - under wherever you
+   * have got to.
+   *
+   * The span *follows*; it does not only grow. Growing was the first
+   * version and it leaks: four drags reached nine worlds west and 630
+   * land paths, and nothing was ever going to give them back. What is off
+   * screen by more than a world is dropped, so the cost is flat however
+   * far somebody drags.
+   *
+   * Wrapping the view instead - Leaflet's `worldCopyJump` - would be
+   * cheaper still and is the wrong trade here: paths are unwrapped into
+   * the neighbouring copy on purpose, so a contact at -221 is drawn at
+   * -221, and teleporting the view back to the middle copy is precisely
+   * the pan somebody is making to reach it.
+   */
+  let spanLo = -1;
+  let spanHi = 1;
+  const redrawers = new Set();
+
+  const copies = () => (azimuthal ? [0]
+    : Array.from({ length: spanHi - spanLo + 1 },
+                 (_, i) => (spanLo + i) * COPY_SPAN));
+
+  /* Register something that draws per world copy. Returns an unsubscribe,
+     because a map that is rebuilt (projection change, a weather key) must
+     not leave its old layers being redrawn for ever. */
+  /* Which world copies a view from `west` to `east` needs.
+
+     Exactly what is on screen, no margin: a margin of one world sounds
+     safer and costs five copies at rest where three will do - measured,
+     290 land paths against 174, for nothing anybody can see. Growing
+     during the drag is what makes a margin unnecessary. */
+  function worldSpan(west, east) {
+    if (!Number.isFinite(west) || !Number.isFinite(east)) {
+      return { lo: -1, hi: 1 };
+    }
+    return { lo: Math.floor(west / COPY_SPAN),
+             hi: Math.ceil(east / COPY_SPAN) };
+  }
+
+  function onCopies(fn) {
+    redrawers.add(fn);
+    return () => redrawers.delete(fn);
+  }
+
+  function watchCopies(map) {
+    if (azimuthal) return;
+    const look = () => {
+      const b = map.getBounds();
+      // Exactly what is on screen, no margin. A margin of one world
+      // sounds safer and costs five copies at rest where three will do -
+      // measured: 290 land paths against 174, for nothing anybody can
+      // see. Growing *during* the drag is what makes the margin
+      // unnecessary, which is why this listens to `move` and not only to
+      // `moveend`; the check is two divisions, so it is cheap enough to
+      // run on every frame of a pan.
+      const { lo, hi } = worldSpan(b.getWest(), b.getEast());
+      if (lo === spanLo && hi === spanHi) return;
+      spanLo = lo;
+      spanHi = hi;
+      // One bad drawer must not stop the others: the result of that is a
+      // map missing one layer, not a map missing all of them.
+      redrawers.forEach((fn) => {
+        try { fn(); } catch (e) { /* keep going */ }
+      });
+    };
+    map.on('move moveend zoomend', look);
+    look();
+  }
 
   // ---- Maidenhead ----------------------------------------------------------
   // Two to eight characters. PSK Reporter reports ten - FT8 stations that
@@ -238,7 +317,8 @@ window.HDMap = (function () {
       attribution: 'Natural Earth (public domain)',
     });
     const out = [];
-    copies().forEach((dx) => {
+    const drawn = new Set();
+    const build = (dx) => {
       out.push(layer(window.WORLD_LAND, dx,
                      { color: theme.grip, weight: 0.6,
                        fillColor: theme.panel2, fillOpacity: 1 }));
@@ -256,8 +336,25 @@ window.HDMap = (function () {
                        { color: theme.grip, weight: 0.5, opacity: 0.6,
                          fill: false }));
       }
-    });
-    return L.layerGroup(out);
+      drawn.add(dx);
+    };
+    const group = L.layerGroup();
+    // Land has to reach wherever the pan has got to, or the overlays that
+    // follow the view float over blank background - which is precisely
+    // what the old hard edge existed to prevent. Rebuilt rather than
+    // appended to, because the span moves as well as grows, and three or
+    // four GeoJSON layers only change hands when a world boundary is
+    // crossed.
+    const paint = () => {
+      out.length = 0;
+      drawn.clear();
+      group.clearLayers();
+      copies().forEach(build);
+      out.forEach((l) => group.addLayer(l));
+    };
+    paint();
+    onCopies(paint);
+    return group;
   }
 
   function basemap(conf) {
@@ -370,11 +467,14 @@ window.HDMap = (function () {
     } else {
       // Not worldCopyJump: it teleports the view back to the middle copy,
       // which is precisely the pan being made to reach something drawn in the
-      // one next door. The copies are really drawn instead, and panning stops
-      // where they do rather than at an arbitrary edge.
+      // one next door. The copies are really drawn instead.
       o.worldCopyJump = false;
       o.minZoom = 1;
-      o.maxBounds = L.latLngBounds([[-85, -WORLD_EDGE], [85, WORLD_EDGE]]);
+      // Latitude is bounded - there is nothing above the pole and falling
+      // off the top is only ever a mistake. Longitude is not: the copies
+      // grow to meet the view (see `watchCopies`), so east and west go on
+      // as long as somebody keeps dragging.
+      o.maxBounds = L.latLngBounds([[-85, -Infinity], [85, Infinity]]);
       o.maxBoundsViscosity = 1;
     }
     // **Scrolling the board must not zoom the map.** A tile is something
@@ -389,6 +489,8 @@ window.HDMap = (function () {
     map.createPane('basemap').style.zIndex = 200;
     if (azimuthal) map.setView([opts.centre.lat, opts.centre.lon], 2);
     else map.setView(opts.view || [20, 0], opts.zoom || 1);
+    // After the view is set, so the first look sees where it actually is.
+    watchCopies(map);
     return map;
   }
 
@@ -628,6 +730,11 @@ window.HDMap = (function () {
       });
     }
 
+    // Whatever is switched on gets redrawn into the new world copy. sync()
+    // already draws only the layers that are on, so this costs nothing for
+    // the ones that are off.
+    onCopies(() => sync());
+
     return { groups, overlays, sync, canvas,
              draw: { greyline: () => drawGreyline(groups.greyline),
                      aurora: drawAurora, drap: drawDrap, muf: drawMuf } };
@@ -638,7 +745,7 @@ window.HDMap = (function () {
 
     theme, readTheme, D2R,
     toLatLon, toGrid, unwrapLon, endpoint, greatCircle,
-    copies, each, shift, WORLD_EDGE,
+    copies, each, shift, WORLD_EDGE, onCopies, worldSpan,
     subsolar, nightPolygon, drawGreyline,
     azimuthalCRS, builtInBasemap, basemap,
     create, resetControl, spaceLayers,

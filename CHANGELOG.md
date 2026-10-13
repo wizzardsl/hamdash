@@ -7,6 +7,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **The map pans east and west for ever now.** It used to stop after about
+  a world and a half in either direction, because the world was drawn
+  exactly three times and panning was fenced in to match. The copies
+  follow where you are instead, so there is always land under you — and
+  the overlays follow too, so the aurora and the greyline are there when
+  you arrive. It costs no more than before at rest, and no more than
+  before however far you drag.
 - **The aurora overlay looks like an aurora now.** It was drawn as one dot
   per grid cell at a fixed three pixels, which could only line up at a
   single zoom — everywhere else it was stipple — with three hard colour

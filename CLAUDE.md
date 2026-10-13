@@ -1048,12 +1048,31 @@ QRM or fading.
   contact unwrapped to -221 - which is exactly where Japan is, one world west
   - floated in blank background and the map looked broken at the moment it was
   being most correct. Land, greyline, aurora, D-RAP, ionosondes, the station
-  pair and the logged contacts all repeat; `maxBounds` stops panning where the
-  land stops, so there is no edge to fall off. Azimuthal returns `[0]`: it is
+  pair and the logged contacts all repeat. Azimuthal returns `[0]`: it is
   a disc centred on you and wrapping means nothing there.
-- **`worldCopyJump` is off, deliberately.** It teleports the view back to the
-  middle copy, which is precisely the pan you are making to reach a contact
-  drawn in the one next door.
+- **The copies follow the view; they are not a fixed three.** They were,
+  with `maxBounds` stopping the pan at 1.5 worlds either side so you could
+  never reach the edge of them. That is a wall - drag far enough west and
+  the map refuses, where every tile basemap on the web repeats for ever,
+  and it is what somebody noticed by comparing. `watchCopies` moves the
+  span on `move` as well as `moveend`, so new land is drawn during the
+  drag rather than after it, and `onCopies` is how a layer registers to be
+  redrawn. Longitude has no bound now; latitude still does, because there
+  is nothing above the pole.
+  **It follows rather than grows.** Growing-only was the first version and
+  it leaks: four drags reached nine worlds west and 630 land paths, and
+  nothing was ever going to give them back. Anything off screen by more
+  than a world is dropped, so the cost is flat however far somebody
+  drags - measured at 231 paths eight worlds out, against 174 at rest.
+  **No margin**, either: a world of lookahead sounds safer and costs five
+  copies at rest where three will do, for nothing anybody can see.
+  `worldSpan` is the arithmetic, pure and tested.
+- **`worldCopyJump` is off, deliberately**, and stays off now panning is
+  unbounded - it would be the cheap way to do it. It teleports the view
+  back to the middle copy, which is precisely the pan you are making to
+  reach a contact drawn in the one next door: paths are unwrapped into
+  that copy on purpose, so a contact at -221 is drawn at -221 and the
+  jump would move the view away from the thing being reached for.
 - Framing (`fit`, `fitSelected`, `plotLogged`) must use the primary copy only,
   or fitBounds spans three worlds and zooms out to nothing.
 - **The built-in basemap lives in its own pane, under everything.** It used to
