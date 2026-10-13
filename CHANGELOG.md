@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **The aurora overlay looks like an aurora now.** It was drawn as one dot
+  per grid cell at a fixed three pixels, which could only line up at a
+  single zoom — everywhere else it was stipple — with three hard colour
+  steps that drew visible contour lines through it, and a cut-off that
+  ended the oval square instead of letting it fade. It is one image per
+  world copy now, built at the data's own resolution and smoothed by the
+  browser, with colour and transparency both following the intensity. It
+  is also about 30% less data and three map layers instead of 22,908.
 - **A port already in use now says so.** Passing `--port` is how you pin
   the address a remote browser bookmarks, and picking one something else
   already has gave a traceback ending in “an attempt was made to access a

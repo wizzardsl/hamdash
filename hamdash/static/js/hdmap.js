@@ -408,6 +408,50 @@ window.HDMap = (function () {
     new Reset({ position: 'topleft' }).addTo(map);
   }
 
+  // ---- the aurora ramp ---------------------------------------------------
+
+  /* Per cent at which the ramp is fully saturated.
+
+     Not 100. OVATION is a probability and a quiet day peaks near 28 - that
+     was the whole trouble with the old fixed >=40 / >=20 steps, which on
+     such a day put everything in one band and never drew the top one at
+     all. Anything above this clamps, so a real storm still reads as the
+     strongest the scale goes rather than running off the end of it. */
+  const AURORA_FULL = 50;
+
+  const hex2rgb = (h) => {
+    const v = String(h).trim().replace('#', '');
+    const n = v.length === 3
+      ? v.split('').map((c) => c + c).join('')
+      : v.slice(0, 6);
+    const i = parseInt(n, 16);
+    return Number.isFinite(i) ? [(i >> 16) & 255, (i >> 8) & 255, i & 255]
+      : [255, 255, 255];
+  };
+
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+  /* Intensity to colour and alpha, continuously.
+
+     Both at once, which is the half that was missing: colour alone has to
+     end somewhere, and wherever it ends is a visible edge. Alpha carries
+     the faint outer oval down to nothing, so the overlay stops where the
+     aurora does instead of where the threshold was.
+
+     Gamma 0.6 on the alpha because a straight ramp makes everything below
+     about 15% invisible, and that is most of the field on most days. */
+  function auroraRamp(pct, stops) {
+    // `Math.min(1, NaN)` is NaN, so a junk reading would sail straight
+    // through the clamp and paint NaN into the image - which is nothing at
+    // all, a hole in the overlay rather than an error anybody could see.
+    const n = Number(pct);
+    const t = Number.isFinite(n)
+      ? Math.max(0, Math.min(1, n / AURORA_FULL)) : 0;
+    const [lo, mid, hi] = stops;
+    const rgb = t < 0.5 ? mix(lo, mid, t * 2) : mix(mid, hi, (t - 0.5) * 2);
+    return [rgb[0], rgb[1], rgb[2], Math.round(255 * Math.pow(t, 0.6))];
+  }
+
   // ---- space weather -------------------------------------------------------
   // These go through the host, not straight from the card: NOAA's aurora grid
   // is ~1.5 MB of mostly zero, they publish every five minutes, and a card
@@ -424,24 +468,83 @@ window.HDMap = (function () {
       weather: null,
     };
 
+    /* The aurora is a field, so it is drawn as an image and not as dots.
+     *
+     * It used to be one `circleMarker` per cell at `radius: 3`. Three
+     * *screen* pixels is a fixed size at every zoom, so the dots could tile
+     * the globe at one zoom and no other: zoomed out they left gaps and
+     * read as stipple, zoomed in they were isolated specks. Thresholding at
+     * 8% also cut the oval off square at an 8% contour, and three hard
+     * colour steps (>=40, >=20, else) drew two visible bands through it -
+     * and on a quiet day, when the whole field peaks near 28%, the top band
+     * never appeared at all and most of the oval came out one flat colour.
+     *
+     * One `imageOverlay` per world copy instead, built at the grid's own
+     * resolution and left for the browser to scale. The smoothness is the
+     * GPU's bilinear filtering, which costs nothing: 1 image against 7636
+     * cells x 3 copies = 22908 layer objects.
+     */
+    // Read at draw time, not captured: applying a theme is async and a
+    // colour copied at boot is the stylesheet's default (see hamdash:theme).
+    const auroraColour = (pct) => auroraRamp(pct, [
+      hex2rgb(theme.signal), hex2rgb(theme.accent), hex2rgb(theme.alert)]);
+
+    function auroraImage(g, bytes) {
+      const c = document.createElement('canvas');
+      c.width = g.w;
+      c.height = g.h;
+      const img = c.getContext('2d').createImageData(g.w, g.h);
+      const px = img.data;
+      for (let iy = 0; iy < g.h; iy++) {
+        // The grid runs south to north; image rows run top down.
+        const row = (g.h - 1 - iy) * g.w;
+        for (let ix = 0; ix < g.w; ix++) {
+          const pct = bytes[iy * g.w + ix];
+          const o = (row + ix) * 4;
+          if (!pct) { px[o + 3] = 0; continue; }
+          const [r, gg, b, a] = auroraColour(pct);
+          px[o] = r; px[o + 1] = gg; px[o + 2] = b; px[o + 3] = a;
+        }
+      }
+      c.getContext('2d').putImageData(img, 0, 0);
+      return c.toDataURL('image/png');
+    }
+
     async function drawAurora() {
       try {
-        const d = await HD.get('/api/space/aurora', { threshold: 8 });
+        const d = await HD.get('/api/space/aurora', { threshold: 1, grid: 1 });
         groups.aurora.clearLayers();
         if (!d.ok) { say({ error: d.error || 'no aurora data' }); return; }
         say({ error: '' });
-        // Canvas, not SVG: this is a couple of thousand cells and one DOM
-        // node each would make panning crawl.
-        d.cells.forEach(([lon, lat, pct]) => {
-          each((dx) => L.circleMarker([lat, lon + dx], {
-            renderer: canvas, radius: 3, stroke: false,
-            fillColor: pct >= 40 ? theme.alert
-              : pct >= 20 ? theme.accent : theme.signal,
-            fillOpacity: Math.min(0.8, 0.12 + pct / 100),
-            interactive: false,
-          }).addTo(groups.aurora));
-        });
+        if (!d.grid || !d.grid.data) { drawAuroraDots(d); return; }
+        const g = d.grid;
+        const bin = atob(g.data);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = auroraImage(g, bytes);
+        const south = g.lat0;
+        const north = g.lat0 + (g.h - 1) * g.step_lat;
+        const west = g.lon0;
+        const east = g.lon0 + g.w * g.step_lon;
+        each((dx) => L.imageOverlay(url, [[south, west + dx], [north, east + dx]], {
+          opacity: 0.75, interactive: false, className: 'hd-aurora',
+        }).addTo(groups.aurora));
       } catch (e) { say({ error: `aurora: ${e.message}` }); }
+    }
+
+    /* If the host is older than the grid field, or NOAA publishes something
+       that is not a regular grid, there is still an overlay. */
+    function drawAuroraDots(d) {
+      (d.cells || []).forEach(([lon, lat, pct]) => {
+        if (pct < 8) return;
+        each((dx) => L.circleMarker([lat, lon + dx], {
+          renderer: canvas, radius: 3, stroke: false,
+          fillColor: pct >= 40 ? theme.alert
+            : pct >= 20 ? theme.accent : theme.signal,
+          fillOpacity: Math.min(0.8, 0.12 + pct / 100),
+          interactive: false,
+        }).addTo(groups.aurora));
+      });
     }
 
     async function drawDrap() {
@@ -531,7 +634,7 @@ window.HDMap = (function () {
   }
 
   return {
-    zoomSteps,
+    zoomSteps, auroraRamp, hex2rgb, AURORA_FULL,
 
     theme, readTheme, D2R,
     toLatLon, toGrid, unwrapLon, endpoint, greatCircle,

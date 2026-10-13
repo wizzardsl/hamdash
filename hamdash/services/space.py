@@ -18,6 +18,7 @@ three reasons:
 """
 from __future__ import annotations
 
+import base64
 import threading
 import time
 
@@ -34,6 +35,50 @@ TIMEOUT = 25.0
 USER_AGENT = "hamdash (+https://github.com/wizzardsl/hamdash)"
 
 
+def _raster(lons: set, lats: set, seen: dict) -> dict | None:
+    """The grid as one byte a cell, west to east and south to north.
+
+    Sent instead of a list of triples so the browser can draw the aurora as
+    an *image* and let the GPU interpolate it, rather than as thousands of
+    dots. A dot of fixed pixel size cannot tile the globe at more than one
+    zoom, which is what made the old overlay look stippled.
+
+    The step is measured rather than assumed - NOAA has published this at
+    more than one resolution - and anything that is not a complete regular
+    grid returns None, so the caller falls back to the cells.
+    """
+    if len(lons) < 2 or len(lats) < 2:
+        return None
+    xs, ys = sorted(lons), sorted(lats)
+    step_x = min(b - a for a, b in zip(xs, xs[1:]))
+    step_y = min(b - a for a, b in zip(ys, ys[1:]))
+    if step_x <= 0 or step_y <= 0:
+        return None
+    w, h = len(xs), len(ys)
+    if w * h != len(seen):          # ragged, or duplicated: not a grid
+        return None
+    buf = bytearray(w * h)
+    for (lon, lat), pct in seen.items():
+        ix = int(round((lon - xs[0]) / step_x))
+        iy = int(round((lat - ys[0]) / step_y))
+        if 0 <= ix < w and 0 <= iy < h:
+            buf[iy * w + ix] = max(0, min(255, pct))
+    # Longitude is NOAA's 0..360. Roll it to start at -180 so the image
+    # lines up with the map without the browser having to think about it.
+    if xs[0] >= 0 and xs[-1] > 180:
+        half = int(round(180 / step_x))
+        rolled = bytearray(w * h)
+        for iy in range(h):
+            row = buf[iy * w:(iy + 1) * w]
+            rolled[iy * w:(iy + 1) * w] = row[half:] + row[:half]
+        buf = rolled
+        lon0 = xs[0] - 180
+    else:
+        lon0 = xs[0]
+    return {"w": w, "h": h, "lon0": lon0, "lat0": ys[0],
+            "step_lon": step_x, "step_lat": step_y,
+            "data": base64.b64encode(bytes(buf)).decode("ascii")}
+
 class Aurora:
     """OVATION aurora probability, cached and thinned."""
 
@@ -43,7 +88,8 @@ class Aurora:
         self._data: dict | None = None
         self._error = ""
 
-    def get(self, threshold: int = 5, force: bool = False) -> dict:
+    def get(self, threshold: int = 5, force: bool = False,
+            grid: bool = False) -> dict:
         """Cells at or above `threshold` percent, as [lon, lat, percent].
 
         Thresholding is what makes this small: the aurora is confined to high
@@ -58,11 +104,20 @@ class Aurora:
                 return {"ok": False, "error": self._error or "no aurora data",
                         "cells": []}
             cells = [c for c in self._data["cells"] if c[2] >= threshold]
-            return {"ok": True, "cells": cells, "threshold": threshold,
-                    "observed": self._data["observed"],
-                    "forecast": self._data["forecast"],
-                    "age_s": round(time.time() - self._at),
-                    "total_cells": len(self._data["cells"])}
+            out = {"ok": True, "cells": cells, "threshold": threshold,
+                   "observed": self._data["observed"],
+                   "forecast": self._data["forecast"],
+                   "age_s": round(time.time() - self._at),
+                   "total_cells": len(self._data["cells"])}
+            # `grid=True` means "the raster, or the cells only if you
+            # cannot". Sending both would be 85 kB of image on top of 115
+            # kB of triples describing the same field, so the cells go
+            # when the raster is there - and stay when it is not, which is
+            # what the caller falls back to.
+            if grid and self._data.get("grid"):
+                out["grid"] = self._data["grid"]
+                out["cells"] = []
+            return out
 
     def _refresh(self) -> None:
         try:
@@ -78,11 +133,21 @@ class Aurora:
             self._error = "NOAA returned no aurora grid"
             return
         cells = []
+        # The grid is read as well as thinned. Measured against a live run:
+        # 360 x 181 at exactly 1 degree, 65160 rows with no gaps. One byte a
+        # cell is 85 kB of base64 for the *whole* field - smaller than the
+        # 115 kB of sparse triples that thresholding at 8% produces, and it
+        # keeps the faint edge that a threshold cuts off square.
+        lons, lats = set(), set()
+        seen = {}
         for row in coords:
             try:
                 lon, lat, pct = float(row[0]), float(row[1]), int(row[2])
             except (TypeError, ValueError, IndexError):
                 continue
+            lons.add(lon)
+            lats.add(lat)
+            seen[(lon, lat)] = pct
             if pct <= 0:
                 continue
             # NOAA gives longitude 0..360; the rest of the world uses -180..180.
@@ -90,6 +155,7 @@ class Aurora:
                 lon -= 360
             cells.append([round(lon, 1), round(lat, 1), pct])
         self._data = {"cells": cells,
+                      "grid": _raster(lons, lats, seen),
                       "observed": raw.get("Observation Time", ""),
                       "forecast": raw.get("Forecast Time", "")}
         self._at = time.time()

@@ -744,7 +744,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             threshold = max(1, min(100, int(request.args.get("threshold", 5))))
         except ValueError:
             threshold = 5
-        return jsonify(aurora.get(threshold))
+        # `grid=1` adds the whole field as one byte a cell, for drawing it as
+        # an image rather than as a few thousand dots. Smaller than the
+        # thresholded cells and it keeps the faint edge they cut off.
+        grid = request.args.get("grid", "") in ("1", "true", "yes")
+        return jsonify(aurora.get(threshold, grid=grid))
 
     @app.get("/api/space/drap")
     @guard("space")

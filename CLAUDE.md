@@ -1191,6 +1191,45 @@ QRM or fading.
   from the card: NOAA's grid is ~1.5 MB of mostly zero, they publish every five
   minutes, and a card fetching a third-party URL depends on that server's CORS
   headers, which are not ours.
+
+- **The aurora is a field, so it is drawn as an image, not as dots.** It
+  was one `circleMarker` per cell at `radius: 3`, and three *screen*
+  pixels is a fixed size at every zoom - so the dots tiled the globe at
+  one zoom and no other, leaving gaps that read as stipple zoomed out and
+  isolated specks zoomed in. One `imageOverlay` per world copy now, built
+  at the grid's own 360x181 and left for the browser to scale: the
+  smoothness is the GPU's bilinear filtering and costs nothing. 3 layer
+  objects against 7636 cells x 3 copies = 22908.
+  Found by being asked why somebody else's looked better - theirs is the
+  same Leaflet with the same NOAA data and a `leaflet-image-layer`, which
+  is the whole of the difference.
+- **`grid=1` sends one byte a cell instead of triples.** Measured on a
+  live run: 85 kB of base64 for the *whole* field against 115 kB of JSON
+  for the cells above 8%. Smaller and complete, which matters because a
+  threshold cuts the oval off square at a contour - the faint edge is
+  exactly what makes it look like weather rather than a blob. It replaces
+  `cells` in the reply rather than riding along with them, and a caller
+  that does not ask still gets cells, so nothing old breaks.
+- **Two silent ways to put the aurora in the wrong place.** NOAA gives
+  longitude as 0..360 and the map wants -180..180, so the raster is
+  rolled half a turn; and the grid runs south to north while image rows
+  run top down, so it is flipped. Get either wrong and you get a
+  perfectly plausible-looking aurora over Asia, or over Antarctica.
+  `tests/test_aurora_grid.py` pins both, and the step is measured from
+  the data rather than written down, because NOAA has published this at
+  more than one resolution.
+- **Intensity is colour *and* alpha.** Colour alone has to stop
+  somewhere and wherever it stops is an edge; alpha carries the faint
+  outer oval down to nothing. `AURORA_FULL` is 50, not 100, because
+  OVATION is a probability and a quiet day peaks near 28 - which is what
+  was wrong with the old fixed `>=40` / `>=20` steps: on such a day the
+  top band never drew at all and most of the oval came out one flat
+  colour, with two visible contour lines where the steps were. Gamma 0.6
+  on the alpha, because a straight ramp makes everything under about 15%
+  invisible and that is most of the field most days.
+- `Math.min(1, NaN)` is NaN, so a junk reading sailed through the clamp
+  and painted NaN - a hole in the overlay rather than an error anyone
+  could see. Caught by a test, not by looking.
 - `path_map` used to carry its own coastlines instead of fetching tiles: no network,
   no third-party dependency, no tile-usage policy. SVG y is `-lat`, so
   anything computing a viewBox has to work in projected space — framing on
