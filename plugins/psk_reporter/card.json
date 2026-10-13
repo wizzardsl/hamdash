@@ -23,7 +23,7 @@
       "type": "string",
       "label": "Watch",
       "default": "",
-      "help": "A callsign, or a grid square for everything around it (CN89, CN89kg). Left empty, your own grid is used. Clicking the map picks a square. PSK Reporter has no 'whole world' query - every one is anchored on a callsign or a grid."
+      "help": "A callsign to follow both ways - who is hearing it and what it is hearing - or a four-character grid square for everything heard there. Blank uses your own grid from Settings."
     },
     "basemap": {
       "type": "select",
@@ -81,12 +81,6 @@
       "label": "OpenWeatherMap key",
       "default": "",
       "help": "Only needed for the cloud layer. Free tier is plenty. Without a key the cloud layer is hidden rather than broken."
-    },
-    "appcontact": {
-      "type": "string",
-      "label": "Contact address for PSK Reporter",
-      "default": "",
-      "help": "Optional, and empty by default. PSK Reporter asks heavy users of the API for an address so they can get in touch about load rather than simply blocking. Filling this in sends it with every query; leaving it empty sends nothing."
     }
   }
 }

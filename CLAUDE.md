@@ -1164,29 +1164,56 @@ QRM or fading.
   pins, framing and data. Both map cards use it, so a fix lands once. Leaflet
   and proj4 are vendored in `hamdash/static/vendor/` (BSD-2, ~190 kB with
   images) rather than from a CDN, so they work offline and frozen.
-- **A card that reads somebody else's API owns the cache, and the floor is in
-  the card, not the page.** `psk_reporter` is the pattern: PSK Reporter asks
-  for one retrieval every five minutes and reserves the right to block heavy
-  users, while a filter bar invites a request per keystroke. So the card
-  fetches once per query, serves everything else from memory, filters entirely
-  in the browser over what was already fetched, and refuses to let a Refresh
-  button jump the queue. It reports the age and the wait rather than
-  pretending, and keeps serving stale data through an outage.
-- **A failure has to wait its turn as surely as a success does.** Found by
-  causing it: with nothing cached, a 429 left nothing holding the clock, so
-  the page's own poll would have retried once a minute into the rate limit
-  that the retrying caused. `Fetcher` stores failures like answers, with a
-  `wait` that honours their `Retry-After`.
-- **Pull incrementally where the API offers it.** PSK Reporter returns
-  `lastSequenceNumber` on every reply and takes `lastseqno` on the next, so
-  each pull after the first carries only what is new - their developer notes
-  ask for exactly this. `psk_reporter/store.py` accumulates into SQLite
-  instead of re-fetching, which also lifts the `rptlimit` ceiling (a busy
-  square truncated at 2000 and covered barely ten minutes) and makes the time
-  filter free: the window is a `SELECT`, not a different upstream question.
-  **Correctness must not depend on the marker** - rows are keyed on
-  `(target, tx, rx, at, hz)`, so an ignored `lastseqno` costs bandwidth and
-  nothing else.
+- **A card that reads somebody else's API owns the cache, and the floor is
+  in the card, not the page.** The reasoning survives even though
+  `psk_reporter` no longer polls: a filter bar invites a request per
+  keystroke, so every filter runs against the store or in the browser -
+  band, mode, signal, country, direction, the time window - and none of
+  them reaches the network. `spots` and `satellites` still hold the floor
+  the original way.
+- **`psk_reporter` listens now; it does not ask.** PSK Reporter publish a
+  live MQTT feed, so the five minute floor, the `lastseqno` marker and the
+  back-off after a rate limit are all gone with the thing they protected.
+  What they were protecting against is worth remembering: `rptlimit`
+  truncated a busy square at 2000 rows covering barely ten minutes, and
+  the request itself could time out. Neither can happen to a subscription.
+  `plugins/psk_reporter/mqtt.py` is the subscriber.
+- **The topic tree is the reason it fits:**
+  `pskr/filter/v2/{band}/{mode}/{tx}/{rx}/{tx_grid}/{rx_grid}/{tx_dxcc}/{rx_dxcc}`
+  - so "who is hearing me" and "what am I hearing" are two subscriptions
+  rather than a query filtered afterwards. A callsign gets both; a grid
+  gets the receiver-square slot, and **four characters**, because that is
+  what the topic carries - a six-character locator subscribed verbatim
+  matches nothing at all, which looks exactly like a quiet band.
+- **Hand-rolled MQTT, not `paho-mqtt`.** Subscribing is four packets, and
+  a frozen card runs inside the hamdash binary (invariant 6), so a card's
+  dependency is in every build including those of people who never install
+  the card. `spots/telnet.py` hand-rolls its protocol for the same reason.
+- **MQTT is a stream, and reading the wrong number of bytes does not
+  raise.** It desynchronises everything after it, which presents as
+  garbled topics and JSON with two bytes of binary on the front. Found
+  that way: the first attempt read two bytes of SUBACK when it is three,
+  and saw 4 spots in 20 seconds where the fixed one sees 56 in 4. It
+  looked like a quiet band. `Reader` buffers, and the tests split a packet
+  at every plausible boundary.
+- **The store is kept, and now for a different reason.** It used to lift
+  the `rptlimit` ceiling; now it is what makes the window deeper than this
+  session - spots accumulate as they arrive and a restart does not begin
+  at nothing. Rows are still keyed on `(target, tx, rx, at, hz)`, so the
+  same spot twice is one row. **`at` is the *transmit* time** (`t_tx`, not
+  `t`), because that is what the query's `flowStartSeconds` was and `at`
+  is in the key: two sources disagreeing about when a spot happened would
+  show up as duplicate rows seconds apart.
+- **One feed per watched target, not per tile**, and one nobody has asked
+  about for `Live.IDLE` is closed - a connection to a public broker is a
+  thing to let go of, like a sound card. Spots are buffered and written in
+  batches, because a transaction per spot is a write per spot and a busy
+  band delivers 56 in four seconds.
+- **A live card that has seen nothing is not stale, it is new.** The
+  status line says whether the feed is up and how much is held, not how
+  long ago it polled, and there is no Refresh button, because there is
+  nothing to ask again. A button that does nothing is worse than no
+  button.
 - **A card's cache belongs on disk, not only in memory.** In memory it lasts
   exactly as long as the process, and "no more than one request every five
   minutes" is not honoured by restarting. `card.store` (from `HAMDASH_HOME`)

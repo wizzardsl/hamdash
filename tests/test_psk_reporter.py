@@ -1,13 +1,15 @@
-"""PSK Reporter card: the store, the incremental pull, and reading their XML.
+"""PSK Reporter card: the live feed, the rows it makes, and the store.
 
-The store is the part worth guarding. Philip Gladstone asks that data be
-retrieved no more often than once every five minutes, says he reserves the
-right to rate limit or block anyone who loads his system, and asks for "an
-adaptive use of the retrieval mechanism". A map with a filter bar is a machine
-for making requests if you let it be, so the floor lives in the card and the
-pulls are incremental.
+The card listens to PSK Reporter's MQTT feed rather than polling their
+query API. The polling is gone and so are the tests of it - the five
+minute floor, the `lastseqno` marker, the back-off after a rate limit -
+because there is nothing left to poll. What replaced them is the
+conversion from a spot to a row, which is where the two sources differ
+in words rather than in meaning, and the manager that owns the
+connections.
 
-Nothing here touches pskreporter: every response is a recorded one.
+`mqtt.py` is tested separately in `test_psk_mqtt.py`, over bytes.
+Nothing here touches the network.
 
 Run with:  python -m unittest discover -s tests
 """
@@ -17,7 +19,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "plugins" / "psk_reporter"))
@@ -25,343 +26,149 @@ sys.path.insert(0, str(ROOT / "plugins" / "psk_reporter"))
 import card as psk                                            # noqa: E402
 import store as pskstore                                      # noqa: E402
 
-
-def reports_xml(rows, seq="72903109693"):
-    """Their reply shape: reports, then the high-water mark."""
-    body = "".join(
-        f'<receptionReport receiverCallsign="{r["rx"]}" '
-        f'receiverLocator="{r.get("rx_grid", "")}" '
-        f'senderCallsign="{r["tx"]}" senderLocator="{r.get("tx_grid", "")}" '
-        f'frequency="{r.get("hz", 14074000)}" '
-        f'flowStartSeconds="{r["at"]}" mode="{r.get("mode", "FT8")}" '
-        f'isSender="{1 if r.get("is_tx") else 0}" '
-        f'isReceiver="{1 if r.get("is_rx") else 0}" '
-        f'senderDXCC="{r.get("tx_dxcc", "")}" '
-        f'receiverDXCC="{r.get("rx_dxcc", "")}" '
-        f'sNR="{r.get("snr", -10)}" />'
-        for r in rows)
-    tail = f'<lastSequenceNumber value="{seq}"/>' if seq else ""
-    return (f'<?xml version="1.0"?><receptionReports>{body}{tail}'
-            f'<maxFlowStartSeconds value="1789860165"/></receptionReports>')
+# A spot exactly as the live feed sends one.
+SPOT = {"sq": 73665028629, "f": 14076550, "md": "FT8", "rp": -17,
+        "t": 1791866549, "t_tx": 1791866535, "sc": "VA7ZT",
+        "sl": "DN19di41", "rc": "BG2MGR", "rl": "PN23pv",
+        "sa": 1, "ra": 318, "b": "20m",
+        "topic": "pskr/filter/v2/20m/FT8/VA7ZT/BG2MGR/DN19/PN23/1/318"}
 
 
-def a_reply(rows=None, seq="72903109693", status=200):
-    now = int(time.time())
-    if rows is None:
-        rows = [{"tx": "JO7KMB", "rx": "VE7WCC", "tx_grid": "QM09ng",
-                 "rx_grid": "CN89OF", "hz": 18101796, "at": now - 120,
-                 "is_rx": True, "tx_dxcc": "Japan", "rx_dxcc": "Canada",
-                 "snr": -9},
-                {"tx": "VE7ZAX", "rx": "AC1OR", "tx_grid": "CN89kf",
-                 "rx_grid": "FN41ht54", "hz": 14076809, "at": now - 60,
-                 "is_tx": True, "tx_dxcc": "Canada",
-                 "rx_dxcc": "United States", "snr": -23}]
-    r = mock.Mock(status_code=status, text=reports_xml(rows, seq), headers={})
-    r.raise_for_status.return_value = None
-    return r
+class TestASpotBecomesARow(unittest.TestCase):
+    """The feed and the old query say the same things in different words."""
 
+    def test_the_two_callsigns_and_their_squares(self):
+        r = psk.as_row("VA7ZT", SPOT)
+        self.assertEqual(r["tx"], "VA7ZT")
+        self.assertEqual(r["rx"], "BG2MGR")
+        self.assertEqual(r["tx_grid"], "DN19di41")
+        self.assertEqual(r["rx_grid"], "PN23pv")
 
-class WithStore(unittest.TestCase):
-    def setUp(self):
-        self.home = Path(tempfile.mkdtemp(prefix="hamdash-psk-"))
-        self.addCleanup(shutil.rmtree, self.home, True)
-        self.store = pskstore.Store(self.home / "reports.sqlite3")
-        self.f = psk.Fetcher(self.store)
+    def test_frequency_signal_and_mode(self):
+        r = psk.as_row("VA7ZT", SPOT)
+        self.assertEqual(r["hz"], 14076550)
+        self.assertEqual(r["snr"], -17)
+        self.assertEqual(r["mode"], "FT8")
 
-    def fetch(self, reply=None, **kw):
-        with mock.patch("card.requests.get",
-                        return_value=reply if reply is not None else a_reply()) as get:
-            self.got = self.f.get(kw.pop("watch", "CN89"),
-                                  kw.pop("as_grid", True),
-                                  kw.pop("window", 86400), **kw)
-        self.get = get
-        return self.got
+    def test_the_band_is_derived_from_the_one_band_table(self):
+        """Not `b` off the wire: three band tables had already drifted
+        apart in this tree once, and 5.3 MHz was 60m to one of them and
+        out of band to another."""
+        self.assertEqual(psk.as_row("VA7ZT", SPOT)["band"], "20m")
 
+    def test_the_time_is_when_it_was_transmitted(self):
+        """`t_tx`, not `t`. The query API gave `flowStartSeconds`, which
+        is the transmit time, and `at` is part of the primary key - two
+        sources disagreeing about when a spot happened would show up as
+        duplicate rows seconds apart."""
+        self.assertEqual(psk.as_row("VA7ZT", SPOT)["at"], 1791866535)
 
-class TestReadingTheirXml(WithStore):
-    def setUp(self):
-        super().setUp()
-        self.fetch()
+    def test_which_side_the_watched_station_was_on(self):
+        """The feed does not say, so it is read off the callsigns."""
+        tx = psk.as_row("VA7ZT", SPOT)
+        self.assertTrue(tx["is_tx"])
+        self.assertFalse(tx["is_rx"])
+        rx = psk.as_row("BG2MGR", SPOT)
+        self.assertFalse(rx["is_tx"])
+        self.assertTrue(rx["is_rx"])
 
-    def rows(self):
-        return self.got["reports"]
+    def test_a_grid_watch_is_neither_side(self):
+        """A square is not a station, and claiming it transmitted would
+        put it on the wrong end of every path drawn."""
+        r = psk.as_row("DN19", SPOT)
+        self.assertFalse(r["is_tx"])
+        self.assertFalse(r["is_rx"])
 
-    def test_both_reports_are_read(self):
-        self.assertEqual(len(self.rows()), 2)
+    def test_a_lower_case_callsign_still_matches(self):
+        self.assertTrue(psk.as_row("va7zt", SPOT)["is_tx"])
 
-    def test_who_heard_whom(self):
-        calls = {(r["tx"], r["rx"]) for r in self.rows()}
-        self.assertIn(("JO7KMB", "VE7WCC"), calls)
+    def test_a_spot_with_no_callsign_is_dropped(self):
+        for missing in ("sc", "rc"):
+            with self.subTest(missing=missing):
+                self.assertIsNone(psk.as_row("VA7ZT", dict(SPOT, **{missing: ""})))
 
-    def test_the_side_comes_from_the_api_not_a_guess(self):
-        """A grid query has no callsign to compare against, so isSender and
-        isReceiver are the only honest answer to which way a report goes."""
-        by_call = {r["tx"]: r for r in self.rows()}
-        self.assertTrue(by_call["JO7KMB"]["is_rx"])
-        self.assertFalse(by_call["JO7KMB"]["is_tx"])
-        self.assertTrue(by_call["VE7ZAX"]["is_tx"])
+    def test_rubbish_numbers_drop_the_spot_rather_than_raising(self):
+        self.assertIsNone(psk.as_row("VA7ZT", dict(SPOT, f="not a frequency")))
+        self.assertIsNone(psk.as_row("VA7ZT", dict(SPOT, f=0)))
 
-    def test_frequency_becomes_a_band(self):
-        bands = {r["tx"]: r["band"] for r in self.rows()}
-        self.assertEqual(bands["JO7KMB"], "17m")
-        self.assertEqual(bands["VE7ZAX"], "20m")
+    def test_no_time_at_all_is_dropped(self):
+        """`at` is in the primary key, so a zero would collapse every
+        spot for a pair onto one row."""
+        bad = dict(SPOT)
+        bad.pop("t_tx")
+        bad.pop("t")
+        self.assertIsNone(psk.as_row("VA7ZT", bad))
 
-    def test_signal_report_survives_the_round_trip(self):
-        snrs = {r["tx"]: r["snr"] for r in self.rows()}
-        self.assertEqual(snrs["JO7KMB"], -9)
-
-    def test_country_carries_through_for_filtering(self):
-        by_call = {r["tx"]: r for r in self.rows()}
-        self.assertEqual(by_call["JO7KMB"]["tx_dxcc"], "Japan")
+    def test_it_falls_back_to_the_received_time(self):
+        bad = dict(SPOT)
+        bad.pop("t_tx")
+        self.assertEqual(psk.as_row("VA7ZT", bad)["at"], 1791866549)
 
     def test_a_missing_signal_report_is_none_not_zero(self):
-        """Zero decibels is a real and rather good report."""
-        el = mock.Mock(attrib={"senderCallsign": "A", "receiverCallsign": "B",
-                               "frequency": "14074000", "flowStartSeconds": "1"})
-        self.assertIsNone(psk._report(el)["snr"])
-
-    def test_a_report_with_no_callsign_is_dropped(self):
-        el = mock.Mock(attrib={"receiverCallsign": "B", "frequency": "1",
-                               "flowStartSeconds": "1"})
-        self.assertIsNone(psk._report(el))
-
-    def test_rubbish_numbers_drop_the_report_rather_than_raising(self):
-        el = mock.Mock(attrib={"senderCallsign": "A", "receiverCallsign": "B",
-                               "frequency": "banana", "flowStartSeconds": "1"})
-        self.assertIsNone(psk._report(el))
-
-    def test_something_that_is_not_their_xml_says_what_arrived(self):
-        r = mock.Mock(status_code=200, text="<html>down for maintenance</html>",
-                      headers={})
-        r.raise_for_status.return_value = None
-        f = psk.Fetcher(pskstore.Store(self.home / "other.sqlite3"))
-        with mock.patch("card.requests.get", return_value=r):
-            got = f.get("VA7SLL", False, 86400)
-        self.assertFalse(got["ok"])
-        self.assertIn("maintenance", got["error"])
+        """0 dB is a real report, and a strong one."""
+        bad = dict(SPOT)
+        bad.pop("rp")
+        self.assertIsNone(psk.as_row("VA7ZT", bad)["snr"])
 
 
-class TestTheIncrementalPull(WithStore):
-    """`lastseqno` is their own mechanism for "only what is new", and their
-    developer notes ask for it by name."""
+class TestTheFeedManager(unittest.TestCase):
+    """One connection per target, buffered writes, and letting go."""
 
-    def params(self):
-        return self.get.call_args.kwargs["params"]
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp(prefix="hamdash-psklive-"))
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.store = pskstore.Store(self.home / "s.sqlite3")
+        self.live = psk.Live(self.store)
 
-    def test_the_first_pull_asks_for_a_window(self):
-        self.fetch()
-        self.assertIn("flowStartSeconds", self.params())
-        self.assertNotIn("lastseqno", self.params())
+    def test_spots_reach_the_store(self):
+        self.live._spot("VA7ZT", SPOT)
+        self.live.flush()
+        rows = self.store.since("VA7ZT", 10 ** 9)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["rx"], "BG2MGR")
 
-    def test_the_next_pull_asks_only_for_what_is_new(self):
-        self.fetch()
-        self.store.mark("CN89", at=0)          # as if the floor had passed
-        self.fetch(reply=a_reply(rows=[], seq="72903109999"))
-        self.assertEqual(self.params().get("lastseqno"), "72903109693")
-        self.assertNotIn("flowStartSeconds", self.params())
+    def test_they_are_buffered_rather_than_written_one_at_a_time(self):
+        """A busy band delivers 56 spots in four seconds, measured; a
+        transaction each is a write each."""
+        self.live._buf.clear()
+        self.live._flushed = time.time()            # not due yet
+        self.live._spot("VA7ZT", SPOT)
+        self.assertEqual(self.store.count("VA7ZT"), 0, "wrote immediately")
+        self.live.flush()
+        self.assertEqual(self.store.count("VA7ZT"), 1)
 
-    def test_the_marker_advances(self):
-        self.fetch()
-        self.store.mark("CN89", at=0)
-        self.fetch(reply=a_reply(rows=[], seq="72903109999"))
-        self.assertEqual(self.store.state("CN89")["last_seq"], "72903109999")
+    def test_the_same_spot_twice_is_one_row(self):
+        self.live._spot("VA7ZT", SPOT)
+        self.live._spot("VA7ZT", SPOT)
+        self.live.flush()
+        self.assertEqual(self.store.count("VA7ZT"), 1)
 
-    def test_a_reply_without_a_marker_does_not_reset_us(self):
-        """Losing it would mean fetching the whole window again."""
-        self.fetch()
-        self.store.mark("CN89", at=0)
-        self.fetch(reply=a_reply(rows=[], seq=""))
-        self.assertEqual(self.store.state("CN89")["last_seq"], "72903109693")
+    def test_a_spot_that_will_not_convert_is_dropped_quietly(self):
+        self.live._spot("VA7ZT", {"nonsense": True})
+        self.live.flush()
+        self.assertEqual(self.store.count("VA7ZT"), 0)
 
-    def test_reports_accumulate_rather_than_replace(self):
-        """The point of the store: a window deeper than one reply can hold."""
-        now = int(time.time())
-        self.fetch(reply=a_reply(rows=[{"tx": "A1AA", "rx": "VE7WCC",
-                                        "tx_grid": "AA00", "rx_grid": "CN89",
-                                        "at": now - 300}]))
-        self.store.mark("CN89", at=0)
-        self.fetch(reply=a_reply(rows=[{"tx": "B2BB", "rx": "VE7WCC",
-                                        "tx_grid": "BB11", "rx_grid": "CN89",
-                                        "at": now - 60}], seq="999"))
-        calls = {r["tx"] for r in self.got["reports"]}
-        self.assertEqual(calls, {"A1AA", "B2BB"})
+    def test_an_unwatchable_target_starts_no_connection(self):
+        """Empty is not a subscription to the whole world."""
+        self.assertIsNone(self.live.ensure("", as_grid=False))
 
-    def test_an_overlapping_pull_does_not_duplicate(self):
-        """So correctness never depends on lastseqno being honoured: if it is
-        ignored and the same reports arrive twice, they are still one map."""
-        same = a_reply()                        # one reply, sent twice
-        self.fetch(reply=same)
-        self.store.mark("CN89", at=0)
-        self.fetch(reply=same)
-        self.assertEqual(len(self.got["reports"]), 2)
+    def test_asking_twice_is_one_feed(self):
+        a = self.live.ensure("VA7SLL", as_grid=False)
+        self.addCleanup(a.stop)
+        b = self.live.ensure("VA7SLL", as_grid=False)
+        self.assertIs(a, b, "opened a second connection to the same broker")
 
-    def test_a_grid_is_asked_for_as_a_grid(self):
-        self.fetch()
-        self.assertEqual(self.params()["modify"], "grid")
+    def test_a_grid_and_a_callsign_subscribe_differently(self):
+        g = self.live.ensure("CN89", as_grid=True)
+        self.addCleanup(g.stop)
+        self.assertIn("CN89", "".join(g.topics))
+        self.assertEqual(len(g.topics), 1)
+        c = self.live.ensure("VA7SLL", as_grid=False)
+        self.addCleanup(c.stop)
+        self.assertEqual(len(c.topics), 2, "a callsign is both directions")
 
-    def test_a_callsign_is_not(self):
-        self.fetch(watch="VA7SLL", as_grid=False)
-        self.assertNotIn("modify", self.params())
-
-    def test_no_contact_address_is_sent_unless_one_was_given(self):
-        """It is the operator's email. Empty means empty, not absent-ish."""
-        self.fetch()
-        self.assertNotIn("appcontact", self.params())
-        self.store.mark("CN89", at=0)
-        self.fetch(contact="   ")
-        self.assertNotIn("appcontact", self.params())
-
-    def test_a_contact_address_is_sent_when_one_was_given(self):
-        self.fetch(contact="me@example.com")
-        self.assertEqual(self.params()["appcontact"], "me@example.com")
-
-    def test_it_identifies_itself(self):
-        self.fetch()
-        ua = self.get.call_args.kwargs["headers"]["User-Agent"]
-        self.assertIn("hamdash", ua)
-
-
-class TestTheFloor(WithStore):
-    """Five minutes per target, which is the whole reason for a backend."""
-
-    def test_a_second_ask_does_not_reach_them(self):
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            for _ in range(10):
-                self.f.get("CN89", True, 86400)
-        self.assertEqual(get.call_count, 1)
-
-    def test_forcing_cannot_jump_the_queue(self):
-        """The Refresh button must not be a way round somebody else's rules."""
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            self.f.get("CN89", True, 86400)
-            self.f.get("CN89", True, 86400, force=True)
-        self.assertEqual(get.call_count, 1)
-
-    def test_it_says_how_long_until_the_next_one_is_allowed(self):
-        self.fetch()
-        again = self.f.get("CN89", True, 86400)
-        self.assertGreater(again["next_s"], 250)
-        self.assertLessEqual(again["next_s"], psk.MIN_INTERVAL)
-
-    def test_the_floor_lifts_once_it_has_passed(self):
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            self.f.get("CN89", True, 86400)
-            self.store.mark("CN89", at=time.time() - psk.MIN_INTERVAL - 1)
-            self.f.get("CN89", True, 86400)
-        self.assertEqual(get.call_count, 2)
-
-    def test_a_different_target_is_its_own_clock(self):
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            self.f.get("CN89", True, 86400)
-            self.f.get("VA7SLL", False, 86400)
-        self.assertEqual(get.call_count, 2)
-
-    def test_the_window_is_never_a_reason_to_fetch(self):
-        """It is a SELECT against the store now. Under the old shape a wider
-        window was a different cache key and therefore a new request."""
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            for window in (900, 3600, 21600, 86400):
-                self.f.get("CN89", True, window)
-        self.assertEqual(get.call_count, 1)
-
-    def test_the_window_actually_narrows_what_comes_back(self):
-        now = int(time.time())
-        self.fetch(reply=a_reply(rows=[
-            {"tx": "OLD", "rx": "VE7WCC", "tx_grid": "AA00",
-             "rx_grid": "CN89", "at": now - 7200},
-            {"tx": "NEW", "rx": "VE7WCC", "tx_grid": "BB11",
-             "rx_grid": "CN89", "at": now - 60}]))
-        wide = {r["tx"] for r in self.f.get("CN89", True, 86400)["reports"]}
-        narrow = {r["tx"] for r in self.f.get("CN89", True, 900)["reports"]}
-        self.assertEqual(wide, {"OLD", "NEW"})
-        self.assertEqual(narrow, {"NEW"})
-
-
-class TestBackingOff(WithStore):
-    """A failure has to wait its turn as surely as a success does.
-
-    Found by causing it: several queries in quick succession while developing
-    earned a 429, and with nothing holding the clock the page's own poll would
-    have retried into the limit for as long as the tile was open.
-    """
-
-    def a_429(self, after="120"):
-        return mock.Mock(status_code=429, headers={"Retry-After": after})
-
-    def test_a_rate_limit_is_not_retried_on_the_next_ask(self):
-        with mock.patch("card.requests.get", return_value=self.a_429()) as get:
-            for _ in range(10):
-                self.f.get("CN89", True, 86400)
-        self.assertEqual(get.call_count, 1)
-
-    def test_it_says_so_in_words_rather_than_as_an_http_error(self):
-        with mock.patch("card.requests.get", return_value=self.a_429()):
-            got = self.f.get("CN89", True, 86400)
-        self.assertFalse(got["ok"])
-        self.assertIn("rate limiting", got["error"])
-        self.assertIn("Nothing is lost", got["error"])
-
-    def test_their_own_retry_after_is_honoured_when_longer(self):
-        with mock.patch("card.requests.get", return_value=self.a_429("3600")):
-            got = self.f.get("CN89", True, 86400)
-        self.assertGreater(got["next_s"], 3000)
-
-    def test_an_ordinary_outage_also_waits(self):
-        with mock.patch("card.requests.get",
-                        side_effect=psk.requests.ConnectionError("no route")) as get:
-            for _ in range(5):
-                self.f.get("CN89", True, 86400)
-        self.assertEqual(get.call_count, 1)
-
-    def test_what_is_already_held_survives_an_outage(self):
-        """Propagation data going stale beats the map going blank."""
-        self.fetch()
-        self.store.mark("CN89", at=time.time() - psk.MIN_INTERVAL - 1)
-        with mock.patch("card.requests.get",
-                        side_effect=psk.requests.ConnectionError("no route")):
-            got = self.f.get("CN89", True, 86400)
-        self.assertTrue(got["ok"], "an outage hid reports we already had")
-        self.assertEqual(len(got["reports"]), 2)
-        self.assertIn("no route", got["error"])
-
-    def test_it_recovers_once_the_wait_is_over(self):
-        with mock.patch("card.requests.get", return_value=self.a_429("1")):
-            self.f.get("CN89", True, 86400)
-        self.store.mark("CN89", at=time.time() - psk.MIN_INTERVAL - 1)
-        with mock.patch("card.requests.get", return_value=a_reply()):
-            got = self.f.get("CN89", True, 86400)
-        self.assertTrue(got["ok"])
-        self.assertEqual(len(got["reports"]), 2)
-
-
-class TestAcrossRestarts(WithStore):
-    """The store is a file. A restart must not spend a query."""
-
-    def test_a_restart_does_not_reach_them(self):
-        with mock.patch("card.requests.get", return_value=a_reply()) as get:
-            psk.Fetcher(pskstore.Store(self.home / "reports.sqlite3")) \
-                .get("CN89", True, 86400)
-            # ...the process ends here, and a new one starts on the same file.
-            again = psk.Fetcher(pskstore.Store(self.home / "reports.sqlite3")) \
-                .get("CN89", True, 86400)
-        self.assertEqual(get.call_count, 1)
-        self.assertEqual(len(again["reports"]), 2)
-
-    def test_the_wait_carries_over_too(self):
-        """Not just the data: the clock. Otherwise the floor restarts with the
-        process and the rule is only ever honoured within one run."""
-        with mock.patch("card.requests.get", return_value=a_reply()):
-            self.f.get("CN89", True, 86400)
-            again = psk.Fetcher(pskstore.Store(self.home / "reports.sqlite3")) \
-                .get("CN89", True, 86400)
-        self.assertGreater(again["next_s"], 250)
-
-    def test_the_sequence_marker_carries_over(self):
-        """So the first pull after a restart is incremental, not a refetch."""
-        with mock.patch("card.requests.get", return_value=a_reply()):
-            self.f.get("CN89", True, 86400)
-        fresh = pskstore.Store(self.home / "reports.sqlite3")
-        self.assertEqual(fresh.state("CN89")["last_seq"], "72903109693")
+    def test_status_for_something_never_asked_about(self):
+        self.assertEqual(self.live.status("NOBODY")["status"], "idle")
 
 
 class TestTheStore(unittest.TestCase):

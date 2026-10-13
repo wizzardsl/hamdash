@@ -1,222 +1,190 @@
 """PSK Reporter card.
 
-Reception reports from pskreporter.info: who heard whom, where, on what, and
-how well. The card process owns the fetching and the store; the page asks the
-card, never pskreporter directly.
+Reception reports from pskreporter.info: who heard whom, where, on what,
+and how well. The card process owns the feed and the store; the page asks
+the card, never pskreporter directly.
 
-**The store is the whole design.** Philip Gladstone asks that data be retrieved
-no more often than once every five minutes, says plainly that he reserves the
-right to rate limit or block anyone who loads his system, and asks for "an
-adaptive use of the retrieval mechanism". A map with filters invites exactly
-the opposite: change the band, change the mode, drag the time window, and each
-of those wants to be a request.
+**It listens rather than asks.** It used to poll their query API on a five
+minute floor with `lastseqno` to keep each pull small, and that was the
+best available at the time and still ran into the ceiling: `rptlimit`
+truncates a busy square at 2000 rows, which covered barely ten minutes,
+and the request itself could time out. PSK Reporter publish a live MQTT
+feed, so there is now nothing to poll, no retrieval limit to hit and
+nothing to time out. `mqtt.py` is the subscriber.
 
-So:
+The topic tree is what makes it fit:
 
-* **one upstream request per watched target**, at most every `MIN_INTERVAL`
-  seconds, enforced here rather than trusted to the page;
-* **`lastseqno`** on every pull after the first, so each one carries only what
-  has arrived since - their own mechanism for exactly this, and the reason the
-  polling costs so little;
-* reports **accumulate** in `store.py` rather than being re-fetched, so the
-  window grows past what one reply can hold and a restart costs nothing;
-* **every filter runs against the store or in the page** - band, mode, signal,
-  country, direction and the time window - so none of them is a request.
+    pskr/filter/v2/{band}/{mode}/{tx}/{rx}/{tx_grid}/{rx_grid}/{tx_dxcc}/{rx_dxcc}
 
-Correctness does not depend on `lastseqno`: rows are keyed on what makes a
-report unique, so an overlapping pull updates rather than duplicates, and a
-`lastseqno` that is ignored costs bandwidth and nothing else.
+so "who is hearing me" and "what am I hearing" are two subscriptions, not
+a query to be filtered afterwards.
 
-The query API cannot return the whole world - every query is anchored on a
-callsign or, with `modify=grid`, a grid square. So "everything near me" means
-a grid square.
+**The store is still the whole design**, for a different reason than
+before. Reports accumulate in `store.py` as they arrive, so the window is
+as deep as the card has been running plus whatever earlier runs left -
+and a restart does not begin at nothing. Every filter still runs against
+the store or in the page - band, mode, signal, country, direction, the
+time window - so none of them reaches the network, which now means none
+of them is anything at all.
 
-Spec: pskreporter.info/pskdev.html
+One feed per watched *target*, not per tile, and one nobody has asked
+about is closed: it is a connection to somebody else's broker.
+
+Spec: pskreporter.info/pskdev.html, and the MQTT feed described there.
 """
 from __future__ import annotations
 
 import threading
 import time
-import xml.etree.ElementTree as ET
 
-import requests
+# Beside card.py, like store.py: this card's own modules.
+import mqtt
 
 from hamdash.sdk import Card
 from store import RETAIN, Store, band_for
 
 card = Card(__file__)
 
-QUERY = "https://retrieve.pskreporter.info/query"
-# Their ask is "no more often than once every five minutes". This is the floor
-# for one target; the page may poll as often as it likes and is served from
-# the store.
-MIN_INTERVAL = 300.0
-TIMEOUT = 45.0
-# What one reply may carry. The store is how the window gets deeper than this.
-MAX_ROWS = 2000
-# How far back the first pull for a target reaches. Their limit is 24 hours;
-# asking for all of it on a busy square would just hit `rptlimit` and throw
-# most of it away, and every pull after this one is incremental anyway.
-FIRST_PULL = 3600 * 6
 
-_v = "0.2.0"
-USER_AGENT = f"hamdash-pskreporter/{_v} (+https://github.com/wizzardsl/hamdash)"
+class Live:
+    """One MQTT feed per watched target, and the rows they produce.
 
+    A feed is a TCP connection to somebody else's broker, so there is one
+    per *target* rather than one per tile, and one nobody has asked about
+    for `IDLE` is closed. "Nothing tells a card that a tile was deleted"
+    applies to a socket on a public server at least as much as to a sound
+    card.
 
-class RateLimited(RuntimeError):
-    """They asked us to stop, and for how long."""
+    Spots are buffered and written in batches. At the rate a busy band
+    delivers them - 56 in four seconds, measured - a transaction per spot
+    is a write per spot, and SQLite is not the place to find that out.
+    """
 
-    def __init__(self, message: str, retry_after: float) -> None:
-        super().__init__(message)
-        self.retry_after = retry_after
-
-
-class Fetcher:
-    """One target, polled incrementally, with the five minute floor here."""
+    IDLE = 180.0            # close a feed no tile has asked about
+    FLUSH_ROWS = 64
+    FLUSH_SECONDS = 3.0
 
     def __init__(self, store: Store) -> None:
         self.store = store
         self._lock = threading.Lock()
+        self._feeds: dict = {}
+        self._wanted: dict = {}
+        self._buf: dict = {}
+        self._flushed = time.time()
+        threading.Thread(target=self._reap, daemon=True,
+                         name="psk-reap").start()
 
-    def get(self, watch: str, as_grid: bool, window: float,
-            contact: str = "", force: bool = False) -> dict:
-        target = watch.upper()
-        now = time.time()
+    # -- feeds --------------------------------------------------------
+    def ensure(self, target: str, as_grid: bool):
+        """The feed for a target, started if it is not running."""
+        key = target.upper()
         with self._lock:
-            st = self.store.state(target)
-            last = float(st.get("at") or 0)
-            wait = max(MIN_INTERVAL, float(st.get("wait") or 0))
-            # `force` is the Refresh button. It cannot buy its way past the
-            # floor - it only means "do not wait for the poll".
-            if not last or (now - last) >= wait:
+            self._wanted[key] = time.time()
+            feed = self._feeds.get(key)
+            if feed is not None and feed.alive():
+                return feed
+            topics = (mqtt.topics_for(grid=key) if as_grid
+                      else mqtt.topics_for(call=key))
+            if not topics:
+                return None
+            feed = mqtt.Feed(topics, lambda spot, t=key: self._spot(t, spot))
+            self._feeds[key] = feed
+        feed.start()
+        return feed
+
+    def status(self, target: str) -> dict:
+        feed = self._feeds.get(target.upper())
+        return feed.info() if feed else {"status": "idle", "error": "",
+                                         "spots": 0, "topics": []}
+
+    # -- rows ---------------------------------------------------------
+    def _spot(self, target: str, spot: dict) -> None:
+        row = as_row(target, spot)
+        if row is None:
+            return
+        with self._lock:
+            self._buf.setdefault(target, []).append(row)
+            n = sum(len(v) for v in self._buf.values())
+            due = (n >= self.FLUSH_ROWS
+                   or time.time() - self._flushed > self.FLUSH_SECONDS)
+        if due:
+            self.flush()
+
+    def flush(self) -> int:
+        with self._lock:
+            buf, self._buf = self._buf, {}
+            self._flushed = time.time()
+        wrote = 0
+        for target, rows in buf.items():
+            if rows:
                 try:
-                    self._pull(target, as_grid, st, contact)
-                    self.store.mark(target, at=now, wait=0, error="", failed=0,
-                                    as_grid=1 if as_grid else 0)
-                    self.store.prune()
-                except Exception as exc:            # noqa: BLE001 - reported
-                    # A failure waits its turn as surely as a success does.
-                    # Without this the page's own poll retries every minute,
-                    # and against a rate limit retrying is what caused it.
-                    back = max(MIN_INTERVAL,
-                               getattr(exc, "retry_after", 0) or 0)
-                    self.store.mark(target, at=now, wait=back, error=str(exc),
-                                    failed=1, as_grid=1 if as_grid else 0)
-                st = self.store.state(target)
-            return self._answer(target, window, st)
+                    wrote += self.store.add(target, rows)
+                except Exception:               # noqa: BLE001
+                    pass        # a failed write must not end the feed
+        return wrote
 
-    def _answer(self, target: str, window: float, st: dict) -> dict:
-        age = time.time() - float(st.get("at") or 0)
-        wait = max(MIN_INTERVAL, float(st.get("wait") or 0))
-        rows = self.store.since(target, window)
-        oldest = self.store.oldest(target)
-        return {
-            # A failure is only a failure while there is nothing to show.
-            # Once the store holds reports, an outage is a note beside them.
-            "ok": bool(rows) or not st.get("failed"),
-            "reports": rows,
-            "watching": target,
-            "age_s": round(age) if st.get("at") else 0,
-            "next_s": max(0, round(wait - age)) if st.get("at") else 0,
-            "error": st.get("error") or "",
-            "held": self.store.count(target),
-            # How far back the store actually reaches, so the page can say
-            # what a window is worth rather than implying one it cannot fill.
-            "covers_s": round(time.time() - oldest) if oldest else 0,
-            "retain_s": RETAIN,
-        }
-
-    def _pull(self, target: str, as_grid: bool, st: dict, contact: str) -> None:
-        seq = (st.get("last_seq") or "").strip()
-        params = {
-            "callsign": target,
-            "rronly": 1,             # reception reports only, not the monitors
-            "noactive": 1,
-            "rptlimit": MAX_ROWS,
-        }
-        if as_grid:
-            params["modify"] = "grid"
-        if seq:
-            # Only what has arrived since we last looked. This is the whole
-            # point: after the first pull these replies are small.
-            params["lastseqno"] = seq
-        else:
-            params["flowStartSeconds"] = -int(FIRST_PULL)
-        if contact.strip():
-            # Opt-in, empty by default. They ask for it so they can reach a
-            # heavy user rather than simply blocking one.
-            params["appcontact"] = contact.strip()
-
-        r = requests.get(QUERY, params=params, timeout=TIMEOUT,
-                         headers={"User-Agent": USER_AGENT,
-                                  # They may come to require this; it is
-                                  # cheaper for both ends either way.
-                                  "Accept-Encoding": "gzip, deflate"})
-        if r.status_code == 429:
-            # Their rate limit, which is a request to stop rather than a
-            # transient error to retry through.
+    def _reap(self) -> None:
+        while True:
+            time.sleep(10.0)
+            self.flush()
+            now = time.time()
+            with self._lock:
+                stale = [k for k, when in self._wanted.items()
+                         if now - when > self.IDLE]
+                for key in stale:
+                    feed = self._feeds.pop(key, None)
+                    self._wanted.pop(key, None)
+                    if feed is not None:
+                        print(f"closing feed for {key}: no tile has asked "
+                              f"in {self.IDLE:.0f}s")
+                        feed.stop()
             try:
-                after = int(r.headers.get("Retry-After", "") or 0)
-            except ValueError:
-                after = 0
-            raise RateLimited(
-                "pskreporter is rate limiting this address"
-                + (f" and asks for {after}s" if after else "")
-                + ". Nothing is lost - it will try again by itself.",
-                after or MIN_INTERVAL * 4)
-        r.raise_for_status()
-        text = r.text
-        if "<receptionReports" not in text:
-            raise RuntimeError("pskreporter did not return reception reports. "
-                               "It usually means the query was refused; "
-                               f"it said: {' '.join(text.split())[:200]}")
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError as exc:
-            raise RuntimeError(f"pskreporter sent XML that would not "
-                               f"parse ({exc})") from exc
-
-        rows = [x for x in (_report(el) for el in root.iter("receptionReport"))
-                if x]
-        self.store.add(target, rows)
-        # Their reply carries the high-water mark, and keeping it is what
-        # makes the next pull incremental. A reply without one leaves the
-        # marker alone rather than resetting us to fetching everything again.
-        found = root.find("lastSequenceNumber")
-        got = found.get("value") if found is not None else ""
-        if got:
-            self.store.mark(target, last_seq=got)
+                self.store.prune(RETAIN)
+            except Exception:                   # noqa: BLE001
+                pass
 
 
-def _report(el) -> dict | None:
-    g = el.attrib
+def as_row(target: str, spot: dict):
+    """One MQTT spot as a store row.
+
+    The live feed and the old query answer the same question in different
+    words: `sc`/`rc` for the two callsigns, `sl`/`rl` for their squares,
+    `f` in hertz, `rp` for the signal report. The time is `t_tx` - when it
+    was *transmitted* - because that is what the query's
+    `flowStartSeconds` was, and two sources disagreeing about when a spot
+    happened would show up as duplicate rows an hour apart.
+    """
+    tx = str(spot.get("sc") or "").upper()
+    rx = str(spot.get("rc") or "").upper()
+    if not tx or not rx:
+        return None
     try:
-        hz = int(g.get("frequency") or 0)
-        when = int(g.get("flowStartSeconds") or 0)
-    except ValueError:
+        hz = int(spot.get("f") or 0)
+    except (TypeError, ValueError):
         return None
-    if not g.get("senderCallsign") or not g.get("receiverCallsign"):
+    when = _int(spot.get("t_tx")) or _int(spot.get("t")) or 0
+    if not hz or not when:
         return None
+    up = target.upper()
     return {
-        "tx": g.get("senderCallsign", "").upper(),
-        "rx": g.get("receiverCallsign", "").upper(),
-        "tx_grid": g.get("senderLocator", ""),
-        "rx_grid": g.get("receiverLocator", ""),
+        "tx": tx, "rx": rx,
+        "tx_grid": str(spot.get("sl") or ""),
+        "rx_grid": str(spot.get("rl") or ""),
         "hz": hz,
         "mhz": round(hz / 1e6, 6),
         "band": band_for(hz / 1e6),
-        "mode": g.get("mode", ""),
-        "snr": _int(g.get("sNR")),
+        "mode": str(spot.get("md") or ""),
+        "snr": _int(spot.get("rp")),
         "at": when,
-        # Which side of the report the watched station was on. The API says
-        # so, which saves guessing from the callsign - and a grid query has no
-        # callsign to guess from.
-        "is_tx": g.get("isSender") == "1",
-        "is_rx": g.get("isReceiver") == "1",
-        "tx_dxcc": g.get("senderDXCC", ""),
-        "rx_dxcc": g.get("receiverDXCC", ""),
-        "tx_region": g.get("senderRegion", ""),
-        "rx_region": g.get("receiverRegion", ""),
+        # Which side the watched station was on. The feed does not say, so
+        # it is read off the callsigns - and for a grid watch neither
+        # matches, which is correct: a square is not a station.
+        "is_tx": tx == up,
+        "is_rx": rx == up,
+        "tx_dxcc": str(spot.get("sa") or ""),
+        "rx_dxcc": str(spot.get("ra") or ""),
+        "tx_region": "",
+        "rx_region": "",
     }
 
 
@@ -228,15 +196,18 @@ def _int(v):
 
 
 STORE = Store(card.store / "reports.sqlite3")
-FETCHER = Fetcher(STORE)
+LIVE = Live(STORE)
 
 
 @card.get("/reports")
 def reports():
-    """One window of the store, refreshing it if it is due.
+    """What is in the store for this target, and how the feed is doing.
 
-    The window is a query against the local file, so the page may ask for any
-    of them as often as it likes.
+    Live, so there is nothing to refresh and no interval to respect: the
+    page may ask as often as it likes and is answered from the local
+    file. What it gets is what has arrived since the feed started, plus
+    whatever earlier runs left behind - the store is kept on purpose, so
+    a restart does not begin at nothing.
     """
     from flask import request
     conf = card.settings(card.tile_uid())
@@ -245,16 +216,13 @@ def reports():
         station = {}
         try:
             station = card.host.station()
-        except Exception:
+        except Exception:                       # noqa: BLE001
             pass
         watch = (station.get("grid") or "")[:4]
     if not watch:
         return {"ok": False, "reports": [],
                 "error": "Nothing to watch yet. Set your grid in Settings, or "
                          "type a callsign above."}
-    # The page says which question it is asking; falling back to the shape of
-    # the text only when it does not, which is what a card run on its own or
-    # an older page will do.
     asked = (request.args.get("as") or "").strip().lower()
     as_grid = (asked == "grid") if asked in ("grid", "call") \
         else _looks_like_grid(watch)
@@ -262,10 +230,19 @@ def reports():
         window = float(request.args.get("window") or RETAIN)
     except ValueError:
         window = float(RETAIN)
-    return FETCHER.get(watch, as_grid, max(60.0, min(window, RETAIN)),
-                       (conf.get("appcontact") or "").strip(),
-                       force=request.args.get("force") == "1")
+    window = max(60.0, min(window, RETAIN))
 
+    LIVE.ensure(watch, as_grid)
+    LIVE.flush()                # so a spot that just arrived is in the answer
+    rows = STORE.since(watch, window)
+    feed = LIVE.status(watch)
+    return {
+        "ok": True, "reports": rows, "watch": watch, "as_grid": as_grid,
+        "count": len(rows), "held": STORE.count(watch),
+        "oldest": STORE.oldest(watch), "window": window,
+        "live": feed, "source": "pskreporter.info live feed (MQTT)",
+        "error": feed.get("error", ""),
+    }
 
 def _looks_like_grid(s: str) -> bool:
     """A grid square, not a callsign. Four or six characters, no digits first.

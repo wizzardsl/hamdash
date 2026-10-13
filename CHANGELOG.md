@@ -113,6 +113,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   the half that showed, because a polled card turns jitter into stutter.
 
 ### Changed
+- **PSK Reporter is live now.** The card used to poll their query API every
+  five minutes, which could time out and truncated a busy square at 2000
+  reports — barely ten minutes of a good opening. It subscribes to their
+  live feed instead, so reports arrive as they happen, there is no limit to
+  run into and nothing to wait for. Reports still accumulate on disk, so
+  the window keeps growing and a restart does not begin at nothing. The
+  Refresh button is gone: there is nothing left to refresh.
 - **Clicking a contest opens its rules.** The name is the link now. The
   calendar this comes from has no rules pages in it — the `website` field
   is empty on all 1000 rows and the site has no per-contest page — so for

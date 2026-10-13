@@ -123,7 +123,6 @@
   <button class="btn btn-quiet" id="all" title="Put every filter back to everything: band, mode, country, signal, direction and the time window. The place being watched is left alone.">Reset filters</button>
   <span class="grow"></span>
   <span id="pin-note" class="muted" hidden></span>
-  <button class="btn btn-quiet" id="refresh" title="Ask PSK Reporter again. They ask for no more than one request every five minutes, so this waits its turn.">Refresh</button>
 </div>
 
 <div id="map"></div>
@@ -189,7 +188,7 @@ function setMode(next, { reload = true } = {}) {
   }
   conf = { ...conf, watch_mode: watchMode };
   HD.saveSettings(conf).catch(() => { /* still applies now */ });
-  if (reload && watchable($('#watch').value)) { touched = false; load(false); }
+  if (reload && watchable($('#watch').value)) { touched = false; load(); }
 }
 
 document.querySelectorAll('[data-mode]').forEach((b) => {
@@ -437,24 +436,44 @@ function fillChoices() {
 }
 
 // ---- fetching --------------------------------------------------------------
+/* What the feed is doing, rather than how stale a poll is.
+
+   This used to say "updated 40s ago" and "next in 3m", which were the
+   two numbers that mattered when the card polled on a five minute floor.
+   There is no next now - spots arrive as they happen - so the useful
+   facts are whether the connection is up, how much has come in, and how
+   far back the store reaches. */
 function showAge() {
-  const a = Number(meta.age_s || 0) + Math.round((Date.now() - (meta.got || Date.now())) / 1000);
-  const next = Math.max(0, Number(meta.next_s || 0) - Math.round((Date.now() - (meta.got || Date.now())) / 1000));
+  const live = meta.live || {};
   const bits = [];
-  if (meta.watching) bits.push(`watching ${meta.watching}`);
-  bits.push(a < 90 ? `updated ${a}s ago` : `updated ${Math.round(a / 60)}m ago`);
-  if (next > 0) bits.push(`next in ${next < 90 ? next + 's' : Math.round(next / 60) + 'm'}`);
+  if (meta.watch) bits.push(`watching ${meta.watch}`);
+  const status = live.status || 'idle';
+  if (status === 'running') {
+    const secs = Number(live.connected_s || 0);
+    bits.push(secs > 90 ? `live for ${Math.round(secs / 60)}m` : 'live');
+  } else {
+    bits.push(status === 'connecting' ? 'connecting…' : status);
+  }
   if (meta.held) {
-    const covers = Number(meta.covers_s || 0);
+    // How deep the store actually goes, which after a restart is more
+    // than this session has collected.
+    const covers = meta.oldest ? (Date.now() / 1000 - meta.oldest) : 0;
     bits.push(`${meta.held} held`
       + (covers > 3600 ? ` over ${(covers / 3600).toFixed(1)}h` : ''));
   }
   const el = $('#age');
   el.textContent = bits.join(' · ');
-  el.className = a > 900 ? 'stale' : 'muted';
+  // Amber only when the feed is actually down. A live card that has seen
+  // nothing yet on a quiet band is not stale, it is new.
+  el.className = (status === 'running' || status === 'connecting')
+    ? 'muted' : 'stale';
 }
-
-async function load(force) {
+/* There is no Refresh any more and no `force`: the feed is live, so
+   there is nothing to ask again and no queue to jump. The page still
+   re-reads the store on a timer, which is a local SELECT - it is how
+   spots that arrived since the last draw get onto the map, not a
+   request to anybody. */
+async function load() {
   try {
     const watch = $('#watch').value.trim();
     // HD.card turns a third argument into a POST, so the query goes in the
@@ -464,7 +483,7 @@ async function load(force) {
     // request; it is a SELECT now and costs nothing.
     const q = new URLSearchParams({
       watch, window: String(meta.retain_s || 86400),
-      force: force ? '1' : '0', as: watchMode,
+      as: watchMode,
     });
     const d = await HD.card('psk_reporter', `/api/reports?${q}`);
     if (!d.ok) { $('#err').textContent = d.error || 'no data'; return; }
@@ -524,7 +543,7 @@ function build() {
     $('#watch').value = grid;
     lastWatched = grid;
     touched = false;
-    load(false);
+    load();
   });
 
   space = HDMap.spaceLayers(map, {
@@ -604,7 +623,7 @@ function commitWatch() {
   if ($('#watch').value === lastWatched) return;
   lastWatched = $('#watch').value;
   touched = false;
-  load(false);
+  load();
 }
 $('#watch').addEventListener('blur', commitWatch);
 
@@ -638,7 +657,6 @@ $('#all').onclick = () => {
 $('#watch').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); commitWatch(); }
 });
-$('#refresh').onclick = () => load(true);
 window.addEventListener('hamdash:theme', () => { HDMap.readTheme(); draw(); });
 
 // What the base map is made of, so a change to any of it swaps the layer
@@ -671,11 +689,14 @@ HD.onSettings((v) => {
   setMode(conf.watch_mode || (LOOKS_GRID.test(start) ? 'grid' : 'call'),
           { reload: false });
   rebuildIfNeeded();
-  await load(false);
+  await load();
   // The card serves from its cache, so this is cheap and keeps the age line
   // honest without going anywhere near pskreporter.
   ageTimer = setInterval(showAge, 5000);
-  pollTimer = setInterval(() => load(false), 60000);
+  // Faster than the old minute: it is a read of a local file now, and
+  // the whole point of a live feed is that a spot shows up when it
+  // happens rather than up to a minute later.
+  pollTimer = setInterval(() => load(), 10000);
 })().catch((e) => { $('#err').textContent = e.message; });
 </script>
 </body>
