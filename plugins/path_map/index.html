@@ -58,6 +58,7 @@
 <p class="err" id="err"></p>
 
 <script src="/static/js/hamdash.js"></script>
+<script src="prop.js"></script>
 <script src="/static/vendor/leaflet.js"></script>
 <script src="/static/vendor/proj4.js"></script>
 <script src="/static/vendor/proj4leaflet.js"></script>
@@ -84,6 +85,10 @@ let them = null;
 let lastInfo = null;
 let touched = false;    // has the operator moved the map themselves?
 let auroraTimer = null;
+let sounders = [];       // live ionosondes, for the path MUF
+let bandTable = [];      // the host's one band table
+let drapGrid = null;     // absorption raster, sampled over the path
+let drapBytes = null;
 const L_ = {};          // layers, by name
 
 function wantAzimuthal() {
@@ -112,6 +117,7 @@ function popupFor(which) {
       add('Distance', HD.fmtDistance(i.path.km));
       add('Bearing', `${Math.round(i.path.bearing)}° ${HD.bearingName(i.path.bearing)}`);
       add('Long path', `${Math.round((i.path.bearing + 180) % 360)}°`);
+      propRows(add, them);
     }
     const seen = (i.worked_before || []).length;
     if (seen) add('Worked', `${seen}× before`);
@@ -125,6 +131,111 @@ function popupFor(which) {
   const flag = which === 'me' ? '' : HD.flag(i.iso, i.country);
   return `<h3>${flag}${esc(title)}</h3><dl>${rows.join('')}</dl>`
        + (links ? `<div class="links">${links}</div>` : '');
+}
+
+/* ---- what the path will carry -----------------------------------------
+ *
+ * Measured, not modelled: the MUF comes from the nearest ionosonde that
+ * has actually sounded recently, and the readout says which one and how
+ * far away it was. About thirty of the hundred stations are live at any
+ * moment and they are clustered over Europe, North America and
+ * Australia, so for a path across an ocean the supporting sounding can
+ * be a very long way from where the signal really refracts. Saying so is
+ * the difference between a measurement and a guess with a decimal point.
+ */
+async function loadProp() {
+  try {
+    const d = await HD.get('/api/space/muf');
+    sounders = (d && (d.stations || d)) || [];
+  } catch (e) { sounders = []; }
+  try {
+    bandTable = await HD.bands();
+  } catch (e) { bandTable = []; }
+  try {
+    const d = await HD.get('/api/space/drap', { threshold: 1, grid: 1 });
+    drapGrid = (d && d.grid && d.grid.data) ? d.grid : null;
+    if (drapGrid) {
+      const bin = atob(drapGrid.data);
+      drapBytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) drapBytes[i] = bin.charCodeAt(i);
+    }
+  } catch (e) { drapGrid = null; drapBytes = null; }
+}
+
+/* The absorption being measured over the path, in MHz.
+ *
+ * D-RAP is the *flare-driven* part: on a quiet day it is zero
+ * everywhere, and that does not mean 160 m is open to Japan at noon -
+ * ordinary daytime D-layer absorption is not in this number. So it is
+ * reported as "absorbed below X" when there is something to report, and
+ * left out entirely when there is not, rather than being dressed up as a
+ * LUF it is not.
+ */
+function absorptionOver(controls) {
+  if (!drapGrid || !drapGrid.data || !drapBytes) return 0;
+  let worst = 0;
+  controls.forEach((c) => {
+    const g = drapGrid;
+    const ix = Math.round((c.at.lon - g.lon0) / g.step_lon);
+    const iy = Math.round((c.at.lat - g.lat0) / g.step_lat);
+    if (ix < 0 || ix >= g.w || iy < 0 || iy >= g.h) return;
+    worst = Math.max(worst, drapBytes[iy * g.w + ix] || 0);
+  });
+  return worst;
+}
+
+function propRows(add, target) {
+  if (!me || !target || !HDProp) return;
+  const to = toLatLon(target.grid || '') || target;
+  if (!Number.isFinite(to.lat) || !Number.isFinite(to.lon)) return;
+
+  const p = HDProp.pathMuf(me, to, sounders);
+  if (p.mhz === null) {
+    // An answer, not a failure: most of the Pacific is like this most of
+    // the time, and pretending otherwise is the thing to avoid.
+    add('Path MUF', `not known — ${p.why}`);
+    return;
+  }
+
+  const hops = p.hops === 1 ? '1 hop' : `${p.hops} hops`;
+  add('Path MUF', `${p.mhz.toFixed(1)} MHz · ${hops}`
+    + (p.uncertain ? ' · uncertain' : ''));
+
+  /* What we know is the *top* of the window, because that is what a
+     sounding measures. The bottom we barely know: D-RAP carries the
+     flare-driven absorption and nothing else, so on a quiet day it is
+     zero - which does not mean 160 m is open to Europe at noon.
+
+     So this reports the highest band the path will carry, and says
+     'and below' rather than enumerating down to nothing. The first
+     version listed everything under the MUF and proudly offered 2200 m
+     and 630 m, which propagate by a different mechanism entirely and
+     were never a claim worth making. */
+  const low = absorptionOver(p.controls);
+  const HF_FLOOR = 1.8;           // below this is not an F2 question
+  const open = HDProp.bandsBetween(bandTable, Math.max(low, HF_FLOOR),
+                                   p.mhz);
+  if (open.length) {
+    const best = open[open.length - 1];
+    const rest = open.slice(0, -1).slice(-2).reverse();
+    add('Highest band', best + (rest.length ? ` (then ${rest.join(' ')})` : ''));
+  } else {
+    add('Highest band', low > 0
+      ? 'nothing between the absorption and the MUF'
+      : 'the MUF is below the HF bands');
+  }
+  if (low > 0) {
+    // Only when there is something to report: a flare is the one thing
+    // that takes the bottom of the window away on a timescale anybody
+    // notices.
+    add('Absorbed below', `${low} MHz — solar flare`);
+  }
+  // Which sounding this rests on, and how far away it was. The whole
+  // point: a number from 4000 km away is a different claim from one
+  // measured over the path.
+  add('From sounding', `${p.from.name} · ${HD.fmtDistance(p.from.km)} from `
+    + `the ${p.hops === 1 ? 'midpoint' : 'control point'}`
+    + (p.from.age_h > 1 ? ` · ${p.from.age_h.toFixed(1)} h old` : ''));
 }
 
 function drawStation() {
@@ -420,6 +531,12 @@ setInterval(() => { if (map && map.hasLayer(L_.greyline)) space.draw.greyline();
   conf = await HD.settings();
   build();
   await loadMe();
+  // Soundings, bands and absorption, for the path readout. Not awaited
+  // into the first paint: the map should not wait on somebody else's
+  // server, and the popup is only opened by a click.
+  loadProp();
+  // Soundings go stale in hours, not minutes.
+  setInterval(loadProp, 15 * 60 * 1000);
   applyConf();
   resetView();
 })();

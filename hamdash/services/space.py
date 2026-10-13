@@ -261,6 +261,13 @@ class Drap:
         self._error = ""
 
 
+def _as_float(v):
+    try:
+        return round(float(v), 3)
+    except (TypeError, ValueError):
+        return None
+
+
 class Ionosondes:
     """Measured MUF and foF2 from the world's ionosondes, via prop.kc2g.com.
 
@@ -314,6 +321,13 @@ class Ionosondes:
                 "lat": round(lat, 2), "lon": round(lon, 2),
                 "mufd": round(float(muf), 1) if muf is not None else None,
                 "fof2": round(float(fof2), 1) if fof2 is not None else None,
+                # The sounder's own M(3000)F2 and F2 peak height. Passed
+                # through because a path MUF computed from `fof2` alone has
+                # to assume a reflection height, and 250 km against 400 km
+                # moves the answer by 30%. `mufd` is only the 3000 km case;
+                # these are what let another distance be worked out.
+                "md": _as_float(row.get("md")),
+                "hmf2": _as_float(row.get("hmf2")),
                 "time": row.get("time", ""),
             })
         self._data = out

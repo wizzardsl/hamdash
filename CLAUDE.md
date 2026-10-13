@@ -1244,6 +1244,12 @@ QRM or fading.
 - **PSK Reporter has no "whole world" query.** Every one is anchored on a
   callsign, or on a grid square with `modify=grid`. Their own map uses feeds
   that are not in the public API, so "everything near me" means a grid.
+- **Still points, not a field** - but the points are used now. Drawing an
+  interpolated MUF surface from 30 live sounders would paint confident
+  colour over oceans where the nearest measurement is thousands of km
+  away; computing one *path* from the soundings nearest its control
+  points, and saying how far away they were, uses the same data without
+  inventing the bit in between. See "What a path will carry".
 - `path_map` is Leaflet-based. The
   offline basemap is a Leaflet GeoJSON layer, which is what lets it sit in the
   same picker as tile basemaps.
@@ -1329,6 +1335,56 @@ QRM or fading.
   latitude centres the view on the mirror of the path in the other hemisphere.
   Marker sizes are in degrees and must be scaled by the view width, or a pin
   becomes the size of Spain when the view zooms in.
+
+## What a path will carry
+
+`plugins/path_map/prop.js` - no DOM, no network, lat/lon and soundings
+in and megahertz out, split out for the reason `cw.py` and `dsp.py` are:
+**a propagation number that is 30% out still looks like a propagation
+number.** `tests/js/prop.test.js` drives it.
+
+- **It is a measurement, not a model**, and that is the whole design. The
+  MUF comes from the nearest ionosonde that has actually sounded
+  recently, and the readout says which one and how far away it was.
+  Measured: **about 30 of the 97 stations are live at any moment**, and
+  they cluster over Europe, North America and Australia - so for a path
+  across the Pacific the supporting sounding can be 4000 km from where
+  the signal really refracts. `far` and `uncertain` come back with every
+  answer rather than being smoothed over. A path with nothing near it
+  returns null and says why, which is an answer.
+- **The secant law needs the Earth's curvature in it.** The flat version
+  is the textbook starting point and runs away at long distances, where
+  the real geometry tops out near 3.4 because a ray cannot leave below
+  zero elevation. Checked against the sounders' own M(3000)F2 - 3.28
+  where they report 2.8 to 3.5 - and it **reproduces a station's
+  published MUF from its published foF2 to within 0.01 MHz**, which is a
+  far better test than any number invented here.
+- **Prefer the sounder's own M(3000)F2 to the geometry.** It comes off
+  the ionogram and carries the shape of the layer; a single reflection
+  height cannot. It is scaled to the actual hop by the ratio of secants,
+  so a 3000 km hop returns exactly the sounder's own MUF(3000). The
+  height matters enough to pass through: 250 km against 400 km moves the
+  answer by 30%, so `/api/space/muf` carries `md` and `hmf2` now.
+- **A short path has a LOW MUF**, which surprises people and is correct:
+  the ray goes nearly straight up, so the secant factor is near 1 and the
+  path carries little more than foF2. 300 km away is an 80 m question,
+  not a 10 m one.
+- **The worst control point governs.** One hop refracts at the middle;
+  more than one is governed by the points 1/6 and 5/6 along. A path is
+  only as good as the worst place it has to bounce.
+- **D-RAP is not the LUF**, and must not be labelled as one. It is the
+  *flare-driven* absorption only: on a quiet day it is zero everywhere,
+  and that does not mean 160 m is open to Europe at noon - ordinary
+  daytime D-layer absorption is not in that number. So the readout gives
+  the **highest** band and says "and below", and mentions absorption only
+  when there is some. The first version listed every band under the MUF
+  and proudly offered 2200 m and 630 m, which propagate by a different
+  mechanism entirely.
+- **`HD.bands()` returns `{bands: [[start, end, name], ...], names: []}`**
+  - triples, wrapped. `bandsBetween` was written against an invented
+  shape with `start_mhz` fields, and its tests invented the same shape,
+  so they passed perfectly and the code threw the moment it met the real
+  reply. **Tests that assert against a guess test the guess.**
 
 ## Spots
 

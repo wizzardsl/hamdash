@@ -49,6 +49,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **What band will reach them.** Click a station on the path map and it
+  now tells you the MUF for that path, the highest band that will carry
+  it, and — this is the point — which ionosonde the answer rests on and
+  how far that was from the path. Worked out from real soundings rather
+  than a model, so when there is nothing measured near your path it says
+  so instead of making a number up.
 - **A satellites card.** Where the amateur satellites are now, which are
   above you, and when the next pass is — with the footprint and ground
   track of whichever you pick. Elements come from Celestrak a few times a
