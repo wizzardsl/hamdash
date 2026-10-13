@@ -1,9 +1,15 @@
 # hamdash
 
-A card-based ham radio dashboard. Runs as a desktop app on Windows, macOS and
-Linux: no server to configure, no localhost URL to remember, nothing installed
-system-wide. Cards can be a URL in a tile or a full Python program — same board,
-same event bus.
+**A card-based ham radio dashboard.** Rig control, logging, spots, maps,
+CW decoding, satellites and remote audio — arranged however you like, and
+you can add your own cards.
+
+Runs as a desktop app on Windows, macOS and Linux: no server to configure,
+no localhost URL to remember, nothing installed system-wide.
+
+![The hamdash board: a world map with the aurora and greyline, rig control, spots, a logbook and satellite tracking](docs/images/board.png)
+
+<sub>Everything here is one board. Drag the tiles where you want them, stack them into tabs, or pop one out into its own window.</sub>
 
 **Want your own card on the board?** [docs/cards.md](docs/cards.md) is the
 whole contract, and [docs/card-template](docs/card-template) is a card that
@@ -50,7 +56,7 @@ rigctld -m 1035 -r /dev/ttyUSB0 -s 38400    # -m 1 is the Hamlib dummy rig
 
 ## What is on the board
 
-Ten cards ship with it, and a tile can hold any of them:
+Twelve cards ship with it, and a tile can hold any of them:
 
 - **Rig control** — the dial, mode, both VFOs, split, and a meter that shows
   signal while receiving and power while transmitting.
@@ -60,6 +66,10 @@ Ten cards ship with it, and a tile can hold any of them:
   telnet feeds from the Reverse Beacon Network, which answers the question
   nothing else here does: *who can hear me*.
 - **PSK Reporter** — who is receiving whom, on a map.
+- **Satellites** — which amateur satellites are up, when the next pass is,
+  and where they are going.
+- **Receive audio** — the radio's audio in the browser, so the board is
+  usable from another machine on your network.
 - **Path to station** — great-circle path, greyline, aurora and space weather.
 - **Beacon map** — bearing and distance to the station you are looking at.
 - **Spectrum** — a waterfall from the radio's sound card.
@@ -70,6 +80,21 @@ Ten cards ship with it, and a tile can hold any of them:
 
 Everything is usable with no radio attached: the rig is in mock mode until
 you tell it otherwise.
+
+
+### Satellites
+
+Which amateur satellites are above you now, when the next pass is, and
+where each one is going. Click one for its footprint and ground track.
+
+![The satellites card: a list of amateur satellites with elevation and pass times, and a world map showing the selected satellite's footprint and ground track](docs/images/satellites.png)
+
+### PSK Reporter
+
+Who is hearing you, and who you are hearing — live, from PSK Reporter's
+own feed, with every filter running against what is already on your disk.
+
+![The PSK Reporter card: reception report paths radiating from a grid square across the Pacific and the Atlantic, coloured by signal strength](docs/images/psk-reporter.png)
 
 ## Documentation
 
