@@ -762,7 +762,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             threshold = max(0.1, float(request.args.get("threshold", 1)))
         except ValueError:
             threshold = 1.0
-        return jsonify(drap.get(threshold))
+        grid = request.args.get("grid", "") in ("1", "true", "yes")
+        return jsonify(drap.get(threshold, grid=grid))
 
     @app.get("/api/space/muf")
     @guard("space")

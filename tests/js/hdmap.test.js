@@ -196,3 +196,33 @@ test('a junk bound falls back to the three it always drew', () => {
   assert.deepStrictEqual(M.worldSpan(NaN, NaN), { lo: -1, hi: 1 });
   assert.deepStrictEqual(M.worldSpan(-Infinity, Infinity), { lo: -1, hi: 1 });
 });
+
+/* ---- D-RAP shares the ramp, with its own full scale --------------------
+ *
+ * The aurora is a percentage and D-RAP is megahertz. That is the only
+ * difference between them, so they share `fieldRamp` and differ in what
+ * counts as full strength.
+ */
+
+test('D-RAP: an ordinary disturbed day is clearly visible', () => {
+  // 5 to 15 MHz is a normal disturbed day; a big flare reaches the mid 30s.
+  assert.ok(M.drapRamp(5, STOPS)[3] >= 80, 'mild absorption vanished');
+  assert.ok(M.drapRamp(15, STOPS)[3] >= 160, 'a disturbed day looks mild');
+});
+
+test('D-RAP: quiet is transparent, which is the normal case', () => {
+  // Zero over the whole planet is the good news, not a failure to load.
+  assert.strictEqual(M.drapRamp(0, STOPS)[3], 0);
+});
+
+test('D-RAP: a severe event still reads as worse than a mild one', () => {
+  assert.ok(M.drapRamp(30, STOPS)[3] > M.drapRamp(10, STOPS)[3]);
+});
+
+test('the two fields use the same ramp and differ only in full scale', () => {
+  assert.deepStrictEqual(M.auroraRamp(25, STOPS), M.fieldRamp(25, M.AURORA_FULL, STOPS));
+  assert.deepStrictEqual(M.drapRamp(15, STOPS), M.fieldRamp(15, M.DRAP_FULL, STOPS));
+  // Same fraction of full scale, same pixel - whatever the units are.
+  assert.deepStrictEqual(M.auroraRamp(M.AURORA_FULL / 2, STOPS),
+                         M.drapRamp(M.DRAP_FULL / 2, STOPS));
+});

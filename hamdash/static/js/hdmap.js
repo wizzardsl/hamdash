@@ -542,17 +542,27 @@ window.HDMap = (function () {
 
      Gamma 0.6 on the alpha because a straight ramp makes everything below
      about 15% invisible, and that is most of the field on most days. */
-  function auroraRamp(pct, stops) {
+  function fieldRamp(value, full, stops) {
     // `Math.min(1, NaN)` is NaN, so a junk reading would sail straight
     // through the clamp and paint NaN into the image - which is nothing at
     // all, a hole in the overlay rather than an error anybody could see.
-    const n = Number(pct);
+    const n = Number(value);
     const t = Number.isFinite(n)
-      ? Math.max(0, Math.min(1, n / AURORA_FULL)) : 0;
+      ? Math.max(0, Math.min(1, n / full)) : 0;
     const [lo, mid, hi] = stops;
     const rgb = t < 0.5 ? mix(lo, mid, t * 2) : mix(mid, hi, (t - 0.5) * 2);
     return [rgb[0], rgb[1], rgb[2], Math.round(255 * Math.pow(t, 0.6))];
   }
+
+  const auroraRamp = (pct, stops) => fieldRamp(pct, AURORA_FULL, stops);
+
+  /* Megahertz at which D-RAP absorption is drawn at full strength.
+
+     A big flare reaches the mid thirties and an ordinary disturbed day is
+     five to fifteen, so 30 keeps the common case readable without making
+     a severe event look the same as a mild one. */
+  const DRAP_FULL = 30;
+  const drapRamp = (mhz, stops) => fieldRamp(mhz, DRAP_FULL, stops);
 
   // ---- space weather -------------------------------------------------------
   // These go through the host, not straight from the card: NOAA's aurora grid
@@ -591,7 +601,35 @@ window.HDMap = (function () {
     const auroraColour = (pct) => auroraRamp(pct, [
       hex2rgb(theme.signal), hex2rgb(theme.accent), hex2rgb(theme.alert)]);
 
-    function auroraImage(g, bytes) {
+    // base64 -> bytes. `atob` gives a string of char codes; there is no
+    // shorter way without a dependency.
+    function gridBytes(g) {
+      const bin = atob(g.data);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+
+    /* One image per world copy, placed on the grid's own extent.
+
+       The cell values sit at cell *centres*, so the image is stretched
+       half a cell beyond them on each side - without that the field is
+       drawn half a cell north-west of where it belongs, which is a small
+       enough error to look like nothing and large enough to matter at
+       D-RAP's 4 degrees of longitude. */
+    function placeField(group, g, url, opacity) {
+      const hx = g.step_lon / 2;
+      const hy = g.step_lat / 2;
+      const south = g.lat0 - hy;
+      const north = g.lat0 + (g.h - 1) * g.step_lat + hy;
+      const west = g.lon0 - hx;
+      const east = g.lon0 + (g.w - 1) * g.step_lon + hx;
+      each((dx) => L.imageOverlay(url,
+        [[south, west + dx], [north, east + dx]],
+        { opacity, interactive: false }).addTo(group));
+    }
+
+    function fieldImage(g, bytes, colour) {
       const c = document.createElement('canvas');
       c.width = g.w;
       c.height = g.h;
@@ -604,7 +642,7 @@ window.HDMap = (function () {
           const pct = bytes[iy * g.w + ix];
           const o = (row + ix) * 4;
           if (!pct) { px[o + 3] = 0; continue; }
-          const [r, gg, b, a] = auroraColour(pct);
+          const [r, gg, b, a] = colour(pct);
           px[o] = r; px[o + 1] = gg; px[o + 2] = b; px[o + 3] = a;
         }
       }
@@ -619,18 +657,8 @@ window.HDMap = (function () {
         if (!d.ok) { say({ error: d.error || 'no aurora data' }); return; }
         say({ error: '' });
         if (!d.grid || !d.grid.data) { drawAuroraDots(d); return; }
-        const g = d.grid;
-        const bin = atob(g.data);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const url = auroraImage(g, bytes);
-        const south = g.lat0;
-        const north = g.lat0 + (g.h - 1) * g.step_lat;
-        const west = g.lon0;
-        const east = g.lon0 + g.w * g.step_lon;
-        each((dx) => L.imageOverlay(url, [[south, west + dx], [north, east + dx]], {
-          opacity: 0.75, interactive: false, className: 'hd-aurora',
-        }).addTo(groups.aurora));
+        placeField(groups.aurora, d.grid,
+                   fieldImage(d.grid, gridBytes(d.grid), auroraColour), 0.75);
       } catch (e) { say({ error: `aurora: ${e.message}` }); }
     }
 
@@ -649,9 +677,26 @@ window.HDMap = (function () {
       });
     }
 
+    const drapColour = (mhz) => drapRamp(mhz, [
+      hex2rgb(theme.signal), hex2rgb(theme.accent), hex2rgb(theme.alert)]);
+
+    /* If the host is older than the grid field. Same reason as the
+       aurora's: an ugly overlay beats none. */
+    function drawDrapDots(d) {
+      (d.cells || []).forEach(([lon, lat, mhz]) => {
+        each((dx) => L.circleMarker([lat, lon + dx], {
+          renderer: canvas, radius: 4, stroke: false,
+          fillColor: mhz >= 20 ? theme.alert
+            : mhz >= 10 ? theme.accent : theme.signal,
+          fillOpacity: Math.min(0.75, 0.2 + mhz / 40), interactive: false,
+        }).addTo(groups.drap));
+      });
+    }
+
     async function drawDrap() {
       try {
-        const d = await HD.get('/api/space/drap', { threshold: 1 });
+        const d = await HD.get('/api/space/drap',
+                               { threshold: 1, grid: 1 });
         groups.drap.clearLayers();
         if (!d.ok) { say({ error: d.error }); return; }
         say({ error: '' });
@@ -660,14 +705,15 @@ window.HDMap = (function () {
           say({ detail: `no HF absorption anywhere (${d.valid_at})` });
           return;
         }
-        d.cells.forEach(([lon, lat, mhz]) => {
-          each((dx) => L.circleMarker([lat, lon + dx], {
-            renderer: canvas, radius: 4, stroke: false,
-            fillColor: mhz >= 20 ? theme.alert
-              : mhz >= 10 ? theme.accent : theme.signal,
-            fillOpacity: Math.min(0.75, 0.2 + mhz / 40), interactive: false,
-          }).addTo(groups.drap));
-        });
+        if (d.grid && d.grid.data) {
+          const bytes = gridBytes(d.grid);
+          placeField(groups.drap, d.grid,
+                     fieldImage(d.grid, bytes, drapColour), 0.7);
+          say({ detail: `absorption up to ${Math.max(...bytes)} MHz`
+                        + ` (${d.valid_at})` });
+          return;
+        }
+        drawDrapDots(d);
         say({ detail: `absorption up to `
                       + `${Math.max(...d.cells.map((c) => c[2]))} MHz (${d.valid_at})` });
       } catch (e) { say({ error: `D-RAP: ${e.message}` }); }
@@ -741,7 +787,8 @@ window.HDMap = (function () {
   }
 
   return {
-    zoomSteps, auroraRamp, hex2rgb, AURORA_FULL,
+    zoomSteps, auroraRamp, drapRamp, fieldRamp, hex2rgb,
+    AURORA_FULL, DRAP_FULL,
 
     theme, readTheme, D2R,
     toLatLon, toGrid, unwrapLon, endpoint, greatCircle,

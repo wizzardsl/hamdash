@@ -178,7 +178,8 @@ class Drap:
         self._data: dict | None = None
         self._error = ""
 
-    def get(self, threshold: float = 1.0, force: bool = False) -> dict:
+    def get(self, threshold: float = 1.0, force: bool = False,
+            grid: bool = False) -> dict:
         with self._lock:
             if not (self._data and time.time() - self._at < TTL and not force):
                 self._refresh()
@@ -186,10 +187,17 @@ class Drap:
                 return {"ok": False, "error": self._error or "no D-RAP data",
                         "cells": []}
             cells = [c for c in self._data["cells"] if c[2] >= threshold]
-            return {"ok": True, "cells": cells, "threshold": threshold,
-                    "valid_at": self._data["valid_at"],
-                    "quiet": not cells,
-                    "age_s": round(time.time() - self._at)}
+            out = {"ok": True, "cells": cells, "threshold": threshold,
+                   "valid_at": self._data["valid_at"],
+                   "quiet": not cells,
+                   "age_s": round(time.time() - self._at)}
+            # Same bargain as the aurora: the raster instead of the cells,
+            # not as well as. `quiet` is worked out from the cells, so it
+            # is still right when they have been dropped.
+            if grid and self._data.get("grid"):
+                out["grid"] = self._data["grid"]
+                out["cells"] = []
+            return out
 
     def _refresh(self) -> None:
         try:
@@ -203,6 +211,7 @@ class Drap:
         valid_at = ""
         lons: list[float] = []
         cells = []
+        lon_set, lat_set, seen = set(), set(), {}
         for line in text.splitlines():
             if line.startswith("#"):
                 if "Product Valid At" in line:
@@ -224,12 +233,19 @@ class Drap:
             except ValueError:
                 continue
             for lon, v in zip(lons, vals):
+                lon_set.add(lon)
+                lat_set.add(lat)
+                # Whole MHz in the raster: it is a picture, and a tenth of
+                # a megahertz is finer than a pixel. `cells` keeps the
+                # decimal for anything that wants to read a number.
+                seen[(lon, lat)] = int(round(v))
                 if v > 0:
                     cells.append([round(lon, 1), round(lat, 1), round(v, 1)])
         if not lons:
             self._error = "NOAA returned no D-RAP grid"
             return
-        self._data = {"cells": cells, "valid_at": valid_at}
+        self._data = {"cells": cells, "valid_at": valid_at,
+                      "grid": _raster(lon_set, lat_set, seen)}
         self._at = time.time()
         self._error = ""
 

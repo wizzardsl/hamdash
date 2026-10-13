@@ -7,6 +7,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **The absorption (D-RAP) overlay is smooth now too**, the same way the
+  aurora is. Its grid is coarser than the aurora's — four degrees of
+  longitude — which is exactly where a field drawn as dots looked worst.
+  The dayside absorption lobe reads as the shape it actually is.
 - **The map pans east and west for ever now.** It used to stop after about
   a world and a half in either direction, because the world was drawn
   exactly three times and panning was fenced in to match. The copies

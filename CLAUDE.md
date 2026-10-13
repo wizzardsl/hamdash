@@ -1110,7 +1110,19 @@ QRM or fading.
   That is not politeness alone - NOAA resets the connection after a handful of
   rapid requests, which is easy to hit while developing.
 - D-RAP arrives as a text table, not JSON. All-zero is the normal, good case
-  and is reported as `quiet`, not as an empty failure.
+  and is reported as `quiet`, not as an empty failure - worked out from
+  the cells *before* `grid=1` drops them, so it stays right either way.
+- **D-RAP is drawn as a field too**, through the same `fieldImage` and
+  `placeField` the aurora uses; the only difference between the two is
+  what counts as full scale, so they share `fieldRamp` and differ by a
+  constant (`AURORA_FULL` is per cent, `DRAP_FULL` megahertz). Its grid
+  is 90x90 at 4 degrees of longitude by 2 of latitude, which is coarse -
+  and coarse is exactly where drawing it as dots looked worst and where
+  letting the browser interpolate helps most.
+- **A cell value sits at the cell's centre, so the image is stretched half
+  a cell beyond the grid on every side.** Without that the field is drawn
+  half a cell north-west of where it belongs: invisible on the aurora's 1
+  degree, two degrees of error on D-RAP's 4.
 - **The map machinery is shared, in `hamdash/static/js/hdmap.js`.** World
   copies, the azimuthal projection, the offline basemap and its pane, the
   greyline and the space-weather overlays live there; a card keeps its own
