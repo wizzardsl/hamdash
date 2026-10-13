@@ -30,7 +30,18 @@ DRAP = "https://services.swpc.noaa.gov/text/drap_global_frequencies.txt"
 # smooth field on their site is their interpolation of these points; we plot
 # the measurements themselves rather than pretending to reproduce it.
 IONOSONDES = "https://prop.kc2g.com/api/stations.json"
+# The daily solar indices: 10.7 cm flux and sunspot number, one row a day.
+DSD = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
+# Planetary Kp every three hours, and `a_running` - the A index - with it.
+PLANETARY_K = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+# What the sun is doing right now, in the one unit that means "the HF
+# bands just went away": an X-ray flare class.
+XRAY = "https://services.swpc.noaa.gov/json/goes/primary/xray-flares-latest.json"
 TTL = 300.0             # NOAA runs the model about every five minutes
+# The solar numbers move far more slowly than the aurora: the flux and
+# sunspot number are daily, Kp is three-hourly. Polling them every five
+# minutes would be asking the same question twelve times for one answer.
+SOLAR_TTL = 900.0
 TIMEOUT = 25.0
 USER_AGENT = "hamdash (+https://github.com/wizzardsl/hamdash)"
 
@@ -305,6 +316,126 @@ class Ionosondes:
                 "fof2": round(float(fof2), 1) if fof2 is not None else None,
                 "time": row.get("time", ""),
             })
+        self._data = out
+        self._at = time.time()
+        self._error = ""
+
+
+class Solar:
+    """The numbers every ham quotes: SFI, sunspot number, A, K, X-ray class.
+
+    Three small files from NOAA SWPC, none of them needing an account:
+
+      * the daily solar indices, which carry the 10.7 cm flux *and* the
+        sunspot number in one 3 kB table, so the separate flux endpoint is
+        not worth a second request - checked, they agree;
+      * the planetary K index, three-hourly, which carries `a_running`
+        beside it and is therefore also where the A index comes from;
+      * the latest GOES X-ray flare, because a class M or X is the thing
+        that actually takes the bands away, and it is the one number here
+        that can change between one glance and the next.
+
+    Any one of them can fail without taking the others down. A dashboard
+    showing three numbers and a gap is more use than one showing an error
+    where four numbers were.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._at = 0.0
+        self._data: dict | None = None
+        self._error = ""
+
+    def get(self, force: bool = False) -> dict:
+        with self._lock:
+            fresh = (self._data and time.time() - self._at < SOLAR_TTL
+                     and not force)
+            if not fresh:
+                self._refresh()
+            if not self._data:
+                return {"ok": False, "error": self._error or "no solar data"}
+            return dict(self._data, ok=True,
+                        age_s=round(time.time() - self._at))
+
+    # -- the three sources, each allowed to fail on its own ---------------
+    def _fetch(self, url: str):
+        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
+        r.raise_for_status()
+        return r
+
+    def _indices(self, out: dict) -> None:
+        """10.7 cm flux and sunspot number, from the last row of the table.
+
+        Columns are date, flux, sunspot number, area, new regions, mean
+        field, X-ray background, then flare counts. Missing values are
+        -999 or `*`, which is why nothing here trusts a column to parse.
+        """
+        text = self._fetch(DSD).text
+        rows = [l.split() for l in text.splitlines()
+                if l and not l.startswith((":", "#"))]
+        for row in reversed(rows):
+            if len(row) < 5:
+                continue
+            try:
+                sfi, ssn = int(row[3]), int(row[4])
+            except ValueError:
+                continue
+            if sfi < 0 or ssn < 0:          # -999 is "not measured"
+                continue
+            out["sfi"] = sfi
+            out["ssn"] = ssn
+            out["observed"] = "-".join(row[:3])
+            return
+
+    def _geomagnetic(self, out: dict) -> None:
+        """Planetary K, and the A index riding along as `a_running`."""
+        rows = self._fetch(PLANETARY_K).json()
+        for row in reversed(rows or []):
+            try:
+                k = float(row["Kp"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            out["k"] = round(k, 2)
+            try:
+                out["a"] = int(row.get("a_running"))
+            except (TypeError, ValueError):
+                pass
+            out["k_at"] = row.get("time_tag", "")
+            return
+
+    def _xray(self, out: dict) -> None:
+        """The current flare class, e.g. B8.2, and the day's largest.
+
+        `current_class` is what is happening now; `max_class` is the
+        biggest so far today, which is the one that explains why 20 m was
+        dead an hour ago.
+        """
+        rows = self._fetch(XRAY).json()
+        row = (rows or [{}])[0] if isinstance(rows, list) else rows
+        cur = str(row.get("current_class") or "").strip()
+        mx = str(row.get("max_class") or "").strip()
+        if cur:
+            out["xray"] = cur
+        if mx:
+            out["xray_max"] = mx
+
+    def _refresh(self) -> None:
+        out: dict = {}
+        failed = []
+        for name, fn in (("indices", self._indices),
+                         ("geomagnetic", self._geomagnetic),
+                         ("x-ray", self._xray)):
+            try:
+                fn(out)
+            except (requests.RequestException, ValueError, KeyError,
+                    IndexError, TypeError) as exc:
+                failed.append(f"{name} ({exc})")
+        if not out:
+            self._error = "could not reach NOAA SWPC: " + "; ".join(failed)
+            return
+        # Partial is still useful, and saying which part is missing beats
+        # a gap the operator has to guess about.
+        out["incomplete"] = "; ".join(failed)
         self._data = out
         self._at = time.time()
         self._error = ""

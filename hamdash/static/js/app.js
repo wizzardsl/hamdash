@@ -48,6 +48,65 @@
     $('#clock-local').textContent = now.toTimeString().slice(0, 8);
   }, 1000);
 
+  // ---- space weather on the rail --------------------------------------
+  //
+  // The numbers an operator reads before deciding what band to try. They
+  // move slowly - the flux and sunspot number are daily, Kp three-hourly -
+  // so this asks every quarter hour and the host caches for the same,
+  // which between them means one request to NOAA however many boards are
+  // open.
+  const SOLAR_EVERY = 15 * 60 * 1000;
+
+  /* K is the one that changes what you should do. Below 4 is ordinary and
+     gets no colour at all: a rail of traffic lights that are green every
+     day teaches you to stop reading it. */
+  function kLevel(k) {
+    if (!Number.isFinite(k)) return '';
+    if (k >= 5) return 'bad';            // storm
+    if (k >= 4) return 'warn';           // unsettled
+    return '';
+  }
+
+  /* A, B and C flares are the background the bands live with. M and X are
+     the ones that take the daylit HF bands away, which is the only reason
+     this is on the rail at all. */
+  function xrayLevel(cls) {
+    const c = String(cls || '').trim().toUpperCase()[0];
+    if (c === 'X') return 'bad';
+    if (c === 'M') return 'warn';
+    return '';
+  }
+
+  function cell(id, value, level, title) {
+    const el = $(id);
+    if (!el) return;
+    el.querySelector('i').textContent = value;
+    el.className = 'sw' + (level ? ' ' + level : '')
+      + (id === '#sw-ssn' || id === '#sw-a' ? ' opt' : '');
+    if (title) el.title = title;
+  }
+
+  async function paintSolar() {
+    let d;
+    try { d = await HD.get('/api/space/solar'); } catch (e) { return; }
+    // Nothing rather than zeros: a dashboard that says SFI 0 is lying,
+    // and 0 is a real reading.
+    if (!d || !d.ok) { $('#solar').hidden = true; return; }
+    const num = (v) => (Number.isFinite(Number(v)) ? String(v) : '--');
+    cell('#sw-sfi', num(d.sfi));
+    cell('#sw-ssn', num(d.ssn));
+    cell('#sw-a', num(d.a));
+    cell('#sw-k', Number.isFinite(Number(d.k)) ? Number(d.k).toFixed(1) : '--',
+         kLevel(Number(d.k)));
+    cell('#sw-xray', d.xray || '--', xrayLevel(d.xray),
+         d.xray_max ? `Now ${d.xray} · largest today ${d.xray_max}`
+                    : undefined);
+    $('#solar').hidden = false;
+  }
+
+  paintSolar();
+  setInterval(paintSolar, SOLAR_EVERY);
+
   // ---- themes ---------------------------------------------------------
   function applyTheme(id) {
     const t = themes.find((x) => x.id === id) || themes[0];

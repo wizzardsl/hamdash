@@ -49,6 +49,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **Space weather along the top bar.** Solar flux, sunspot number, A and K
+  indices and the current X-ray flare class, beside the clocks — the
+  numbers you read before deciding what band to try. K and the flare class
+  turn amber and then red when they start to matter, and stay plain when
+  they do not. The narrower the window the fewer are shown, so the rail
+  never grows a second row and pushes the board down.
 - **The front page says what putting the board on a network means.** There
   is no login, so anyone who can reach the address can transmit with your
   radio — that was only written down in a page about audio cards, two

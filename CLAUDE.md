@@ -409,6 +409,41 @@ README and is guesswork as a result.
 - Buttons built from nested spans need an explicit `aria-label`. The menu's
   six checkboxes computed an empty accessible name until they got one.
 
+## Space weather on the rail
+
+SFI, sunspot number, A, K and the X-ray flare class, from three small
+NOAA files. `services/space.Solar`, `/api/space/solar`, drawn by
+`paintSolar` in `app.js`.
+
+- **One file gives both the flux and the sunspot number.** The daily
+  solar indices table carries them in the same 3 kB row, so the separate
+  10 cm flux endpoint is not worth a second request - checked against it,
+  they agree. The planetary K file carries `a_running` beside Kp, so the
+  A index is free as well. Two requests for four numbers, plus one for
+  the X-ray class.
+- **Any one source may fail without taking the others down.** Three
+  numbers and a gap beats an error where four numbers were, so each fetch
+  is its own try and `incomplete` says which part is missing.
+- **-999 and `*` are how that table says 'not measured'.** Today's row
+  often exists before the numbers do, and reading it puts `SSN -999` on
+  the rail - which looks like a measurement rather than a gap. The last
+  row with real values wins.
+- **`SOLAR_TTL` is fifteen minutes, not the map's five.** The flux and
+  sunspot number are daily and Kp is three-hourly; polling faster asks
+  the same question twelve times for one answer.
+- **Calm gets no colour.** K earns amber at 4 and red at 5, and an X-ray
+  class earns them at M and X. Colouring the ordinary case too would make
+  the rail a row of traffic lights that are green every day, which is a
+  row nobody reads.
+- **`.rail-solar[hidden]` exists because `[hidden]` loses to an author
+  `display: flex`** - the fifth time in this tree, and the first the test
+  did not catch, because it compared each file against itself: a card
+  page keeps its markup and its CSS together and the board does not, so
+  the whole shell was unguarded. `tests/test_hidden_display.py` groups by
+  scope now - each card alone, and `static/` html plus css together - and
+  not one global pile, because cards share class names and one card's
+  guard would cover for another's absence.
+
 ## Radios
 
 `radio.rigs` is a list of up to `rigs.MAX_RIGS` entries with `radio.active`

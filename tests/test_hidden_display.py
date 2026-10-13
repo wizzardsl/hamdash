@@ -27,17 +27,33 @@ HIDDEN_JS = re.compile(r"""\$\(['"]([.#][\w-]+)['"]\)\.hidden\s*=""")
 RULE = re.compile(r"(?m)^\s*([.#][\w-]+)\s*\{([^}]*)\}")
 
 
-def files():
-    yield from (ROOT / "plugins").glob("*/*.html")
-    yield from (ROOT / "hamdash" / "static").rglob("*.html")
-    yield from (ROOT / "hamdash" / "static").rglob("*.css")
+def scopes():
+    """Files grouped by what can see what.
+
+    A card page is one file: its markup and its stylesheet live in the same
+    place, so a rule and the element it fails to hide do too. The board is
+    not - its markup is `index.html` and its `display` declarations are in
+    `app.css` - and comparing each file against itself therefore never
+    looked at the board at all. The whole shell went unguarded until a row
+    added to the rail walked into this for the fifth time and the test said
+    nothing.
+
+    Not one global pile, though: card pages share class names - `.bar` is
+    in two of them - so one card guarding `.bar[hidden]` would cover for
+    another that had not.
+    """
+    for card in sorted((ROOT / "plugins").glob("*/*.html")):
+        yield card.relative_to(ROOT).as_posix(), [card]
+    static = ROOT / "hamdash" / "static"
+    shell = sorted(static.rglob("*.html")) + sorted(static.rglob("*.css"))
+    yield "the board shell", shell
 
 
 class TestHiddenBeatsDisplay(unittest.TestCase):
     def test_anything_hidden_in_code_is_actually_hidden(self):
         bad = []
-        for path in files():
-            text = path.read_text(encoding="utf-8")
+        for where, paths in scopes():
+            text = "\n".join(p.read_text(encoding="utf-8") for p in paths)
 
             # What this file gives an author `display`.
             styled = {sel for sel, body in RULE.findall(text)
@@ -52,7 +68,7 @@ class TestHiddenBeatsDisplay(unittest.TestCase):
             want.update(HIDDEN_JS.findall(text))
 
             for sel in sorted(want & styled - guarded):
-                bad.append(f"{path.relative_to(ROOT).as_posix()}: "
+                bad.append(f"{where}: "
                            f"`{sel}` is hidden in code but the stylesheet "
                            f"gives it a display, so it stays on screen. "
                            f"Add `{sel}[hidden] {{ display: none; }}`.")

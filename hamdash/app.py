@@ -29,7 +29,7 @@ from .services import audio as audiosvc
 
 from .services import bands as bandsvc
 from .services import rigs as rigsvc
-from .services.space import Aurora, Drap, Ionosondes
+from .services.space import Aurora, Drap, Ionosondes, Solar
 
 # One requests.Session per server thread, for the card proxy.
 _local = threading.local()
@@ -96,6 +96,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     syncer = Runner(lambda t, p: BUS.publish(t, p, source='host'))
     aurora = Aurora()
     drap = Drap()
+    solar = Solar()
     ionosondes = Ionosondes()
 
     # ---------------- permissions --------------------------------------
@@ -764,6 +765,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             threshold = 1.0
         grid = request.args.get("grid", "") in ("1", "true", "yes")
         return jsonify(drap.get(threshold, grid=grid))
+
+    @app.get("/api/space/solar")
+    @guard("space")
+    def space_solar():
+        """SFI, sunspot number, A, K and the current X-ray flare class.
+
+        The numbers along the top of the board. Three small NOAA files,
+        cached for fifteen minutes: the flux and sunspot number are daily
+        and Kp is three-hourly, so polling faster asks the same question
+        many times for one answer.
+        """
+        return jsonify(solar.get(force=request.args.get("refresh") == "1"))
 
     @app.get("/api/space/muf")
     @guard("space")

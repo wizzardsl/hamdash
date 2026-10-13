@@ -60,6 +60,26 @@ html, body {
 .clock { color: var(--ink); font-size: 15px; }
 .clock-z { color: var(--muted); font-size: 11px; margin-left: -8px; }
 
+/* Space weather along the rail. */
+.rail-solar { display: flex; align-items: center; gap: 12px;
+              font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* An author `display: flex` beats the user agent's [hidden], so without
+   this the row is on screen the whole time it is supposed to be hidden.
+   Fifth time in this tree; tests/test_hidden_display.py fails on it. */
+.rail-solar[hidden] { display: none; }
+.rail-solar .sw b { font-weight: 600; color: var(--muted);
+                    font-size: 10px; letter-spacing: .06em;
+                    text-transform: uppercase; }
+.rail-solar .sw i { font-style: normal; font-family: var(--mono);
+                    color: var(--ink); }
+/* Disturbed and stormy earn a colour; calm deliberately does not, or the
+   rail is a row of traffic lights that mean nothing most days. */
+.rail-solar .sw.warn i { color: var(--accent); }
+.rail-solar .sw.bad i { color: var(--alert); }
+/* The board is the point; the rail gives way before the clocks do. */
+@media (max-width: 1100px) { .rail-solar .sw.opt { display: none; } }
+@media (max-width: 860px) { .rail-solar { display: none; } }
+
 .btn {
   font: inherit;
   color: var(--bg);

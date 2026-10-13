@@ -13,6 +13,18 @@
     <span class="wordmark">HamDash</span>
     <span class="station" id="station">N0CALL · DN02</span>
   </div>
+  <!-- The numbers every operator reads before deciding what band to try.
+       Between the station and the clocks because it belongs with "what is
+       happening", not with "who am I". Hidden rather than wrapped when the
+       window is narrow: a rail that grows a second row pushes the board
+       down. -->
+  <div class="rail-solar" id="solar" hidden>
+    <span class="sw" id="sw-sfi" title="10.7 cm solar flux - higher means more ionisation and better HF"><b>SFI</b> <i>--</i></span>
+    <span class="sw" id="sw-ssn" title="Sunspot number"><b>SSN</b> <i>--</i></span>
+    <span class="sw" id="sw-a" title="A index - the day's geomagnetic disturbance, 0 is calm"><b>A</b> <i>--</i></span>
+    <span class="sw" id="sw-k" title="K index - geomagnetic disturbance right now. 5 and above is a storm"><b>K</b> <i>--</i></span>
+    <span class="sw" id="sw-xray" title="GOES X-ray flare class. M and X take the daylit HF bands away"><b>X-ray</b> <i>--</i></span>
+  </div>
   <div class="rail-right">
     <span class="clock mono" id="clock-local">--:--:--</span>
     <span class="clock-z" id="clock-zone">local</span>
