@@ -1142,8 +1142,11 @@
     let kind = '';
     if (!s.enabled) {
       msg = 'Off. Tick the box and save to start listening.';
-    } else if (s.error) {
-      msg = s.error;
+    } else if (!s.listening && s.error) {
+      // Still trying, so this is what is in the way rather than a
+      // failure: closing whatever holds the port is enough, and
+      // restarting hamdash is not needed.
+      msg = `${s.error} Still trying.`;
       kind = 'bad';
     } else if (!s.listening) {
       msg = 'Not listening — save to apply.';

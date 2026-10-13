@@ -201,6 +201,98 @@ class TestTheMessages(unittest.TestCase):
         self.assertEqual(msg["type"], wsjtx.DECODE)
 
 
+class TestAgainstRealCapturedBytes(unittest.TestCase):
+    """Datagrams captured off a live WSJT-X 3.0.2, byte for byte.
+
+    This is the test the rest of the file could not be. Everything else
+    here builds its own datagrams, so a mistake in the layout would be
+    made identically by the builder and the parser and they would agree
+    with each other - the `bandsBetween` trap. These bytes came off the
+    wire from WSJT-X itself, so they are the one thing in this file that
+    can disagree with the code.
+
+    What they pin: the magic number, Qt's utf8 string encoding, the
+    quint64 dial frequency, three consecutive bools, a pair of quint32
+    offsets, and the field *order* of Heartbeat and Status.
+
+    What they still do not pin is the field order of `QSO_LOGGED` (5),
+    which only fires when a contact is logged. `LOGGED_ADIF` (12) is one
+    string after the header and both of those are proven here, so the
+    path that actually writes to the log is covered.
+    """
+
+    # WSJT-X 3.0.2 heartbeat, exactly as it arrived.
+    HEARTBEAT = bytes.fromhex(
+        "adbccbda"                      # magic
+        "00000002"                      # schema
+        "00000000"                      # type 0, Heartbeat
+        "00000006" "57534a542d58"       # "WSJT-X"
+        "00000003"                      # max schema it understands
+        "00000005" "332e302e32"         # "3.0.2"
+        "00000006" "636364666166"       # "ccdfaf"
+    )
+
+    # The same session, decoding FT8 on 20 m.
+    STATUS = bytes.fromhex(
+        "adbccbda"
+        "00000002"
+        "00000001"                      # type 1, Status
+        "00000006" "57534a542d58"       # "WSJT-X"
+        "0000000000d6c090"              # dial, quint64: 14 074 000 Hz
+        "00000003" "465438"             # "FT8"
+        "00000006" "454133474957"       # "EA3GIW"
+        "00000003" "2d3136"             # "-16"
+        "00000003" "465438"             # "FT8"
+        "00" "00" "01"                  # tx_enabled, transmitting, decoding
+        "0000032c" "0000032c"           # rx df, tx df: 812 Hz
+        "00000006" "564137534c4c"       # "VA7SLL"
+        "00000006" "444f30304841"       # "DO00HA"
+        "00000004" "4a4e3131"           # "JN11"
+    )
+
+    def test_the_heartbeat_decodes_as_wsjtx_sends_it(self):
+        msg = wsjtx.decode(self.HEARTBEAT)
+        self.assertEqual(msg["type"], wsjtx.HEARTBEAT)
+        self.assertEqual(msg["id"], "WSJT-X")
+        self.assertEqual(msg["schema"], 2)
+        self.assertEqual(msg["max_schema"], 3)
+        self.assertEqual(msg["version"], "3.0.2")
+        self.assertEqual(msg["revision"], "ccdfaf")
+
+    def test_the_status_decodes_as_wsjtx_sends_it(self):
+        msg = wsjtx.decode(self.STATUS)
+        self.assertEqual(msg["type"], wsjtx.STATUS)
+        # 14.074 is the FT8 watering hole, which is what makes this
+        # number worth asserting: it is recognisably right, so a
+        # mis-sized integer would be obvious rather than plausible.
+        self.assertEqual(msg["dial_hz"], 14074000)
+        self.assertEqual(msg["mode"], "FT8")
+        self.assertEqual(msg["dx_call"], "EA3GIW")
+        self.assertEqual(msg["report"], "-16")
+        self.assertEqual(msg["tx_mode"], "FT8")
+        # Three bools in a row. Reading two, or four, shifts both of the
+        # offsets below and every string after them.
+        self.assertIs(msg["tx_enabled"], False)
+        self.assertIs(msg["transmitting"], False)
+        self.assertIs(msg["decoding"], True)
+        self.assertEqual(msg["rx_df"], 812)
+        self.assertEqual(msg["tx_df"], 812)
+        self.assertEqual(msg["de_call"], "VA7SLL")
+        self.assertEqual(msg["de_grid"], "DO00HA")
+        # EA3 is Spain and JN11 is Barcelona, so the last field being
+        # the *DX* grid rather than anything else is checkable from
+        # outside this file.
+        self.assertEqual(msg["dx_grid"], "JN11")
+
+    def test_a_real_status_is_never_treated_as_a_logged_contact(self):
+        # The operator's rule: a contact is logged when they log one,
+        # not when WSJT-X decodes one. A live session sends hundreds of
+        # these and not one may reach the log.
+        for raw in (self.HEARTBEAT, self.STATUS):
+            self.assertNotEqual(wsjtx.decode(raw)["type"], wsjtx.LOGGED_ADIF)
+            self.assertNotIn("adif", wsjtx.decode(raw))
+
+
 class TestTheListener(unittest.TestCase):
     """A real socket, real datagrams, and the thread that reads them."""
 
@@ -290,15 +382,51 @@ class TestTheListener(unittest.TestCase):
     def test_a_port_already_taken_says_what_is_probably_holding_it(self):
         held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         held.bind(("127.0.0.1", self.port))
+        second = wsjtx.Listener("127.0.0.1", self.port, log=lambda x: None)
         try:
-            second = wsjtx.Listener("127.0.0.1", self.port, log=lambda x: None)
             self.assertFalse(second.start())
             self.assertFalse(second.listening)
             # Names the likely culprit and a way out, not just errno.
             self.assertIn("JTAlert", second.error)
             self.assertIn(str(self.port), second.error)
+            # And it has not given up - False from start() means "not
+            # yet", which is the whole point of the retry below.
+            self.assertTrue(second.retrying)
         finally:
+            second.stop()
             held.close()
+
+    def test_it_keeps_trying_and_takes_the_port_when_it_is_freed(self):
+        """The reason the thread outlives a refused bind.
+
+        JTAlert and GridTracker hold 2237 and get closed during a
+        session. Requiring a restart of hamdash to notice is the wrong
+        answer - and the failure is silent, because the status would go
+        on saying the port is busy long after it was not.
+        """
+        held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        held.bind(("127.0.0.1", self.port))
+        was, wsjtx.RETRY_S = wsjtx.RETRY_S, 0.1
+        try:
+            self.assertFalse(self.listener.start())
+            self.assertTrue(self.listener.retrying)
+            self.assertFalse(self.listener.listening)
+
+            held.close()                      # the other program quits
+            self.assertTrue(
+                self.wait_for(lambda: self.listener.listening, timeout=5),
+                "it never took the port after it was freed")
+            self.assertEqual(self.listener.error, "")
+
+            # And it is a working listener, not merely a bound socket.
+            self.send(header(wsjtx.LOGGED_ADIF) + qstr(ADIF_RECORD))
+            self.assertTrue(self.wait_for(lambda: self.got))
+        finally:
+            wsjtx.RETRY_S = was
+            try:
+                held.close()
+            except OSError:
+                pass
 
     def test_stopping_is_idempotent_and_releases_the_port(self):
         self.listener.start()

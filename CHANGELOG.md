@@ -7,25 +7,33 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
-- **WSJT-X logging.** Tick it on in Settings → Integrations and every
-  contact you log in WSJT-X lands in the log as you make it. Point its
+- **WSJT-X logging.** Every contact you log in WSJT-X lands in the log
+  as you make it — and only then. A live FT8 session broadcasts hundreds
+  of decodes and status updates a minute; none of them touch the log,
+  because only the record WSJT-X sends when you press **Log QSO** does.
+  Verified against a live WSJT-X 3.0.2: 200 datagrams in, nothing
+  written. Point its
   *UDP Server* at the same address and port. Contacts go through the
   same ADIF importer as everything else, so the same QSO arriving twice
   updates one row rather than making two.
-  Off by default and bound to loopback: this opens a port, and an app
-  with no authentication does not open ports nobody asked for.
+  **On by default**, on WSJT-X's own default address and port, so
+  pointing WSJT-X at hamdash is the only step. It binds loopback, so it
+  is reachable only from the machine hamdash runs on and nothing is
+  offered to the network.
 - **A status line that says whether it is actually working**, which a
   stored "enabled" cannot: the port can be open and perfectly correct
   while WSJT-X points somewhere else, and from here those look identical
   until a heartbeat arrives. Three states — off, listening but nothing
   heard, connected with a version and a count — and the two that are not
   "connected" name the fix.
-- **A port somebody else holds is refused, not taken.** JTAlert and
+- **A port somebody else holds is retried, never shared.** JTAlert and
   GridTracker commonly have 2237, and on Windows two sockets *can* share
   a UDP port, with datagrams going to one of them unpredictably — half
-  your contacts to each program. The message names the likely culprit
-  and points at WSJT-X's multicast support, which is the way to run
-  several at once.
+  your contacts to each program. So hamdash will not take it, and keeps
+  asking instead of giving up: close the other program and the listener
+  has the port within a quarter of a minute, with no restart. The
+  message names the likely culprit and points at WSJT-X's multicast
+  support, which is the way to run several at once on purpose.
 - **The path readout has a bottom as well as a top.** It gave the MUF and
   the highest band and nothing about what the ionosphere was taking away
   underneath, so a daytime path offered 80 m as readily as 20 m. There are

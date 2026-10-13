@@ -52,8 +52,11 @@ WSJT-X lands in the log as you make it. In WSJT-X: **File → Settings →
 Reporting**, and set *UDP Server* to the same address and port (its own
 default, `127.0.0.1` and `2237`, is what hamdash starts with).
 
-It is **off by default**, and bound to loopback when it is on. This opens a
-port, and an app with no authentication does not open ports nobody asked for.
+**It is on by default**, listening on WSJT-X's own default address and port,
+so pointing WSJT-X at hamdash is the only step there is. It binds
+**loopback** — reachable only from the computer hamdash runs on, offering
+nothing to the network — which is what makes on-by-default the right call
+here and not for anything that listens outward.
 
 Contacts go through the same ADIF importer as everything else, so they dedupe
 the same way: the same QSO arriving twice — WSJT-X resending, or you logging
@@ -67,8 +70,12 @@ off, listening but nothing heard, or connected with a version and a count —
 and names the fix for the two that are not "connected". WSJT-X sends a
 heartbeat every 15 seconds, so it settles within the minute.
 
-**If another program already has the port**, hamdash refuses to start the
-listener and says so rather than taking it. JTAlert and GridTracker commonly
+**If another program already has the port**, hamdash keeps trying rather than
+giving up, and says what is in the way. JTAlert and GridTracker get closed
+during a session, and needing to restart hamdash to pick that up would be the
+wrong answer — close the other program and the listener takes the port within
+a quarter of a minute. It refuses to *share* it, though, rather than taking
+it. JTAlert and GridTracker commonly
 hold 2237, and on Windows two sockets *can* share a UDP port — with the
 datagrams going to one of them unpredictably, so half your contacts would
 reach each program. Refusing is better than that. The way to run several at

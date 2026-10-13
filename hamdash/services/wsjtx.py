@@ -65,6 +65,13 @@ LOGGED_ADIF = 12
 DEFAULT_PORT = 2237
 DEFAULT_BIND = "127.0.0.1"
 
+#: How often to try the bind again after it was refused. The usual
+#: reason is JTAlert or GridTracker holding the port, and those get
+#: closed during a session - making the operator restart hamdash to pick
+#: that up is the wrong answer. Same reasoning as `_wait_ready` in
+#: proc.py: slow to start is not dead.
+RETRY_S = 15
+
 #: Heartbeats come every 15 s, so this is "we have missed three".
 STALE_S = 50
 
@@ -237,21 +244,34 @@ class Listener:
 
     # ---------------------------------------------------------------- life
     def start(self) -> bool:
+        """Begin listening, and keep trying if the port is not free yet.
+
+        The first attempt is made here rather than on the thread so that
+        a caller - and the settings sheet behind it - gets an immediate
+        yes or no instead of a spinner. The return value is that first
+        attempt; the thread carries on retrying either way, so a `False`
+        means "not yet", not "gave up".
+        """
         with self._lock:
             if self._thread and self._thread.is_alive():
-                return True
+                return self._sock is not None
             self._stop.clear()
-            try:
-                self._sock = self._open()
-            except OSError as exc:
-                self.error = self._why(exc)
-                self._sock = None
-                return False
-            self.error = ""
+            ok = self._try_open()
             self._thread = threading.Thread(target=self._run, daemon=True,
                                             name="wsjtx")
             self._thread.start()
-            return True
+            return ok
+
+    def _try_open(self) -> bool:
+        """One attempt. Never raises - a refused bind is expected here."""
+        try:
+            self._sock = self._open()
+        except OSError as exc:
+            self.error = self._why(exc)
+            self._sock = None
+            return False
+        self.error = ""
+        return True
 
     def _open(self) -> socket.socket:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -321,22 +341,45 @@ class Listener:
 
     @property
     def listening(self) -> bool:
-        return bool(self._thread and self._thread.is_alive() and not self.error)
+        """Bound to the port right now."""
+        return self._sock is not None
+
+    @property
+    def retrying(self) -> bool:
+        """Wanted, running, but the port is not ours yet."""
+        return bool(self._thread and self._thread.is_alive()
+                    and self._sock is None)
 
     # ---------------------------------------------------------------- loop
     def _run(self) -> None:
         while not self._stop.is_set():
             sock = self._sock
             if sock is None:
-                return
+                # Nothing bound. Wait and try again rather than giving
+                # up: the port is usually held by another program, and
+                # that program gets closed. `_stop.wait` so stopping is
+                # immediate and does not sit out the interval.
+                if self._stop.wait(RETRY_S):
+                    return
+                with self._lock:
+                    if self._stop.is_set():
+                        return
+                    if self._try_open():
+                        self._say(f"wsjtx: listening on {self.bind}:{self.port}")
+                continue
             try:
                 data, _from = sock.recvfrom(65535)
             except socket.timeout:
                 continue
             except OSError:
-                # The socket was closed under us, which is how stop()
-                # works. Anything else here is also terminal.
-                return
+                if self._stop.is_set():
+                    return             # closed by stop(), which is normal
+                # Lost it some other way. Drop back to retrying rather
+                # than ending the thread - ending it is the failure that
+                # looks like nothing, because the process stays up.
+                with self._lock:
+                    self._sock = None
+                continue
             try:
                 self._handle(data)
             except Exception as exc:                    # noqa: BLE001
@@ -405,6 +448,7 @@ class Listener:
         fresh = age is not None and age < STALE_S
         return {
             "listening": self.listening,
+            "retrying": self.retrying,
             "bind": self.bind,
             "port": self.port,
             "multicast": self._is_multicast(self.bind),

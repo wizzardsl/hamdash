@@ -1021,10 +1021,22 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   never logged with nothing on screen saying so. `qsl.Runner` is here
   for the same reason. It is the opposite trade from `spots`, which
   *drops* a feed nobody is looking at.
-- **Off by default, bound to loopback.** It opens a port, and an app
-  with no authentication does not open ports nobody asked for - the rule
-  from the authentication decision, applied.
-- **Only the ADIF message (type 12) is logged.** WSJT-X sends *two*
+- **On by default, bound to loopback**, on WSJT-X's own default address
+  and port, so pointing WSJT-X here is the only step. It was built off
+  by default on the "nothing new widens the surface unasked" rule and
+  the operator overruled it, correctly: that rule is about what is
+  offered to the *network*, and loopback offers nothing. Anything that
+  binds outward still defaults off.
+- **A refused bind is retried, not final.** `RETRY_S`, and `start()`
+  returning False means "not yet". The port is usually held by JTAlert
+  or GridTracker and those get closed mid-session; making the operator
+  restart hamdash to notice is the same mistake as `_wait_ready` giving
+  up at `START_TIMEOUT`. `listening` therefore means *has a socket*, not
+  *has a thread*, and `retrying` is the third state the UI needs.
+- **A contact is logged when the operator logs one, and at no other
+  time.** A live FT8 session sends hundreds of Decode and Status
+  datagrams - measured, 200 in a minute - and not one may reach the log.
+  Only the ADIF message (type 12) is logged. WSJT-X sends *two*
   datagrams per contact, the structured `QSO_LOGGED` (5) and the
   finished ADIF. Logging both would put one QSO through twice; the
   importer's dedupe would catch it, but relying on that to cover a
@@ -1057,15 +1069,27 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   status says both. The port can be open and perfectly correct while
   WSJT-X points elsewhere; from here that is indistinguishable from
   working until a heartbeat arrives, and it is the common failure.
-- **Unproven against live WSJT-X.** It is not installed on this machine.
-  The protocol is implemented from its documented shape and the tests
-  build datagrams by hand, which means **the tests cannot prove the
-  field order** - they would agree with the same guess the code makes,
-  the `bandsBetween` trap. What they do prove is the magic number, Qt's
-  string and datetime encoding, the Julian epoch, and that junk cannot
-  kill the reader. Proof is an operator pressing Log QSO once with the
-  UDP server pointed here, like PTT was proven with somebody watching
-  the radio. Until that has happened, say so.
+- **Proven against live WSJT-X 3.0.2**, which turned out to be running
+  on this machine all along - 200 datagrams a minute into 127.0.0.1:2237
+  while the first version of this note said it could not be checked.
+  `TestAgainstRealCapturedBytes` holds a real Heartbeat and a real
+  Status byte for byte, and they are the only thing in that file that
+  **can** disagree with the code: everything else builds its own
+  datagrams, so a mistake in the layout would be made identically by the
+  builder and the parser. That is the `bandsBetween` trap, and a capture
+  is the way out of it. Confirmed from the wire: the magic, Qt's utf8
+  strings, a `quint64` dial of 14074000 (recognisably the FT8 watering
+  hole, so a mis-sized integer would be obvious rather than plausible),
+  **three** consecutive bools, a pair of `quint32` offsets, and the
+  field order of both messages. Mutations blow up rather than misreading
+  quietly: two bools instead of three gives `Truncated`, and reading the
+  dial as a `quint32` tries to take 14 million bytes as a string length.
+  Still unproven is `QSO_LOGGED` (5)'s field order, which only fires on
+  a logged contact - and nothing logs from it. `LOGGED_ADIF` (12) is one
+  string after the header, and both of those are now proven, so the path
+  that writes to the log is covered.
+  **Look for the traffic before declaring something unverifiable**: the
+  port was being broadcast to the whole time.
 
 ## One station, several cards
 

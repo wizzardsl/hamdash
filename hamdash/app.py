@@ -129,7 +129,10 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         port = int(c.get("port") or wsjtxsvc.DEFAULT_PORT)
         want = bool(c.get("enabled"))
         same = (bind == wsjtx.bind and port == wsjtx.port)
-        if want and same and wsjtx.listening:
+        # Retrying counts as "already doing what was asked" - rebinding
+        # it would only restart the same wait, and would drop a working
+        # socket every time an unrelated setting was saved.
+        if want and same and (wsjtx.listening or wsjtx.retrying):
             return
         wsjtx.stop()
         wsjtx.bind, wsjtx.port = bind, port
@@ -137,7 +140,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             if wsjtx.start():
                 LOG.info("wsjtx: listening on %s:%s", bind, port)
             else:
-                LOG.warning("wsjtx: %s", wsjtx.error)
+                # Not fatal and not final: it keeps trying, so this says
+                # what is in the way rather than announcing a failure.
+                LOG.warning("wsjtx: %s (still trying)", wsjtx.error)
 
     _apply_wsjtx()
 

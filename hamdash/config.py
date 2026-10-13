@@ -54,10 +54,14 @@ DEFAULTS = {
                      "qrz_api_key": "", "wrl_api_key": "",
                      "wrl_logbook_id": "", "tqsl_path": "",
                      "station_location": ""},
-    # WSJT-X's UDP broadcast. Off by default and bound to loopback: this
-    # opens a port, and an app with no authentication does not open ports
-    # nobody asked for.
-    "wsjtx": {"enabled": False, "bind": "127.0.0.1", "port": 2237},
+    # WSJT-X's UDP broadcast, on by default and listening on WSJT-X's own
+    # default address and port, so that pointing WSJT-X at hamdash is the
+    # only step. It binds **loopback**, so it is reachable only from this
+    # machine and nothing is offered to the network - which is what makes
+    # on-by-default the right call here and not elsewhere. If the port is
+    # taken it retries rather than giving up, so closing JTAlert is
+    # enough and restarting hamdash is not needed.
+    "wsjtx": {"enabled": True, "bind": "127.0.0.1", "port": 2237},
     "units": "km",   # km | mi | nmi
 }
 
