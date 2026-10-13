@@ -1433,6 +1433,52 @@ the live service.
   is an `AttributeError` about a constant that is plainly there.
   `tests/test_spots.py:_load` loads a card by path under a name of its own.
 
+## Satellites
+
+`plugins/satellites`. The split is the point: the **card** talks to
+Celestrak and nothing else, and the **browser** does all the orbital
+arithmetic, because that is where the clock ticks.
+
+- **SGP4 is vendored, not written.** `vendor/satellite.min.js`,
+  satellite.js 6.0.2, MIT, no dependencies, 24 kB. It is a specification
+  you get subtly wrong rather than obviously wrong - a hand-rolled
+  propagator that is a degree out still draws a satellite somewhere
+  plausible. **6.0.2 and not 7.x on purpose**: 7 is ESM-only and its
+  `dist/index.js` is 782 bytes of re-exports, so a card page would need
+  a bundler. 6.0.2 is the last UMD build and SGP4 itself has not changed
+  since 1988.
+- **Celestrak's `amateur` group, not the catalogue.** 95 satellites in
+  16 kB against 10,000 objects nobody is working. Elements are published
+  a few times a day and go stale slowly, so the floor is six hours, the
+  answer is kept on disk (a restart is not a fresh request) and an
+  outage serves the set it has. The `psk_reporter` pattern, for the same
+  reason: somebody else's server, and a tile that reloads all day.
+- **Celestrak answers 200 with an error page.** Read as elements that is
+  not an exception, it is satellites with nonsense orbits - and a dot on
+  a map is a dot on a map whether or not it means anything. `_parse`
+  requires `1 NNNNN` and `2 NNNNN` on the two lines after a name, and a
+  reply with no elements in it counts as a failure, so the good set is
+  kept rather than replaced by nothing.
+- **A decayed object propagates to nonsense rather than to an error.**
+  Elements are still published for things that have come down; SGP4
+  returns NaN or silently absurd positions. `at()` returns null unless
+  everything is finite, because a NaN becomes a marker at 0,0 - a
+  satellite apparently over the Gulf of Guinea, which looks like data.
+- **Passes are stepped and then bisected, not solved.** A closed form
+  exists and is a great deal of work to be exactly right about; a minute
+  step with a five-second bisection at the crossing is finer than anyone
+  points an antenna. It runs in slices with a yield between them because
+  95 satellites over twelve hours is tens of thousands of propagations,
+  and a tile that freezes for a second looks broken rather than busy.
+- **The station is a grid square, not a latitude.** `HD.station()` hands
+  back the config block, so the position comes from
+  `HDMap.toLatLon(grid)`. Without a grid the map still works and the
+  pass list cannot, which the card says rather than showing an empty
+  column.
+- `unwrapLon(fromLon, lon)` places `lon` near `fromLon`, and the
+  arguments in that order - backwards, a ground track splits at the
+  antimeridian into a line that stops dead at +-180.
+
 ## Flags and prefixes
 
 - `services/dxcc.py` maps prefix -> (country, ISO alpha-2, rough locator),

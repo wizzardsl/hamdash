@@ -165,6 +165,7 @@ Bundled with it, each keeping its own licence beside the files:
 |---|---|
 | [Leaflet](https://leafletjs.com) and [proj4js](https://proj4js.org) | BSD-2 — `hamdash/static/vendor/` |
 | [flag-icons](https://github.com/lipis/flag-icons) | MIT — `hamdash/static/flags/` |
+| [satellite.js](https://github.com/shashwatak/satellite-js) | MIT — `hamdash/static/vendor/satellite.min.js`, SGP4 orbital propagation |
 | Natural Earth coastlines and boundaries | public domain, simplified into `vendor/world.js` and `vendor/borders.js` |
 
 Hamlib is **not** bundled: `rigctl` and `rigctld` are GPL and hamdash is MIT,

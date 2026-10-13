@@ -1,0 +1,408 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Satellites</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<style>
+  body { margin: 0; font: 13px var(--sans); color: var(--ink);
+         background: var(--bg); overflow: hidden; }
+  .wrap { display: flex; height: 100vh; }
+  #map { flex: 1; min-width: 0; background: var(--bg); }
+
+  .side { width: 196px; flex: none; display: flex; flex-direction: column;
+          border-right: 1px solid var(--rule); background: var(--panel); }
+  .side[hidden] { display: none; }   /* author display beats UA [hidden] */
+  /* A narrow tile is a map, not a table. */
+  @media (max-width: 520px) { .side { display: none; } }
+
+  .side h4 { margin: 0; padding: 6px 8px; font-size: 10px;
+             letter-spacing: .08em; text-transform: uppercase;
+             color: var(--muted); border-bottom: 1px solid var(--rule); }
+  .list { overflow-y: auto; flex: 1; }
+  .sat { display: flex; align-items: baseline; gap: 6px; width: 100%;
+         padding: 4px 8px; border: 0; background: none; cursor: pointer;
+         text-align: left; color: var(--ink); font: inherit;
+         border-bottom: 1px solid var(--rule); }
+  .sat:hover { background: var(--panel-2); }
+  .sat.on { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+  .sat .nm { flex: 1; min-width: 0; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .sat .el { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  /* Above the horizon now: the only thing on this list you can act on. */
+  .sat.up .nm { color: var(--signal); font-weight: 600; }
+  .sat.up .el { color: var(--signal); }
+
+  .note { color: var(--muted); font-size: 11px; margin: 0; padding: 5px 8px; }
+  .note.warn { color: var(--alert); }
+
+  .sel { padding: 5px 8px; border-top: 1px solid var(--rule);
+         font-size: 11px; color: var(--muted); }
+  .sel[hidden] { display: none; }
+  .sel b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+  .sel .row { display: flex; justify-content: space-between; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="side" id="side">
+    <h4 id="head">Satellites</h4>
+    <div class="list" id="list"></div>
+    <div class="sel" id="sel" hidden></div>
+    <p class="note" id="status">Loading elements…</p>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/proj4.js"></script>
+<script src="/static/vendor/proj4leaflet.js"></script>
+<script src="/static/vendor/world.js"></script>
+<script src="/static/vendor/borders.js"></script>
+<script src="/static/vendor/satellite.min.js"></script>
+<script src="/static/js/hdmap.js"></script>
+<script src="/static/js/hamdash.js"></script>
+<script>
+HD.cardId = 'satellites';
+const $ = (s) => document.querySelector(s);
+
+const R_EARTH = 6371;           // km, for footprint geometry
+const D2R = Math.PI / 180;
+const R2D = 180 / Math.PI;
+
+let conf = {};
+let me = null;                  // the operator, as {lat, lon}
+let sats = [];                  // {name, satrec, ...}
+let selected = null;
+let map = null;
+let L_ = {};
+let ticking = null;
+
+/* ---- the sky ---------------------------------------------------------- */
+
+/* Where a satellite is, right now, in degrees and kilometres.
+   Returns null when SGP4 declines - a decayed object whose elements are
+   still being published propagates to nonsense rather than to an error,
+   and a NaN here becomes a marker at the origin, which looks like a
+   satellite over the Gulf of Guinea. */
+function at(satrec, when) {
+  let pv;
+  try { pv = satellite.propagate(satrec, when); } catch (e) { return null; }
+  if (!pv || !pv.position) return null;
+  const gmst = satellite.gstime(when);
+  const g = satellite.eciToGeodetic(pv.position, gmst);
+  const lat = satellite.degreesLat(g.latitude);
+  const lon = satellite.degreesLong(g.longitude);
+  const alt = g.height;
+  if (![lat, lon, alt].every(Number.isFinite)) return null;
+  return { lat, lon, alt, eci: pv.position, gmst };
+}
+
+/* Azimuth, elevation and range from the operator's position. */
+function look(fix, obs) {
+  const ecf = satellite.eciToEcf(fix.eci, fix.gmst);
+  const la = satellite.ecfToLookAngles(obs, ecf);
+  return { az: la.azimuth * R2D, el: la.elevation * R2D, km: la.rangeSat };
+}
+
+function observer() {
+  if (!me) return null;
+  return { longitude: me.lon * D2R, latitude: me.lat * D2R, height: 0.1 };
+}
+
+/* How far the satellite can be heard, as a ground radius in metres.
+   Geometry, not radio: the horizon circle for its height. Anything inside
+   it is line of sight; whether you work it is a different question. */
+function footprintM(altKm) {
+  const a = Math.acos(R_EARTH / (R_EARTH + Math.max(1, altKm)));
+  return R_EARTH * a * 1000;
+}
+
+/* ---- passes ------------------------------------------------------------
+ *
+ * Stepped, not solved. A closed form for "when does this rise" exists and
+ * is a great deal of work to get right; stepping a minute at a time over
+ * the next few hours and then bisecting the crossing is accurate to a few
+ * seconds, which is finer than anybody points an antenna.
+ *
+ * Done in slices with a yield between them, because 95 satellites times
+ * twelve hours is tens of thousands of propagations and doing them in one
+ * go locks the tile - and a tile that freezes for a second looks broken
+ * even when it is only busy.
+ */
+const STEP_S = 60;
+const REFINE_S = 5;
+
+function elevationAt(satrec, obs, when) {
+  const fix = at(satrec, when);
+  if (!fix) return null;
+  return look(fix, obs).el;
+}
+
+function nextPass(sat, obs, from, hours, minEl) {
+  const end = from.getTime() + hours * 3600e3;
+  let t = from.getTime();
+  let prev = elevationAt(sat.satrec, obs, new Date(t));
+  while (t < end) {
+    const next = t + STEP_S * 1000;
+    const el = elevationAt(sat.satrec, obs, new Date(next));
+    if (prev !== null && el !== null && prev < 0 && el >= 0) {
+      // Crossed the horizon between these two: bisect for the moment.
+      let lo = t, hi = next;
+      while (hi - lo > REFINE_S * 1000) {
+        const mid = (lo + hi) / 2;
+        const e = elevationAt(sat.satrec, obs, new Date(mid));
+        if (e !== null && e < 0) lo = mid; else hi = mid;
+      }
+      // Walk the pass to its highest point, which is what decides whether
+      // it is worth getting up for.
+      let peak = 0, pt = hi;
+      for (let s = hi; s < hi + 25 * 60e3; s += STEP_S * 1000) {
+        const e = elevationAt(sat.satrec, obs, new Date(s));
+        if (e === null) break;
+        if (e > peak) { peak = e; pt = s; }
+        if (e < 0 && s > hi + 60e3) break;
+      }
+      if (peak >= minEl) return { aos: new Date(hi), peak, at: new Date(pt) };
+      t = pt + 60e3;          // too low to bother with; look past it
+      prev = elevationAt(sat.satrec, obs, new Date(t));
+      continue;
+    }
+    prev = el;
+    t = next;
+  }
+  return null;
+}
+
+let passJob = 0;
+async function findPasses() {
+  const obs = observer();
+  if (!obs) return;
+  const job = ++passJob;
+  const now = new Date();
+  const hours = Math.max(1, Number(conf.hours) || 12);
+  const minEl = Math.max(0, Number(conf.min_elevation) || 0);
+  for (let i = 0; i < sats.length; i++) {
+    if (job !== passJob) return;         // settings changed under us
+    const s = sats[i];
+    try { s.pass = nextPass(s, obs, now, hours, minEl); } catch (e) { s.pass = null; }
+    s.passAt = now;
+    // Yield often enough that the tile keeps drawing.
+    if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0));
+  }
+  if (job === passJob) paintList();
+}
+
+/* ---- drawing ---------------------------------------------------------- */
+
+function build() {
+  map = HDMap.create('map', {});
+  L_.base = HDMap.basemap({ basemap: 'built-in (offline)' }).addTo(map);
+  L_.sats = L.layerGroup().addTo(map);
+  L_.track = L.layerGroup().addTo(map);
+  if (me) {
+    HDMap.each((dx) => L.circleMarker([me.lat, me.lon + dx], {
+      radius: 4, color: HDMap.theme.accent, weight: 2, fill: false,
+      interactive: false,
+    }).addTo(L_.sats));
+  }
+}
+
+function drawSats(now) {
+  L_.sats.clearLayers();
+  const obs = observer();
+  if (me) {
+    HDMap.each((dx) => L.circleMarker([me.lat, me.lon + dx], {
+      radius: 4, color: HDMap.theme.accent, weight: 2, fill: false,
+      interactive: false,
+    }).addTo(L_.sats));
+  }
+  sats.forEach((s) => {
+    const fix = at(s.satrec, now);
+    s.fix = fix;
+    s.look = (fix && obs) ? look(fix, obs) : null;
+    if (!fix) return;
+    const up = s.look && s.look.el > 0;
+    const chosen = selected === s.name;
+    HDMap.each((dx) => {
+      L.circleMarker([fix.lat, fix.lon + dx], {
+        radius: chosen ? 5 : 3,
+        color: chosen ? HDMap.theme.accent
+          : up ? HDMap.theme.signal : HDMap.theme.grip,
+        weight: chosen ? 2 : 1,
+        fillColor: up ? HDMap.theme.signal : HDMap.theme.grip,
+        fillOpacity: up ? 0.9 : 0.5,
+      }).bindTooltip(s.name, { direction: 'top' })
+        .on('click', () => select(s.name))
+        .addTo(L_.sats);
+    });
+  });
+}
+
+function drawTrack(now) {
+  L_.track.clearLayers();
+  const s = sats.find((x) => x.name === selected);
+  if (!s || !s.fix) return;
+  // Its footprint, and where it goes next: one orbit forward in two-minute
+  // steps, which is smooth enough at these speeds.
+  HDMap.each((dx) => L.circle([s.fix.lat, s.fix.lon + dx], {
+    radius: footprintM(s.fix.alt), color: HDMap.theme.accent, weight: 1,
+    opacity: 0.6, fillColor: HDMap.theme.accent, fillOpacity: 0.06,
+    interactive: false,
+  }).addTo(L_.track));
+
+  const minutes = 1440 / (Number(s.satrec.no) ? (s.satrec.no * 1440 / (2 * Math.PI)) : 15);
+  const span = Math.min(200, Math.max(60, minutes || 100));
+  const pts = [];
+  for (let m = 0; m <= span; m += 2) {
+    const fix = at(s.satrec, new Date(now.getTime() + m * 60e3));
+    if (!fix) continue;
+    const prev = pts[pts.length - 1];
+    // Unwrapped, never split at the antimeridian: a track that stops dead
+    // at +-180 reads as a line that failed to draw.
+    // (fromLon, lon): place this point near the last one, not the other
+    // way round.
+    const lon = prev ? HDMap.unwrapLon(prev[1], fix.lon) : fix.lon;
+    pts.push([fix.lat, lon]);
+  }
+  HDMap.each((dx) => L.polyline(pts.map(([la, lo]) => [la, lo + dx]), {
+    color: HDMap.theme.accent, weight: 1, opacity: 0.7, dashArray: '4 3',
+    interactive: false,
+  }).addTo(L_.track));
+}
+
+const fmtAz = (deg) => `${Math.round((deg + 360) % 360)}°`;
+
+function paintList() {
+  const rows = [...sats].sort((a, b) => {
+    const au = a.look && a.look.el > 0, bu = b.look && b.look.el > 0;
+    if (au !== bu) return au ? -1 : 1;            // what is up, first
+    if (au && bu) return b.look.el - a.look.el;
+    const at_ = a.pass ? a.pass.aos.getTime() : Infinity;
+    const bt = b.pass ? b.pass.aos.getTime() : Infinity;
+    return at_ - bt;
+  });
+  $('#list').innerHTML = rows.map((s) => {
+    const up = s.look && s.look.el > 0;
+    const when = up ? `${Math.round(s.look.el)}° ${fmtAz(s.look.az)}`
+      : s.pass ? hhmm(s.pass.aos) : (s.passAt ? '—' : '…');
+    return `<button class="sat${up ? ' up' : ''}`
+      + `${selected === s.name ? ' on' : ''}" data-n="${esc(s.name)}"`
+      + ` title="${esc(s.name)}${s.pass && !up
+          ? ` — next pass ${hhmm(s.pass.aos)}, peak ${Math.round(s.pass.peak)}°`
+          : ''}">`
+      + `<span class="nm">${esc(s.name)}</span>`
+      + `<span class="el">${esc(when)}</span></button>`;
+  }).join('');
+  const upNow = rows.filter((s) => s.look && s.look.el > 0).length;
+  $('#head').textContent = `Satellites — ${upNow} up of ${sats.length}`;
+  paintSelected();
+}
+
+function paintSelected() {
+  const s = sats.find((x) => x.name === selected);
+  const el = $('#sel');
+  if (!s || !s.fix) { el.hidden = true; return; }
+  el.hidden = false;
+  const rows = [
+    ['Altitude', `${Math.round(s.fix.alt)} km`],
+    ['Lat/Lon', `${s.fix.lat.toFixed(1)}, ${s.fix.lon.toFixed(1)}`],
+  ];
+  if (s.look) {
+    rows.unshift(['Elevation', `${s.look.el.toFixed(1)}°`]);
+    rows.unshift(['Azimuth', fmtAz(s.look.az)]);
+    rows.push(['Range', HD.fmtDistance(s.look.km)]);
+  }
+  if (s.pass && (!s.look || s.look.el <= 0)) {
+    rows.push(['Next pass', `${hhmm(s.pass.aos)} · peak ${Math.round(s.pass.peak)}°`]);
+  }
+  el.innerHTML = `<div class="row"><b>${esc(s.name)}</b></div>`
+    + rows.map(([k, v]) => `<div class="row"><span>${k}</span>`
+                           + `<b>${esc(String(v))}</b></div>`).join('');
+}
+
+function select(name) {
+  selected = selected === name ? null : name;
+  paintList();
+  drawTrack(new Date());
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hhmm = (d) => d.toISOString().slice(11, 16) + 'Z';
+
+/* ---- running ---------------------------------------------------------- */
+
+function tick() {
+  const now = new Date();
+  drawSats(now);
+  drawTrack(now);
+  paintList();
+}
+
+function start() {
+  stop();
+  tick();
+  ticking = setInterval(tick, 1000);
+}
+function stop() { if (ticking) clearInterval(ticking); ticking = null; }
+
+async function load() {
+  try {
+    const d = await HD.card('satellites', '/api/tles');
+    if (!d.ok) {
+      say(d.error || 'no elements', true);
+      return;
+    }
+    sats = d.satellites.map((s) => {
+      try {
+        return { name: s.name, satrec: satellite.twoline2satrec(s.tle1, s.tle2) };
+      } catch (e) { return null; }
+    }).filter((s) => s && s.satrec && !s.satrec.error);
+    const age = d.age_s > 3600 ? `${Math.round(d.age_s / 3600)} h old` : 'fresh';
+    say(`${sats.length} satellites · elements ${age} · ${d.source}`
+        + (d.stale ? ' · could not refresh' : ''));
+    start();
+    findPasses();
+  } catch (e) {
+    say(String(e.message || e), true);
+  }
+}
+
+function say(text, warn) {
+  $('#status').textContent = text;
+  $('#status').className = 'note' + (warn ? ' warn' : '');
+}
+
+$('#list').addEventListener('click', (e) => {
+  const b = e.target.closest('.sat');
+  if (b) select(b.dataset.n);
+});
+
+// A hidden tab keeps running, and this one propagates 95 satellites a
+// second. Nobody is looking at it (invariant 5b).
+HD.onVisible((on) => { if (on) start(); else stop(); });
+
+HD.onSettings(async (v) => {
+  conf = v || {};
+  await load();
+});
+
+(async () => {
+  try { conf = await HD.settings(); } catch (e) { conf = {}; }
+  try {
+    // The station is a grid square, not a latitude: `HD.station()` hands
+    // back the config block. Six characters is about 2.8 km, which is
+    // finer than a pass prediction needs.
+    const st = await HD.station();
+    const here = st && HDMap.toLatLon(st.grid || '');
+    if (here) me = { lat: here.lat, lon: here.lon };
+  } catch (e) { /* no station set: the map still works, the passes do not */ }
+  build();
+  if (!me) say('Set your grid in Settings to get pass times.', true);
+  await load();
+})();
+</script>
+</body>
+</html>

@@ -49,6 +49,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **A satellites card.** Where the amateur satellites are now, which are
+  above you, and when the next pass is — with the footprint and ground
+  track of whichever you pick. Elements come from Celestrak a few times a
+  day and are kept on disk; the orbital arithmetic runs in your browser,
+  so it costs nothing afterwards and works with no network at all. Set
+  your grid square in Settings for pass times.
 - **Space weather along the top bar.** Solar flux, sunspot number, A and K
   indices and the current X-ray flare class, beside the clocks — the
   numbers you read before deciding what band to try. K and the flare class

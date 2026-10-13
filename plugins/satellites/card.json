@@ -1,0 +1,36 @@
+{
+  "id": "satellites",
+  "name": "Satellites",
+  "kind": "python",
+  "version": "0.1.0",
+  "author": "HamDash",
+  "description": "Amateur satellites: where they are now, which are above you, and when the next pass is",
+  "entry": "card.py",
+  "view": "index.html",
+  "w": 6,
+  "h": 5,
+  "min_w": 3,
+  "min_h": 3,
+  "permissions": [],
+  "settings": {
+    "group": {
+      "type": "select",
+      "label": "Which satellites",
+      "options": ["amateur", "cubesat", "weather", "stations"],
+      "default": "amateur",
+      "help": "Celestrak's own groupings. 'amateur' is the ham satellites and is what most operators want; 'stations' is the ISS and friends."
+    },
+    "min_elevation": {
+      "type": "number",
+      "label": "Lowest useful elevation (deg)",
+      "default": 10,
+      "help": "Passes that never climb above this are not listed. Below about 10 degrees most stations are into the trees and the noise."
+    },
+    "hours": {
+      "type": "number",
+      "label": "Look ahead (hours)",
+      "default": 12,
+      "help": "How far ahead to search for passes."
+    }
+  }
+}

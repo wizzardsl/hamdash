@@ -168,6 +168,30 @@ outage is remembered rather than retried into.
 in touch rather than simply blocking — is a tile setting, empty by default.
 Nothing is sent unless you fill it in.
 
+## Satellites
+
+Where the amateur satellites are now, which are above you, and when the
+next pass is. The list puts whatever is up at the top, in teal, with its
+elevation and azimuth; everything else is sorted by how soon it rises.
+Click one — in the list or on the map — for its footprint, its ground
+track for the next orbit, and the numbers you would point an antenna with.
+
+| setting | |
+|---|---|
+| **Which satellites** | Celestrak's own groupings. `amateur` is the ham satellites and is what most operators want; `stations` is the ISS and friends. |
+| **Lowest useful elevation** | Passes that never climb above this are not listed. Below about 10 degrees most stations are into the trees. |
+| **Look ahead** | How far ahead to search for passes. |
+
+Pass times need to know where you are, so set your grid square in
+**Settings**. Without it the map still works and the pass list does not.
+
+The orbital elements come from [Celestrak](https://celestrak.org) and are
+fetched at most every six hours — they are published a few times a day and
+go stale slowly — then kept on disk, so restarting hamdash is not a fresh
+request. Through an outage the card keeps using the set it has and says
+so. The orbital arithmetic (SGP4) runs in your browser, so it costs
+nothing after the elements are loaded and works with no network at all.
+
 ## Spots
 
 The `spots` card answers "who is on, and why is the band full" — and, if you
