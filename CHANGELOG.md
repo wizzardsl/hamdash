@@ -7,6 +7,25 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **WSJT-X logging.** Tick it on in Settings → Integrations and every
+  contact you log in WSJT-X lands in the log as you make it. Point its
+  *UDP Server* at the same address and port. Contacts go through the
+  same ADIF importer as everything else, so the same QSO arriving twice
+  updates one row rather than making two.
+  Off by default and bound to loopback: this opens a port, and an app
+  with no authentication does not open ports nobody asked for.
+- **A status line that says whether it is actually working**, which a
+  stored "enabled" cannot: the port can be open and perfectly correct
+  while WSJT-X points somewhere else, and from here those look identical
+  until a heartbeat arrives. Three states — off, listening but nothing
+  heard, connected with a version and a count — and the two that are not
+  "connected" name the fix.
+- **A port somebody else holds is refused, not taken.** JTAlert and
+  GridTracker commonly have 2237, and on Windows two sockets *can* share
+  a UDP port, with datagrams going to one of them unpredictably — half
+  your contacts to each program. The message names the likely culprit
+  and points at WSJT-X's multicast support, which is the way to run
+  several at once.
 - **The path readout has a bottom as well as a top.** It gave the MUF and
   the highest band and nothing about what the ionosphere was taking away
   underneath, so a daytime path offered 80 m as readily as 20 m. There are

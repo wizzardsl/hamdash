@@ -1010,6 +1010,63 @@ QRM or fading.
 - Untested against the live services — there is no LoTW or QRZ account here.
   The HTTP shapes come from their docs and the tests mock them.
 
+## WSJT-X
+
+`hamdash/services/wsjtx.py` listens to WSJT-X's UDP broadcast and puts
+logged contacts in the log. `tests/test_wsjtx.py` drives it.
+
+- **A host service, not a card, and that is the whole shape of it.** A
+  card's process exists because a tile exists - close the tile and the
+  socket goes with it, and the failure is a session of FT8 that was
+  never logged with nothing on screen saying so. `qsl.Runner` is here
+  for the same reason. It is the opposite trade from `spots`, which
+  *drops* a feed nobody is looking at.
+- **Off by default, bound to loopback.** It opens a port, and an app
+  with no authentication does not open ports nobody asked for - the rule
+  from the authentication decision, applied.
+- **Only the ADIF message (type 12) is logged.** WSJT-X sends *two*
+  datagrams per contact, the structured `QSO_LOGGED` (5) and the
+  finished ADIF. Logging both would put one QSO through twice; the
+  importer's dedupe would catch it, but relying on that to cover a
+  double write is not a design. Type 5 is counted so that
+  `adif_missing` can say "your WSJT-X is too old to send records" rather
+  than leaving an operator with contacts that never appear.
+- **Qt's QDataStream, so everything is explicit big-endian.** A string
+  is a `quint32` count then UTF-8 and **`0xFFFFFFFF` is null, not
+  empty** - read as a length that is a four-gigabyte take. A `QDateTime`
+  carries a trailing `qint32` **only** when its spec byte is 2, and
+  reading it when it is absent shifts every later field, which comes out
+  as a callsign made of somebody's grid square. `_Reader` raises on a
+  short read rather than returning what it has: the same lesson as
+  `psk_reporter/mqtt.py`'s three-byte SUBACK, one protocol along.
+- **Nothing that arrives on the socket may end the reader thread**, and
+  neither may the handler - a thread that dies takes its job with it
+  while the process stays up looking healthy, and the symptom is
+  contacts quietly not being logged. Both are caught per datagram, and
+  tested by firing junk and a throwing handler at a real socket.
+- **A refused bind must not leak the socket.** It is the *expected*
+  failure here (JTAlert usually has 2237), so leaking a descriptor per
+  retry would run the process out of handles.
+  `-W error::ResourceWarning` caught it.
+- **SO_REUSEADDR only for multicast.** On Windows it lets a second
+  socket bind a port somebody already has, and the datagrams then go to
+  one of them unpredictably - half the contacts to JTAlert and half
+  here. Refusing to start and naming the likely culprit is better than
+  silently getting half.
+- **`listening` and `connected` are different questions**, and the
+  status says both. The port can be open and perfectly correct while
+  WSJT-X points elsewhere; from here that is indistinguishable from
+  working until a heartbeat arrives, and it is the common failure.
+- **Unproven against live WSJT-X.** It is not installed on this machine.
+  The protocol is implemented from its documented shape and the tests
+  build datagrams by hand, which means **the tests cannot prove the
+  field order** - they would agree with the same guess the code makes,
+  the `bandsBetween` trap. What they do prove is the magic number, Qt's
+  string and datetime encoding, the Julian epoch, and that junk cannot
+  kill the reader. Proof is an operator pressing Log QSO once with the
+  UDP server pointed here, like PTT was proven with somebody watching
+  the radio. Until that has happened, say so.
+
 ## One station, several cards
 
 - `lookup.result` is the "what are we looking at" event. Cards draw from the

@@ -376,7 +376,7 @@
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'menu-del';
-        del.textContent = '�';
+        del.textContent = '\u00d7';
         // Nested spans and a bare glyph compute to no accessible name at
         // all - the same thing that left six unnamed checkboxes here.
         del.setAttribute('aria-label', `Delete the ${c.name} card`);
@@ -1113,8 +1113,73 @@
     // Secrets are never sent to us, so the box starts empty and only says
     // whether one is stored. Leaving it alone keeps whatever is there.
     secretBox('#s-lk-pass', 'callsign_lookup.password');
+    const wx = config.wsjtx || {};
+    $('#s-wx-enabled').checked = !!wx.enabled;
+    $('#s-wx-bind').value = wx.bind || '127.0.0.1';
+    $('#s-wx-port').value = wx.port || 2237;
+    refreshWsjtx();
     gridNote('');
     showTab('station');
+  }
+
+  /* ---- WSJT-X ---------------------------------------------------------
+   *
+   * The only question anybody has about this is whether it is actually
+   * working, and a stored `enabled: true` cannot answer it: the port can
+   * be open and perfectly correct while WSJT-X points somewhere else, and
+   * the two look identical from here until a heartbeat arrives. So the
+   * line says which of the three states it is in, and names the fix for
+   * the two that are not "working".
+   */
+  let wsjtxTimer = null;
+
+  async function refreshWsjtx() {
+    const el = $('#s-wx-status');
+    if (!el) return;
+    let s;
+    try { s = await HD.get('/api/wsjtx'); } catch (e) { return; }
+    let msg;
+    let kind = '';
+    if (!s.enabled) {
+      msg = 'Off. Tick the box and save to start listening.';
+    } else if (s.error) {
+      msg = s.error;
+      kind = 'bad';
+    } else if (!s.listening) {
+      msg = 'Not listening — save to apply.';
+    } else if (!s.connected) {
+      // The common failure, and the one worth spelling out: our end is
+      // fine and nothing is arriving.
+      msg = `Listening on ${s.bind}:${s.port}, but WSJT-X has not said `
+          + 'anything yet. Check its Reporting settings point here — it '
+          + 'sends a heartbeat every 15 seconds, so this changes within the '
+          + 'minute once they do.';
+    } else if (s.adif_missing) {
+      // Contacts are arriving as the structured message without the ADIF
+      // one, so nothing can reach the log. Without this it reads as
+      // nothing happening for no reason.
+      msg = `WSJT-X ${s.version} is sending contacts but no ADIF records, so `
+          + 'none of them can be logged. That version is too old; 2.0 and '
+          + 'later send them.';
+      kind = 'bad';
+    } else {
+      msg = `WSJT-X ${s.version || ''} connected on ${s.bind}:${s.port}`.trim()
+          + ` · ${s.logged} contact${s.logged === 1 ? '' : 's'} logged`
+          + (s.last_call ? ` · last ${s.last_call}` : '');
+    }
+    el.textContent = msg;
+    el.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
+  // Polled only while the sheet is open: a heartbeat is every 15 s and
+  // there is nothing to show when nobody is looking at it.
+  function watchWsjtx(on) {
+    clearInterval(wsjtxTimer);
+    wsjtxTimer = null;
+    if (on) {
+      refreshWsjtx();
+      wsjtxTimer = setInterval(refreshWsjtx, 5000);
+    }
   }
 
   // ---- callsign lookup -------------------------------------------------
@@ -1247,8 +1312,15 @@
       setGrid(r.locator, `from ${r.source}`);
     } catch (e) { gridNote(e.message, 'warn'); }
   };
-  $('#settings').onclick = () => { fillSettings(); $('#settings-sheet').showModal(); };
+  $('#settings').onclick = () => {
+    fillSettings();
+    $('#settings-sheet').showModal();
+    watchWsjtx(true);
+  };
   $('#settings-cancel').onclick = () => $('#settings-sheet').close();
+  // Whichever way the sheet closes - Cancel, Save, or Escape, which a
+  // <dialog> handles itself and no button ever hears about.
+  $('#settings-sheet').addEventListener('close', () => watchWsjtx(false));
   async function saveSettings({ quiet = false } = {}) {
     await HD.put('/api/config', {
       station: {
@@ -1263,6 +1335,11 @@
         account: $('#s-lk-account').value,
         user: $('#s-lk-user').value.trim(),
       }, 'password', '#s-lk-pass'),
+      wsjtx: {
+        enabled: $('#s-wx-enabled').checked,
+        bind: $('#s-wx-bind').value.trim() || '127.0.0.1',
+        port: Number($('#s-wx-port').value) || 2237,
+      },
       logbook_sync: withSecret(withSecret(withSecret({
         lotw_user: $('#s-lotw-user').value.trim(),
       }, 'lotw_password', '#s-lotw-pass'),

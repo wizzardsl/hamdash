@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import socket
 import threading
@@ -30,6 +31,9 @@ from .services import audio as audiosvc
 from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes, Solar
+from .services import wsjtx as wsjtxsvc
+
+LOG = logging.getLogger("hamdash.app")
 
 # One requests.Session per server thread, for the card proxy.
 _local = threading.local()
@@ -98,6 +102,44 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     drap = Drap()
     solar = Solar()
     ionosondes = Ionosondes()
+
+    # WSJT-X's UDP broadcast. A host service and not a card, because a
+    # card's process exists only while a tile does - close the tile and
+    # the socket goes with it, and the failure is a session of FT8 that
+    # was never logged with nothing on screen saying so.
+    def _wsjtx_logged(adif: str) -> dict:
+        result = log.import_adif(adif)
+        # The topic the bus docstring has always named and nothing has
+        # ever published. The logbook card refreshes on it.
+        BUS.publish("log.qso_added", {"source": "wsjtx", **result},
+                    source="host")
+        return result
+
+    wsjtx = wsjtxsvc.Listener(on_adif=_wsjtx_logged,
+                              log=lambda line: LOG.warning(line))
+
+    def _apply_wsjtx():
+        """Match the listener to the config, restarting only on a change.
+
+        Rebinding on every save would drop the socket - and any datagram
+        in flight with it - every time an unrelated setting was touched.
+        """
+        c = cfg.data.get("wsjtx", {}) or {}
+        bind = str(c.get("bind") or wsjtxsvc.DEFAULT_BIND).strip()
+        port = int(c.get("port") or wsjtxsvc.DEFAULT_PORT)
+        want = bool(c.get("enabled"))
+        same = (bind == wsjtx.bind and port == wsjtx.port)
+        if want and same and wsjtx.listening:
+            return
+        wsjtx.stop()
+        wsjtx.bind, wsjtx.port = bind, port
+        if want:
+            if wsjtx.start():
+                LOG.info("wsjtx: listening on %s:%s", bind, port)
+            else:
+                LOG.warning("wsjtx: %s", wsjtx.error)
+
+    _apply_wsjtx()
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -511,7 +553,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         kept = {f"{sec}.{k}": (cfg.data.get(sec, {}) or {}).get(k, "")
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
-                    "callsign_lookup", "logbook_sync", "units"):
+                    "callsign_lookup", "logbook_sync", "wsjtx", "units"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -539,8 +581,27 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             # silently using the old one is the kind of trap that costs an hour.
             look = _make_lookup(cfg)
         cfg.save()
+        if "wsjtx" in body:
+            # Same reasoning as the lookup above: somebody who has just
+            # ticked this on wants to log the next contact, not the next
+            # contact after a restart.
+            _apply_wsjtx()
         BUS.publish("config.changed", _safe_config(), source="host")
         return jsonify(ok=True)
+
+    @app.get("/api/wsjtx")
+    def wsjtx_status():
+        """Is it actually working?
+
+        The only question anybody has about this, and the one a stored
+        `enabled: true` cannot answer: the port can be open and correct
+        while WSJT-X points somewhere else entirely, and from here the
+        two look identical until a heartbeat arrives. So the reply
+        separates "listening" from "connected" and carries the version
+        of whatever is at the other end.
+        """
+        c = cfg.data.get("wsjtx", {}) or {}
+        return jsonify({"enabled": bool(c.get("enabled")), **wsjtx.status()})
 
     @app.get("/api/themes")
     def themes():
@@ -1203,6 +1264,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def shutdown():
         sup.stop_all()
         rig.stop()
+        wsjtx.stop()
 
     return app, shutdown
 

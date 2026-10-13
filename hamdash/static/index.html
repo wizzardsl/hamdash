@@ -223,6 +223,24 @@
       which holds your certificate; a password cannot stand in for it, so
       "Push to LoTW" hands your log to TQSL if it is installed and tells you
       what to do if it isn't.</p>
+    <h3>WSJT-X</h3>
+    <label class="row"><input type="checkbox" id="s-wx-enabled"> Log contacts
+      from WSJT-X as they happen</label>
+    <div class="row-btns">
+      <label class="inline">Listen on
+        <input id="s-wx-bind" class="mono" size="12" placeholder="127.0.0.1"></label>
+      <label class="inline">Port
+        <input id="s-wx-port" class="mono" type="number" min="1" max="65535"
+               size="6" placeholder="2237"></label>
+    </div>
+    <p class="sheet-note" id="s-wx-status"></p>
+    <p class="sheet-note">In WSJT-X: <strong>File &rarr; Settings &rarr;
+      Reporting</strong>, and set <em>UDP Server</em> to the same address and
+      port. Each contact you log there lands here, deduped against what you
+      already have. If another program already has the port &mdash; JTAlert or
+      GridTracker &mdash; point them all at a multicast address such as
+      <span class="mono">239.255.0.1</span> and put that here instead, and
+      they can all listen at once.</p>
   </section>
 
   <section class="tab-panel" data-panel="radio" role="tabpanel" hidden>

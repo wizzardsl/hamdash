@@ -45,6 +45,42 @@ host — `GET /api/log/page?q=&limit=&offset=` returns the rows and the total �
 because sorting a page in the browser sorts only that page, which silently
 drops contacts off the end of every page but the last.
 
+## WSJT-X
+
+Tick **Settings → Integrations → WSJT-X** and every contact you log in
+WSJT-X lands in the log as you make it. In WSJT-X: **File → Settings →
+Reporting**, and set *UDP Server* to the same address and port (its own
+default, `127.0.0.1` and `2237`, is what hamdash starts with).
+
+It is **off by default**, and bound to loopback when it is on. This opens a
+port, and an app with no authentication does not open ports nobody asked for.
+
+Contacts go through the same ADIF importer as everything else, so they dedupe
+the same way: the same QSO arriving twice — WSJT-X resending, or you logging
+it in two places — updates one row rather than making two.
+
+**The status line is the point of the panel.** A stored "enabled" cannot tell
+you whether it is working: the port can be open and perfectly correct while
+WSJT-X points somewhere else, and from hamdash's side those look identical
+until something arrives. So the line says which of three states you are in —
+off, listening but nothing heard, or connected with a version and a count —
+and names the fix for the two that are not "connected". WSJT-X sends a
+heartbeat every 15 seconds, so it settles within the minute.
+
+**If another program already has the port**, hamdash refuses to start the
+listener and says so rather than taking it. JTAlert and GridTracker commonly
+hold 2237, and on Windows two sockets *can* share a UDP port — with the
+datagrams going to one of them unpredictably, so half your contacts would
+reach each program. Refusing is better than that. The way to run several at
+once is WSJT-X's multicast support: point them all at an address such as
+`239.255.0.1` and put the same one here.
+
+Only the ADIF message is logged. WSJT-X sends two datagrams per contact — a
+structured record and the finished ADIF — and the ADIF is the complete one.
+A version too old to send it (before 2.0) would log nothing, so the status
+line says that outright instead of leaving you with contacts that never
+appear.
+
 ## Logbook sync
 
 Settings → Integrations → Logbook sync. Credentials there, then Pull or Push.

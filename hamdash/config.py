@@ -54,6 +54,10 @@ DEFAULTS = {
                      "qrz_api_key": "", "wrl_api_key": "",
                      "wrl_logbook_id": "", "tqsl_path": "",
                      "station_location": ""},
+    # WSJT-X's UDP broadcast. Off by default and bound to loopback: this
+    # opens a port, and an app with no authentication does not open ports
+    # nobody asked for.
+    "wsjtx": {"enabled": False, "bind": "127.0.0.1", "port": 2237},
     "units": "km",   # km | mi | nmi
 }
 
