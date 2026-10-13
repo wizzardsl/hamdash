@@ -9,7 +9,8 @@ no localhost URL to remember, nothing installed system-wide.
 
 ![The hamdash board: a world map with the aurora and greyline, rig control, spots, a logbook and satellite tracking](docs/images/board.png)
 
-<sub>Everything here is one board. Drag the tiles where you want them, stack them into tabs, or pop one out into its own window.</sub>
+<sub>Solar flux, sunspot number, A, K and the X-ray flare class sit along the
+top bar beside the clock. Everything below here is one board. Drag the tiles where you want them, stack them into tabs, or pop one out into its own window.</sub>
 
 **Want your own card on the board?** [docs/cards.md](docs/cards.md) is the
 whole contract, and [docs/card-template](docs/card-template) is a card that
@@ -70,17 +71,35 @@ Twelve cards ship with it, and a tile can hold any of them:
   and where they are going.
 - **Receive audio** — the radio's audio in the browser, so the board is
   usable from another machine on your network.
-- **Path to station** — great-circle path, greyline, aurora and space weather.
+- **Path to station** — great-circle path, greyline, aurora and space weather,
+  and **Band to here (MUF)**: what frequency will reach each place on the map,
+  from the ionosondes that have actually sounded in the last two hours.
 - **Beacon map** — bearing and distance to the station you are looking at.
 - **Spectrum** — a waterfall from the radio's sound card.
 - **Decoder** — live CW off the air, with the DSP tested against synthesised
   Morse from 6 to 45 WPM.
-- **Web embed** — any page in a tile.
+- **Web embed** — any page in a tile. **Cards → New from URL…** makes a named
+  card out of one without your writing anything, and deletes it again.
 - **Hello card** — the example, in about thirty lines.
 
 Everything is usable with no radio attached: the rig is in mock mode until
 you tell it otherwise.
 
+
+### What band will reach them
+
+**Band to here (MUF)** sweeps one calculation across the map: for every place,
+the highest frequency that will carry a path from *your* station to it. That is
+a different map from the usual MUF chart, which plots MUF(3000) at each point
+and says nothing about where you are standing.
+
+It is a measurement, not a model — the numbers come from ionosondes that have
+actually sounded in the last two hours. About 30 of the 97 stations are live at
+any moment and they cluster over Europe, North America and Australia, so the
+overlay **fades where the nearest sounding is far from the path**. The oceans
+look like the guess they are.
+
+![The path map with the Band to here overlay: a colour field radiating from the operator's station, brightest along the sunlit paths and fading out over the oceans, with a legend reading Highest frequency to here](docs/images/propagation.png)
 
 ### Satellites
 
@@ -131,9 +150,10 @@ same-origin to the browser and their ports are never exposed.
 
 ## Not done yet
 
-`cty.dat` for proper DXCC instead of the short prefix table; freeing a tile's
-grid slot while its card is popped out; remembering where popped-out windows
-were across a restart; RTTY and PSK31 in the decoder; multiple boards as tabs.
+Freeing a tile's grid slot while its card is popped out; remembering where
+popped-out windows were across a restart; RTTY and PSK31 in the decoder;
+multiple boards as tabs; transmitting from another machine (receiving already
+works — a microphone needs a secure context, so it means HTTPS or a tailnet).
 
 On packaging: Linux builds (CI builds Windows and macOS, which both have a
 pip-installable pywebview backend — Linux needs system GTK/WebKit packages

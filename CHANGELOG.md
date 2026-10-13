@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [0.6.0]
+
 ### Added
 - **Cards → New from URL…** makes a card out of a web page from the board.
   `kind: url` has been in the manifest from the beginning and the only way
@@ -19,59 +21,6 @@ versions follow [SemVer](https://semver.org/). The version of record is
   there has to be a way to take one off the list. A card you *wrote* is
   refused — by the menu and by the host — because there is nothing in a URL
   card but a name and an address and there is your code in yours.
-
-### Fixed
-- **A `url` card's address is escaped into the page it serves.** It went
-  into a `<meta http-equiv="refresh">` attribute raw, so a quote in it
-  closed the attribute and the rest was markup on the board's own origin.
-  It only ever came from a hand-written manifest before; it comes from a
-  form now, which is what made it worth fixing rather than noting.
-- **`javascript:`, `file:` and `data:` addresses are refused by name**,
-  with what to use instead. A card page is served on the board's origin, so
-  one of those in a tile is not a broken tile — it is code with the board's
-  privileges, or a read of your disk.
-- **The absorption (D-RAP) overlay is smooth now too**, the same way the
-  aurora is. Its grid is coarser than the aurora's — four degrees of
-  longitude — which is exactly where a field drawn as dots looked worst.
-  The dayside absorption lobe reads as the shape it actually is.
-- **The map pans east and west for ever now.** It used to stop after about
-  a world and a half in either direction, because the world was drawn
-  exactly three times and panning was fenced in to match. The copies
-  follow where you are instead, so there is always land under you — and
-  the overlays follow too, so the aurora and the greyline are there when
-  you arrive. It costs no more than before at rest, and no more than
-  before however far you drag.
-- **The aurora overlay looks like an aurora now.** It was drawn as one dot
-  per grid cell at a fixed three pixels, which could only line up at a
-  single zoom — everywhere else it was stipple — with three hard colour
-  steps that drew visible contour lines through it, and a cut-off that
-  ended the oval square instead of letting it fade. It is one image per
-  world copy now, built at the data's own resolution and smoothed by the
-  browser, with colour and transparency both following the intensity. It
-  is also about 30% less data and three map layers instead of 22,908.
-- **A port already in use now says so.** Passing `--port` is how you pin
-  the address a remote browser bookmarks, and picking one something else
-  already has gave a traceback ending in “an attempt was made to access a
-  socket in a way forbidden by its access permissions” — which names
-  neither the port nor, on Windows, the actual problem. It is two lines
-  now, before anything else starts.
-- **Unhandled exceptions in threads never reached the log.** The handler
-  that was supposed to record them read a field that does not exist, so
-  it raised on every call and logged its own error instead of the one it
-  was called about — since the day it was written. Most of this app is
-  threads: the rig poller, the transmit watchdog, each card's output,
-  the bus readers. A thread that dies takes its job with it while the
-  app stays up looking healthy, which is exactly what that log line
-  existed to catch.
-- **`--host 0.0.0.0` half-worked.** It bound every interface as asked, so
-  a browser elsewhere on the network could reach the board — but the same
-  value was handed to every card process as the address to call the host
-  back on, and to the native window as the page to open, and `0.0.0.0` is
-  not an address anything can connect *to*. Cards came up unable to read
-  their tile's settings or hear the bus, which looks like settings that
-  silently do nothing rather than like a network fault. Binding a named
-  address always worked and still does.
-### Added
 - **A propagation layer centred on your station.** “Band to here (MUF)”
   on the path map colours the whole world by the highest frequency that
   will reach it *from you* — not the usual MUF map, which says nothing
@@ -135,18 +84,6 @@ versions follow [SemVer](https://semver.org/). The version of record is
   previously meant hand-rolling `fetch` — and hand-rolling the tile uid
   with it, which is easy to leave out and silently wrong.
 
-### Fixed
-- **Every card got about fifteen times faster to talk to.** A card
-  request was 34.5 ms at the median and 43.7 ms at the 95th percentile;
-  it is 2.3 and 3.5 now. Four separate causes, each costing roughly a
-  Windows timer tick: the card proxy built a fresh HTTP session for every
-  call, it streamed replies that were small enough to just send, a failed
-  tile-settings lookup was retried on every single request (and logged
-  every time), and cards were served by Flask's development server rather
-  than the one the app already ships. Every polled card is affected — the
-  spectrum, the decoder, PSK Reporter, spots — and the 95th percentile is
-  the half that showed, because a polled card turns jitter into stutter.
-
 ### Changed
 - **PSK Reporter is live now.** The card used to poll their query API every
   five minutes, which could time out and truncated a busy square at 2000
@@ -166,6 +103,68 @@ versions follow [SemVer](https://semver.org/). The version of record is
   because that field has never had anything in it.
 - **The contests pane credits QSO Dates.** Their export is CC0 “free to
   use with attribution”; only the docs carried it.
+
+### Fixed
+- **A `url` card's address is escaped into the page it serves.** It went
+  into a `<meta http-equiv="refresh">` attribute raw, so a quote in it
+  closed the attribute and the rest was markup on the board's own origin.
+  It only ever came from a hand-written manifest before; it comes from a
+  form now, which is what made it worth fixing rather than noting.
+- **`javascript:`, `file:` and `data:` addresses are refused by name**,
+  with what to use instead. A card page is served on the board's origin, so
+  one of those in a tile is not a broken tile — it is code with the board's
+  privileges, or a read of your disk.
+- **The absorption (D-RAP) overlay is smooth now too**, the same way the
+  aurora is. Its grid is coarser than the aurora's — four degrees of
+  longitude — which is exactly where a field drawn as dots looked worst.
+  The dayside absorption lobe reads as the shape it actually is.
+- **The map pans east and west for ever now.** It used to stop after about
+  a world and a half in either direction, because the world was drawn
+  exactly three times and panning was fenced in to match. The copies
+  follow where you are instead, so there is always land under you — and
+  the overlays follow too, so the aurora and the greyline are there when
+  you arrive. It costs no more than before at rest, and no more than
+  before however far you drag.
+- **The aurora overlay looks like an aurora now.** It was drawn as one dot
+  per grid cell at a fixed three pixels, which could only line up at a
+  single zoom — everywhere else it was stipple — with three hard colour
+  steps that drew visible contour lines through it, and a cut-off that
+  ended the oval square instead of letting it fade. It is one image per
+  world copy now, built at the data's own resolution and smoothed by the
+  browser, with colour and transparency both following the intensity. It
+  is also about 30% less data and three map layers instead of 22,908.
+- **A port already in use now says so.** Passing `--port` is how you pin
+  the address a remote browser bookmarks, and picking one something else
+  already has gave a traceback ending in “an attempt was made to access a
+  socket in a way forbidden by its access permissions” — which names
+  neither the port nor, on Windows, the actual problem. It is two lines
+  now, before anything else starts.
+- **Unhandled exceptions in threads never reached the log.** The handler
+  that was supposed to record them read a field that does not exist, so
+  it raised on every call and logged its own error instead of the one it
+  was called about — since the day it was written. Most of this app is
+  threads: the rig poller, the transmit watchdog, each card's output,
+  the bus readers. A thread that dies takes its job with it while the
+  app stays up looking healthy, which is exactly what that log line
+  existed to catch.
+- **`--host 0.0.0.0` half-worked.** It bound every interface as asked, so
+  a browser elsewhere on the network could reach the board — but the same
+  value was handed to every card process as the address to call the host
+  back on, and to the native window as the page to open, and `0.0.0.0` is
+  not an address anything can connect *to*. Cards came up unable to read
+  their tile's settings or hear the bus, which looks like settings that
+  silently do nothing rather than like a network fault. Binding a named
+  address always worked and still does.
+- **Every card got about fifteen times faster to talk to.** A card
+  request was 34.5 ms at the median and 43.7 ms at the 95th percentile;
+  it is 2.3 and 3.5 now. Four separate causes, each costing roughly a
+  Windows timer tick: the card proxy built a fresh HTTP session for every
+  call, it streamed replies that were small enough to just send, a failed
+  tile-settings lookup was retried on every single request (and logged
+  every time), and cards were served by Flask's development server rather
+  than the one the app already ships. Every polled card is affected — the
+  spectrum, the decoder, PSK Reporter, spots — and the 95th percentile is
+  the half that showed, because a polled card turns jitter into stutter.
 
 ## [0.5.1]
 
