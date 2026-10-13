@@ -1091,6 +1091,35 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   **Look for the traffic before declaring something unverifiable**: the
   port was being broadcast to the whole time.
 
+## The log tells the board it changed
+
+- **`Logbook.add` publishes `log.qso_added`, and always has** - and
+  `import_adif` adds through `add`, so every writer already announced
+  itself. Worth knowing because the obvious move on being told "the log
+  does not refresh" is to look at the *routes* in `app.py`, see no
+  publish, and add one. That is a second event per contact and every
+  logbook tile refreshing twice. It was done, measured and reverted.
+- **An import publishes once, not once per contact.** Queues are
+  `QUEUE_DEPTH` (256) and a full one *drops the subscriber*, so a few
+  thousand QSOs disconnected every open page's stream part-way through
+  the import causing it - which presents as the board going quiet during
+  a big import, not as anything about the log. `add(notify=False)` is
+  how a bulk caller opts out.
+  **The payload keeps the shape `add` publishes** - a contact that was
+  added - with the counts merged in. A one-record import, which is what
+  WSJT-X sends per contact, is then indistinguishable from `add`, so
+  `payload["call"]` in `docs/cards.md` goes on working; a file gets
+  totals as well. Changing it to bare counts would have broken the
+  documented example.
+- **Refreshing is not showing.** The card refreshed *in place* on the
+  event, and a new contact sorts onto the **first** page - so an
+  operator who had paged back through the log got page three redrawn and
+  saw nothing, which is exactly how this was reported. `offset = 0` on
+  an event, and an active search is left alone because a search is an
+  explicit question. The trade is a tile that jumps to the top while
+  WSJT-X logs during a contest; being unable to see the contact at all
+  is worse.
+
 ## One station, several cards
 
 - `lookup.result` is the "what are we looking at" event. Cards draw from the

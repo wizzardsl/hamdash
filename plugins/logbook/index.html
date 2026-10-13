@@ -879,7 +879,19 @@ async function refresh() {
   }
 }
 
-HD.on('log.qso_added', refresh);
+/* A contact can arrive from somewhere else entirely - WSJT-X, an ADIF
+   import, a QSL pull, or a second logbook tile - and the bus is the only
+   way this card hears about it.
+
+   Refreshing in place is not enough, which is how this was reported: a
+   new contact sorts onto the *first* page, so an operator who had paged
+   back through the log got a refresh of page three and saw nothing
+   change. A search is left alone - that is an explicit question, and
+   silently clearing it would answer a different one. */
+HD.on('log.qso_added', () => {
+  if (!$('#q').value.trim()) offset = 0;
+  refresh();
+});
 HD.on('radio.state', (s) => { rig = s; follow(); });
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }

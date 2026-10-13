@@ -88,6 +88,12 @@ A version too old to send it (before 2.0) would log nothing, so the status
 line says that outright instead of leaving you with contacts that never
 appear.
 
+Contacts logged from anywhere — WSJT-X, an ADIF import, a QSL pull, or a
+second logbook tile — appear in every open logbook without touching
+anything. The card goes back to the first page when one arrives, because
+that is where a new contact sorts; if you have a search running it is left
+alone, so the answer on screen stays the answer to the question you asked.
+
 ## Logbook sync
 
 Settings → Integrations → Logbook sync. Credentials there, then Pull or Push.

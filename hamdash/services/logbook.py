@@ -71,7 +71,16 @@ class Logbook:
                     db.execute(f"ALTER TABLE qso ADD COLUMN {f} TEXT")
 
     # --------------------------------------------------------------- writing
-    def add(self, qso: dict) -> dict:
+    def add(self, qso: dict, notify: bool = True) -> dict:
+        """Put one contact in the log.
+
+        `notify` is for bulk callers. One event per contact is right for
+        one contact and wrong for a file: an ADIF import of a few
+        thousand QSOs published a few thousand events into subscriber
+        queues 256 deep, so every open page's stream was dropped as a
+        stalled consumer part-way through its own import and had to
+        reconnect. `import_adif` publishes once at the end instead.
+        """
         call = str(qso.get("call") or "").strip().upper()
         if not call:
             raise ValueError("a QSO needs a callsign")
@@ -95,7 +104,8 @@ class Logbook:
                 [row[f] for f in FIELDS] + [now.timestamp()])
             saved = dict(db.execute("SELECT * FROM qso WHERE id=?",
                                     (cur.lastrowid,)).fetchone())
-        BUS.publish("log.qso_added", saved, source="logbook")
+        if notify:
+            BUS.publish("log.qso_added", saved, source="logbook")
         return saved
 
     def delete(self, qso_id: int) -> bool:
@@ -297,11 +307,12 @@ class Logbook:
         "nothing happened" are different answers.
         """
         added = updated = skipped = 0
+        last = None
         for rec in self.parse_adif(text):
             existing = self.find_match(rec)
             if existing is None:
                 try:
-                    self.add(rec)
+                    last = self.add(rec, notify=False)
                     added += 1
                 except ValueError:
                     skipped += 1
@@ -316,7 +327,19 @@ class Logbook:
                 updated += 1
             else:
                 skipped += 1
-        return {"added": added, "updated": updated, "skipped": skipped}
+        counts = {"added": added, "updated": updated, "skipped": skipped}
+        if added or updated:
+            # One event for the whole import, carrying a contact that was
+            # actually added as well as the counts. A single-record
+            # import - which is what WSJT-X sends on every contact - then
+            # looks exactly like `add()`, so a card reading
+            # `payload["call"]` keeps working; a file also gets the
+            # counts. Nothing is published when nothing changed: a tile
+            # redrawing for an import that added no rows is a fetch and
+            # a flicker for no reason.
+            BUS.publish("log.qso_added", {**(last or {}), **counts},
+                        source="logbook")
+        return counts
 
 
 def _minutes(hhmm) -> int | None:

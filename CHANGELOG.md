@@ -6,6 +6,23 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **The logbook shows a contact logged elsewhere, instead of refreshing
+  the page you were on.** A contact arriving from WSJT-X, an ADIF import
+  or a QSL pull sorts onto the *first* page — so if you had paged back
+  through the log, the card dutifully reloaded page three and nothing
+  appeared to happen. It goes back to the first page now. An active
+  search is left alone: a search is an explicit question, and silently
+  clearing it would answer a different one.
+- **Importing a file no longer disconnects every open page.** An ADIF
+  import announced each contact separately, and subscriber queues are
+  256 deep — so importing a few thousand QSOs dropped every open
+  board's event stream as a stalled consumer, part-way through the
+  import that was doing it. One event per import now, carrying a contact
+  that was added *and* the counts, so a card reading the contact keeps
+  working and a file also gets its totals. An import that changed
+  nothing says nothing.
+
 ### Added
 - **WSJT-X logging.** Every contact you log in WSJT-X lands in the log
   as you make it — and only then. A live FT8 session broadcasts hundreds

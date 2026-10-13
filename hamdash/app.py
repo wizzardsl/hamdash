@@ -108,12 +108,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     # the socket goes with it, and the failure is a session of FT8 that
     # was never logged with nothing on screen saying so.
     def _wsjtx_logged(adif: str) -> dict:
-        result = log.import_adif(adif)
-        # The topic the bus docstring has always named and nothing has
-        # ever published. The logbook card refreshes on it.
-        BUS.publish("log.qso_added", {"source": "wsjtx", **result},
-                    source="host")
-        return result
+        # No bus event here: `Logbook.import_adif` publishes
+        # `log.qso_added` itself, as every writer to the log does. Doing
+        # it again from the caller was a second event per contact and
+        # every logbook tile refreshing twice.
+        return log.import_adif(adif)
 
     wsjtx = wsjtxsvc.Listener(on_adif=_wsjtx_logged,
                               log=lambda line: LOG.warning(line))
@@ -1091,18 +1090,26 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             cfg.data.setdefault("logbook_sync", {})[f"{service}_pushed_id"] =                 log.max_id()
             cfg.save()
 
-        def pull_lotw():
-            text = _lotw().pull(since=since, owncall=mine)
-            res = log.import_adif(text)
+        def _pulled(res: dict) -> dict:
+            """The same ending for all three pulls.
+
+            Including the bus event: a pull that imported contacts has
+            changed the log, and `log.sync` only moves the status line -
+            so without this the table sat stale behind a sync that had
+            plainly just worked.
+            """
             res["message"] = (f"{res['added']} new, {res['updated']} updated, "
                               f"{res['skipped']} already had")
             return res
 
+        def pull_lotw():
+            text = _lotw().pull(since=since, owncall=mine)
+            res = log.import_adif(text)
+            return _pulled(res)
+
         def pull_qrz():
             res = log.import_adif(_qrz().pull())
-            res["message"] = (f"{res['added']} new, {res['updated']} updated, "
-                              f"{res['skipped']} already had")
-            return res
+            return _pulled(res)
 
         def push_lotw():
             rows = to_send("lotw")
@@ -1148,9 +1155,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
         def pull_wrl():
             res = log.import_adif(_wrl().pull(since=_iso(since)))
-            res["message"] = (f"{res['added']} new, {res['updated']} updated, "
-                              f"{res['skipped']} already had")
-            return res
+            return _pulled(res)
 
         def push_wrl():
             rows = to_send("wrl")
