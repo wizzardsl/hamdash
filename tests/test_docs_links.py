@@ -22,6 +22,13 @@ LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 def pages():
     yield ROOT / "README.md"
     yield ROOT / "CLAUDE.md"
+    # The front-door files a visitor meets before any of the docs. They
+    # carry links out to LICENSE, docs/ and each other, and nothing else
+    # was checking them.
+    for name in ("CONTRIBUTING.md", "SECURITY.md"):
+        here = ROOT / name
+        if here.exists():
+            yield here
     yield from sorted(ROOT.glob("docs/**/*.md"))
 
 

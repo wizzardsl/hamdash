@@ -1,0 +1,25 @@
+name: An idea
+description: A card worth having, or something the board should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: a lot of ideas are better as **your own card** than as a
+        change to hamdash — see [docs/cards.md](../blob/main/docs/cards.md).
+        A card needs no permission from anyone and cannot break the rest of
+        the board.
+  - type: textarea
+    id: what
+    attributes:
+      label: What would it do
+      description: What you are trying to accomplish on the air, not only the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What do you do now instead
+      description: >
+        The workaround is usually the most useful part — it says what the
+        thing actually has to beat.

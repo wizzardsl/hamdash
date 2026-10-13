@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question, or showing off your board
+    url: https://github.com/wizzardsl/hamdash/discussions
+    about: Questions and setups are easier to find later in Discussions than in issues.
+  - name: Writing a card
+    url: https://github.com/wizzardsl/hamdash/blob/main/docs/cards.md
+    about: The whole contract, plus a template card that runs as it stands.
+  - name: Something security related
+    url: https://github.com/wizzardsl/hamdash/blob/main/SECURITY.md
+    about: There is no authentication and card pages are not isolated - both known and documented.

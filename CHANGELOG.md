@@ -30,6 +30,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **The front page says what putting the board on a network means.** There
+  is no login, so anyone who can reach the address can transmit with your
+  radio — that was only written down in a page about audio cards, two
+  clicks from where somebody would look. Now the repository is public it is
+  on the README, with `SECURITY.md` saying plainly which parts are
+  deliberate design and which are actually guarded.
+- `CONTRIBUTING.md`, and issue forms that ask for the log, the platform and
+  the rig backend — the three things every radio report turns on.
 - **`python run.py --stop`**, and a way for hamdash to close itself
   properly. Running without the native window left no safe way to stop
   it: there is no window to close, and a forced kill cannot be caught, so

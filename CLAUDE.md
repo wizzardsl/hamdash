@@ -1639,6 +1639,27 @@ Two of these are generated from the code rather than written beside it, and
 both have their own guard: `docs/cards.md` (`test_card_docs.py`) and the
 release notes cut from `CHANGELOG.md` (`tools/release_notes.py`).
 
+## The repository is public
+
+- **No GitHub wiki, and that is a decision.** A wiki is a separate git
+  repository, so it cannot be updated in the same commit as the change it
+  describes - which is the one rule that keeps the docs here true - and
+  `tests/test_docs_links.py` cannot see it, and it is not in a clone or a
+  release tag. It would be a second copy of `docs/`, and the recurring
+  lesson in this tree is that two copies of an answer become two different
+  answers. The wiki is turned off; Discussions is on, because a question
+  answered there stays findable. If one is ever wanted for
+  community-contributed material, it links *into* `docs/` rather than
+  restating it.
+- **`SECURITY.md` lists the known-by-design holes on purpose.** No
+  authentication, card pages sharing one origin, a card being a program on
+  your machine. Writing them down stops a stranger reporting them as
+  discoveries, and makes a report that one is *worse than described*
+  legible as the news it would be. Keep it honest if any of it changes.
+- The README, `CONTRIBUTING.md` and `SECURITY.md` are all covered by the
+  link test now. They are what a visitor meets first, and a dead link
+  there is the first thing they see.
+
 ## Keeping this file true
 
 **A stale "not done" list is worse than no list**: it sends the next session

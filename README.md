@@ -121,6 +121,28 @@ here so there is one list to keep true rather than two that drift. This
 paragraph used to claim ADIF import dedupe, the per-card settings UI and
 LoTW/QRZ upload were outstanding; all three had been done for a while.
 
+## Putting it on your network
+
+By default hamdash listens on `127.0.0.1` and is reachable only from the
+computer it runs on. `--host` changes that, which is how you use the board
+from a tablet on the sofa or a second PC:
+
+```bash
+python run.py --host 192.168.1.50 --port 4444 --browser
+```
+
+> **There is no login.** Anyone who can reach that address can tune your
+> radio, **transmit with it**, edit your log and read or overwrite your
+> settings, including saved passwords. hamdash has no accounts and no
+> password — that is a deliberate choice to keep it simple for a
+> single-operator station, not an oversight.
+
+So only do it on a network you trust, and prefer naming one interface over
+`0.0.0.0`, which offers the board on every network the machine later joins.
+If you want it from outside the house, use a VPN such as Tailscale rather
+than forwarding a port. More in [docs/built-in-cards.md](docs/built-in-cards.md#listening-from-another-machine)
+and [SECURITY.md](SECURITY.md).
+
 ## A word about installing cards
 
 A card is a program on your machine, and a card's *page* is not sandboxed

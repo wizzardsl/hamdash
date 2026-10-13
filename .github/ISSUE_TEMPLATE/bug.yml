@@ -1,0 +1,84 @@
+name: Something is broken
+description: A card will not load, the radio misbehaves, the board does something odd
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Three things answer most questions here: **the log**, **which rig
+        backend**, and **what you expected instead**. The form asks for them
+        so we do not spend a round trip getting there.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+      placeholder: |
+        The spectrum card sat on "Starting..." for ever. I expected a waterfall.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get there
+      placeholder: |
+        1. Add two spectrum tiles
+        2. Change the audio input on the second one
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: hamdash version
+      description: The first line of the log says it, or the tag you downloaded.
+      placeholder: "0.5.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: rig
+    attributes:
+      label: Rig backend
+      description: Most radio reports turn on this. "Mock" is fine and useful.
+      options:
+        - Mock (no radio)
+        - flrig
+        - Hamlib / rigctld
+        - OmniRig
+        - Not radio related
+    validations:
+      required: true
+  - type: input
+    id: radio
+    attributes:
+      label: Radio model
+      description: >
+        Only one radio has ever been tested here, so if something looks like
+        a rig quirk it may be that rig's quirk. Yours is useful evidence.
+      placeholder: "Yaesu FT-891"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        From `hamdash.log` in your config folder — `%APPDATA%\hamdash` on
+        Windows, `~/Library/Application Support/hamdash` on macOS,
+        `~/.config/hamdash` on Linux. The lines around the problem, not the
+        whole file. **Check it for callsigns or passwords before pasting.**
+      render: text
+  - type: checkboxes
+    id: network
+    attributes:
+      label: Was the board reachable from another machine at the time?
+      options:
+        - label: I was running it with `--host` set to something other than 127.0.0.1
