@@ -55,6 +55,11 @@ keep its tile, and change one thing.
 | `html` | static files served from your card directory | HTML, CSS, JS |
 | `python` | its own process, its own HTTP API, full access to the bus | Python, plus a page |
 
+A `url` card does not need a text editor at all: **Cards → New from URL…**
+on the board writes the manifest for you, and the **×** beside it in that
+menu deletes it again. Only `http://` and `https://` addresses are accepted,
+because a card page is served on the board's own origin.
+
 Start at `url` and move up only when you need to. An `html` card can still
 use every shared service, because those are HTTP endpoints on the host and
 `HD` is a wrapper around them. You need `python` when you want to do work the
@@ -95,7 +100,8 @@ poll on a schedule, or keep state shared between tiles.
 | `kind` | `url`, `html` or `python`. |
 | `entry` | python only: the file to run. Default `card.py`. |
 | `view` | the page shown in the tile. Default `index.html`. |
-| `url` | `url` cards only: where to point. |
+| `url` | `url` cards only: where to point. `http`/`https` only. |
+| `created_by` | set to `hamdash` on a manifest the board wrote from **New from URL…**. It is what makes that card deletable from the menu; leave it off a card you write and nothing in the UI can remove it. |
 | `w`, `h` | first size in grid cells. `min_w`, `min_h` the smallest it is useful at. |
 | `permissions` | which shared services you may call. See below. |
 | `publishes` | bus topics you will send. Omit for "all of `<id>.*`". |

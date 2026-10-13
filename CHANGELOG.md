@@ -6,7 +6,30 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **Cards → New from URL…** makes a card out of a web page from the board.
+  `kind: url` has been in the manifest from the beginning and the only way
+  to get one was to write the JSON by hand, which is a strange thing to ask
+  of somebody who wants their cluster page in a tile. Give it a name and an
+  address and it joins the Cards menu like any other card and goes onto the
+  board. A bare `qrz.com` gets `https://`, the way an address bar does.
+- **A card made that way can be deleted from the Cards menu**, with a
+  **×** on its row that nothing else has, and **Undo** on the toast like
+  everything else destructive here. Easy to make means they accumulate, so
+  there has to be a way to take one off the list. A card you *wrote* is
+  refused — by the menu and by the host — because there is nothing in a URL
+  card but a name and an address and there is your code in yours.
+
 ### Fixed
+- **A `url` card's address is escaped into the page it serves.** It went
+  into a `<meta http-equiv="refresh">` attribute raw, so a quote in it
+  closed the attribute and the rest was markup on the board's own origin.
+  It only ever came from a hand-written manifest before; it comes from a
+  form now, which is what made it worth fixing rather than noting.
+- **`javascript:`, `file:` and `data:` addresses are refused by name**,
+  with what to use instead. A card page is served on the board's origin, so
+  one of those in a tile is not a broken tile — it is code with the board's
+  privileges, or a read of your disk.
 - **The absorption (D-RAP) overlay is smooth now too**, the same way the
   aurora is. Its grid is coarser than the aurora's — four degrees of
   longitude — which is exactly where a field drawn as dots looked worst.

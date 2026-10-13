@@ -51,6 +51,27 @@ so a row with more than one shows a count and unticking takes all of them off
 at once. That would throw away per-tile settings, so instead of asking first
 the toast offers **Undo**, which puts them back with their settings intact.
 
+**New from URL…** makes a card out of a web page without your writing
+anything. Give it a name and an address and it joins the menu like any other
+card, and goes straight onto the board. It is a `url` card — the kind that is
+nothing but a `card.json` — and the menu just writes that file for you, in
+your cards folder, so it is still there after a restart and still there if you
+go and edit it by hand.
+
+A bare `qrz.com` is enough; it gets `https://` the way an address bar does.
+Only `http://` and `https://` addresses are taken. That is not fussiness:
+a card page runs on the board's own origin, so a `javascript:` or `file:`
+address would not be a broken tile, it would be code running with the board's
+privileges.
+
+Cards made that way carry a **×** in the menu, and nothing else does — they
+are the ones that accumulate, and there is nothing in one of them but a name
+and an address, so deleting it loses nothing. A card you *wrote* is your code:
+the menu will not delete it and neither will the host, so remove its folder
+yourself if you mean to. Deleting takes its tiles off with it and offers
+**Undo**, which writes the card back under the same id and puts the tiles
+where they were.
+
 **Tidy up**, also in that menu, pulls every tile straight up into the empty
 space above it. Taking a few cards off the board leaves holes — the board
 does not close them by itself, because a layout that rearranged itself every

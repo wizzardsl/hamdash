@@ -39,6 +39,7 @@
           it off. Closing a tile with &times; unticks it here.</p>
         <ul id="cards-menu-list" class="menu-list"></ul>
         <div class="menu-foot">
+          <button class="btn btn-quiet" id="menu-new-url" role="menuitem">New from URL&hellip;</button>
           <button class="btn btn-quiet" id="menu-tidy" role="menuitem">Tidy up</button>
           <button class="btn btn-quiet" id="menu-rescan" role="menuitem">Rescan folders</button>
           <button class="btn btn-quiet" id="menu-browse" role="menuitem">Browse &amp; drag&hellip;</button>
@@ -61,6 +62,24 @@
     <button class="btn btn-quiet" id="rescan">Rescan folders</button>
     <button class="btn" id="palette-close">Done</button>
   </footer>
+</dialog>
+
+<dialog id="url-sheet" class="sheet">
+  <h2>New card from a web page</h2>
+  <p class="sheet-note">Any page that allows being framed: a cluster, a
+    propagation site, a WebSDR, a wiki. It joins the Cards menu like any other
+    card, and you can delete it from there again.</p>
+  <form id="url-form" method="dialog">
+    <label>Name<input id="url-name" type="text" required maxlength="60"
+                     placeholder="DX cluster"></label>
+    <label>Page address<input id="url-addr" type="text" required class="mono"
+                              placeholder="https://www.qrz.com"></label>
+    <p class="sheet-note" id="url-why" role="alert" hidden></p>
+    <footer class="sheet-foot">
+      <button type="button" class="btn btn-quiet" id="url-cancel">Cancel</button>
+      <button type="submit" class="btn" id="url-make">Add card</button>
+    </footer>
+  </form>
 </dialog>
 
 <dialog id="tile-sheet" class="sheet">

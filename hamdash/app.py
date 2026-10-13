@@ -236,6 +236,52 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         w.stop()
         return jsonify(w.info())
 
+    @app.post("/api/cards")
+    def create_card():
+        """A `url` card, written from the board instead of by hand.
+
+        A `kind: url` manifest is a name and an address and nothing else,
+        so making somebody open an editor for one was the only reason the
+        feature needed a text editor at all.
+
+        This is the first manifest written from a *form*, which is why
+        `registry.tidy_url` exists: the address becomes an iframe `src`
+        on the board's own origin.
+        """
+        nonlocal cards
+        body = request.get_json(silent=True) or {}
+        try:
+            made = registry.make_url_card(
+                cfg.user_plugins, body.get("name", ""), body.get("url", ""),
+                body.get("w", 4), body.get("h", 3),
+                card_id=body.get("id", ""), taken=cards.keys())
+        except registry.CardError as exc:
+            return jsonify(error=str(exc)), 400
+        except OSError as exc:
+            return jsonify(error=f"could not write the card: {exc}"), 500
+        cards = registry.discover(cfg.plugin_dirs)
+        return jsonify(cards.get(made.id, made).public()), 201
+
+    @app.delete("/api/cards/<cid>")
+    def delete_card(cid):
+        """Remove a card the board made, and only one the board made.
+
+        Cards made from a URL accumulate - that is the cost of being easy
+        to make - so there has to be a way to take one off the list. A
+        card somebody *wrote* is their code and is not deleted from a
+        menu; `registry.may_remove` is where that line is drawn.
+        """
+        nonlocal cards
+        c = cards.get(cid) or abort(404)
+        try:
+            registry.remove(c, cfg.user_plugins)
+        except registry.CardError as exc:
+            return jsonify(error=str(exc)), 403
+        except OSError as exc:
+            return jsonify(error=f"could not remove the card: {exc}"), 500
+        cards = registry.discover(cfg.plugin_dirs)
+        return jsonify(ok=True, id=cid)
+
     @app.route("/cards/<cid>/", defaults={"sub": ""},
                methods=["GET", "POST", "PUT", "DELETE"])
     @app.route("/cards/<cid>/<path:sub>",
@@ -247,7 +293,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         if c.kind == "html":
             return send_from_directory(c.path, sub or c.view)
         if c.kind == "url":
-            return Response(f'<meta http-equiv="refresh" content="0;url={c.url}">',
+            # Escaped: a `url` card's address now arrives from a form, so
+            # a quote in it would close the attribute and the rest would
+            # be markup on the board's origin.
+            return Response('<meta http-equiv="refresh" '
+                            f'content="0;url={escape(c.url, quote=True)}">',
                             mimetype="text/html")
         return _proxy(sup.ensure(c), sub)
 

@@ -367,6 +367,23 @@
       }
       b.onclick = () => toggleCard(c);
       li.appendChild(b);
+      // Only cards the board itself wrote from a URL. A card somebody
+      // wrote is their code, and a menu is not where that gets deleted -
+      // the host refuses it too, so this is the signpost rather than the
+      // rule (`registry.may_remove`).
+      if (c.created_by === 'hamdash') {
+        li.classList.add('has-del');
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'menu-del';
+        del.textContent = '×';
+        // Nested spans and a bare glyph compute to no accessible name at
+        // all - the same thing that left six unnamed checkboxes here.
+        del.setAttribute('aria-label', `Delete the ${c.name} card`);
+        del.title = `Delete the ${c.name} card`;
+        del.onclick = (e) => { e.stopPropagation(); deleteCard(c); };
+        li.appendChild(del);
+      }
       ul.appendChild(li);
     });
   }
@@ -398,6 +415,44 @@
               } });
     }
     renderCardsMenu();
+  }
+
+  /* Deleting a card the board made from a URL.
+   *
+   * Undo, like every other destructive thing here - and it can be offered
+   * honestly because there is nothing in one of these but a name and an
+   * address, so putting it back is writing the same two fields again
+   * under the same id. The id matters: tiles refer to a card by it, so a
+   * restored card with a new id would come back with the board pointing
+   * at nothing.
+   *
+   * Its tiles go with it, the way unticking takes every copy off. Leaving
+   * them would leave tiles of a card that no longer exists.
+   */
+  async function deleteCard(c) {
+    const was = { id: c.id, name: c.name, url: c.url, w: c.w, h: c.h };
+    const before = JSON.parse(JSON.stringify(board.tiles));
+    try {
+      await HD.del(`/api/cards/${encodeURIComponent(c.id)}`);
+    } catch (e) { toast(e.message); return; }
+    tilesOf(c.id).forEach((entry) => board.remove(entry.uid));
+    cards = await HD.get('/api/cards', { rescan: 1 });
+    renderCardsMenu();
+    renderPalette();
+    toast(`${was.name} deleted`, {
+      label: 'Undo',
+      fn: async () => {
+        try {
+          await HD.post('/api/cards', was);
+        } catch (e) { toast(e.message); return; }
+        cards = await HD.get('/api/cards', { rescan: 1 });
+        board.setTiles(before);
+        saveLayout(board.tiles);
+        renderCardsMenu();
+        renderPalette();
+        toast(`${was.name} back`);
+      },
+    });
   }
 
   /* Closing a card from its own tile, or its tab.
@@ -496,6 +551,62 @@
       },
     });
   };
+
+  /* A card from a web page, without opening an editor.
+   *
+   * `kind: url` has been in the manifest from the start and the only way
+   * to get one was to write the JSON by hand, which is a strange thing to
+   * ask of somebody who wants their cluster page in a tile.
+   */
+  const urlSheet = () => $('#url-sheet');
+
+  function urlWhy(msg) {
+    const el = $('#url-why');
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+
+  $('#menu-new-url').onclick = () => {
+    openMenu(false);
+    $('#url-name').value = '';
+    $('#url-addr').value = '';
+    urlWhy('');
+    urlSheet().showModal();
+    $('#url-name').focus();
+  };
+
+  $('#url-cancel').onclick = () => urlSheet().close();
+
+  $('#url-form').addEventListener('submit', async (e) => {
+    // The form is `method="dialog"`, which closes the sheet on submit -
+    // too early to show the host's complaint in it.
+    e.preventDefault();
+    const name = $('#url-name').value.trim();
+    const url = $('#url-addr').value.trim();
+    urlWhy('');
+    $('#url-make').disabled = true;
+    let made;
+    try {
+      made = await HD.post('/api/cards', { name, url });
+    } catch (err) {
+      // The host names what to fix - a scheme that cannot go in a frame,
+      // an empty address - so it is shown where the typing is rather
+      // than in a toast that has gone by the time they look.
+      urlWhy(err.message);
+      return;
+    } finally {
+      $('#url-make').disabled = false;
+    }
+    urlSheet().close();
+    cards = await HD.get('/api/cards', { rescan: 1 });
+    renderCardsMenu();
+    renderPalette();
+    // Put it on the board: they asked for a page in a tile, not for an
+    // entry in a menu.
+    board.add({ card: made.id, title: made.name, w: made.w, h: made.h,
+                min_w: made.min_w, min_h: made.min_h, url: made.url });
+    toast(`${made.name} added`);
+  });
 
   $('#menu-rescan').onclick = rescan;
   $('#menu-browse').onclick = () => {

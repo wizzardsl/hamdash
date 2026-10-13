@@ -443,8 +443,25 @@ html, body {
   flex: none; font-family: var(--mono); font-size: 11px; color: var(--muted);
 }
 .menu-foot {
-  display: flex; gap: 6px; justify-content: flex-end;
+  /* Four of them in a 320px menu: wrapping beats a row that overflows. */
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;
   padding: 7px 8px; border-top: 1px solid var(--rule);
+}
+
+/* A card the board wrote from a URL can be deleted here, so its row is the
+   item plus a button of its own rather than one button the width of the
+   menu. Only those rows: a card somebody wrote is their code, and a menu
+   is not where that gets deleted. */
+.menu-list li.has-del { display: flex; align-items: center; gap: 2px; }
+.menu-list li.has-del .menu-item { min-width: 0; }
+.menu-del {
+  flex: none; width: 26px; height: 26px; padding: 0;
+  background: none; border: 0; border-radius: var(--radius);
+  color: var(--muted); font: inherit; font-size: 15px; line-height: 1;
+  cursor: pointer;
+}
+.menu-del:hover, .menu-del:focus-visible {
+  background: var(--panel-2); color: var(--alert);
 }
 
 .toast-action {

@@ -1877,6 +1877,36 @@ one with Claude Code.
   for a method that was renamed. It caught `card.route` on its first run.
 - **The SDK is the extension surface, so adding to it is a documentation
   change too.** That is the whole reason the test exists.
+- **A manifest written from a form is not a manifest somebody typed.**
+  `kind: url` is a name and an address, so **Cards → New from URL…**
+  writes the `card.json` (`registry.make_url_card`) - and that turns two
+  things that were a card author's own problem into the app's. The
+  address becomes an iframe `src` on the *board's* origin, so
+  `javascript:` is not a broken tile, it is code with the board's
+  privileges, and `file:` reads the disk: `tidy_url` takes `http`/`https`
+  only and nothing else. It also lands in `card_mount`'s
+  `<meta http-equiv="refresh">` attribute, where it had never been
+  escaped - a quote closed the attribute and the rest was markup. **A
+  scheme is not a port**: `localhost:8080` is a host somebody typed, and
+  the only thing telling it from `javascript:` before the colon is what
+  follows it, so the check is `([a-z][a-z0-9+.-]*):(?!\d)`. A bare
+  `qrz.com` gets `https://` rather than being refused, because that is
+  what they copied out of an address bar.
+- **A new card's id is checked against every card, not just the user's.**
+  A user card beats a bundled one of the same id - that is how you fork a
+  card - so a page called "Logbook" would silently replace the logbook.
+  `free_id` takes the whole discovered set and makes it `logbook_2`.
+- **Deleting a card needs two conditions and both of them.**
+  `created_by: "hamdash"` says the board wrote it, so nothing but a name
+  and an address is lost; the directory check says it is in
+  `<home>/cards/`, so a bundled card can never be removed however its
+  manifest reads. The marker alone is written by whoever writes the file.
+  A card somebody *wrote* is their code and is not deleted from a menu -
+  `registry.may_remove` says so and says what to do instead.
+  **Undo has to restore the same id**, because tiles refer to a card by
+  it: a card put back under a fresh id comes back with the board pointing
+  at nothing. So `POST /api/cards` takes an `id`, and the delete path
+  takes the tiles off and puts them back with it.
 - **Audio was the gap.** `radio.` and the logbook were reachable from a card
   and sound was not: `spectrum` and `decoder` each import sounddevice and
   each re-derive the device list. `card.host.audio_devices()` now hands over
