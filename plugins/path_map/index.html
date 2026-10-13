@@ -46,6 +46,20 @@
   .pin-label::before { display: none; }
   .sun-icon { background: none; border: 0; }
   .err { color: var(--alert); font-size: 12px; }
+  /* The scale for the band-to-here overlay. Bottom left, out of the way
+     of Leaflet's own controls. */
+  .key { position: absolute; left: 8px; bottom: 22px; z-index: 500;
+         background: color-mix(in srgb, var(--panel) 88%, transparent);
+         border: 1px solid var(--rule); border-radius: var(--radius);
+         padding: 5px 7px; font-size: 10px; color: var(--muted);
+         pointer-events: none; line-height: 1.5; }
+  .key b { display: block; color: var(--ink); font-size: 10px;
+           font-weight: 600; margin-bottom: 3px; }
+  .key span { display: inline-flex; align-items: center; gap: 3px;
+              margin-right: 6px; font-family: var(--mono); }
+  .key i { width: 11px; height: 8px; border-radius: 2px; display: block; }
+  .key em { display: block; font-style: normal; margin-top: 3px;
+            opacity: .85; }
 </style>
 </head>
 <body>
@@ -160,6 +174,8 @@ async function loadProp() {
       for (let i = 0; i < bin.length; i++) drapBytes[i] = bin.charCodeAt(i);
     }
   } catch (e) { drapGrid = null; drapBytes = null; }
+  // New soundings mean a new field, if anybody is looking at it.
+  if (L_.area && map && map.hasLayer(L_.area)) drawArea();
 }
 
 /* The absorption being measured over the path, in MHz.
@@ -238,6 +254,117 @@ function propRows(add, target) {
     + (p.from.age_h > 1 ? ` · ${p.from.age_h.toFixed(1)} h old` : ''));
 }
 
+/* ---- the band-to-here overlay -----------------------------------------
+ *
+ * The single-path readout swept across the map: every pixel is the MUF
+ * for the path from the operator to that place. Centred on the station
+ * by construction - unlike the familiar MUF map, which is MUF(3000)
+ * plotted at each point and says nothing about where you are standing.
+ *
+ * Drawn as one image per world copy and left for the browser to
+ * interpolate, the way the aurora is. Three degrees: the field is smooth,
+ * and measured, 3 deg is 7320 points in 225 ms where 2 deg is 16380 in
+ * 533 - which is the difference between a pause and a freeze.
+ *
+ * **The fade is the honest part.** Every point finds *some* nearest
+ * sounder, however far away, so nothing comes back unknown and the
+ * confidence has to be drawn rather than stated. Measured against the
+ * live network: eastern US 989 km from the nearest sounding, Europe
+ * 1644, mid-Pacific 3970, Antarctica 4327. So solid to 1500 km and
+ * ghostly past 5000, and the ocean looks like the guess it is.
+ */
+const AREA_FULL_MHZ = 30;       // top of the colour ramp
+const AREA_SOLID_KM = 1200;     // supported this close: drawn in full
+const AREA_FADED_KM = 4500;     // further than this: barely there
+/* It is an overlay, not a replacement. The first attempt peaked at 190
+   of 255 and the continents simply vanished underneath it - and a
+   propagation map you cannot see the land through tells you the band
+   and not the place, which is half an answer. */
+const AREA_ALPHA = 105;
+
+let areaTimer = null;
+
+function areaConfidence(farKm) {
+  if (!Number.isFinite(farKm)) return 0;
+  if (farKm <= AREA_SOLID_KM) return 1;
+  const t = (farKm - AREA_SOLID_KM) / (AREA_FADED_KM - AREA_SOLID_KM);
+  return Math.max(0.07, 1 - t);
+}
+
+function areaImage(field) {
+  const c = document.createElement('canvas');
+  c.width = field.w;
+  c.height = field.h;
+  const img = c.getContext('2d').createImageData(field.w, field.h);
+  const px = img.data;
+  const stops = [HDMap.hex2rgb(THEME.signal), HDMap.hex2rgb(THEME.accent),
+                 HDMap.hex2rgb(THEME.alert)];
+  for (let iy = 0; iy < field.h; iy++) {
+    // The field runs south to north; image rows run top down.
+    const row = (field.h - 1 - iy) * field.w;
+    for (let ix = 0; ix < field.w; ix++) {
+      const i = iy * field.w + ix;
+      const o = (row + ix) * 4;
+      const mhz = field.muf[i];
+      const conf = areaConfidence(field.far[i]);
+      if (!(mhz > 0) || conf <= 0) { px[o + 3] = 0; continue; }
+      // Colour carries the frequency; alpha carries how much we know.
+      // Using the ramp's own alpha would say a low MUF is "less there",
+      // which is a different claim and not the one being made.
+      const rgb = HDMap.fieldRamp(mhz, AREA_FULL_MHZ, stops);
+      px[o] = rgb[0]; px[o + 1] = rgb[1]; px[o + 2] = rgb[2];
+      px[o + 3] = Math.round(AREA_ALPHA * conf);
+    }
+  }
+  c.getContext('2d').putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+function drawArea() {
+  if (!L_.area) return;
+  L_.area.clearLayers();
+  // The legend belongs to the layer, so it goes when the layer does -
+  // a scale with nothing to scale is just a box in the corner.
+  if (!map.hasLayer(L_.area) || !me || !HDProp) { areaLegend(null); return; }
+  const list = HDProp.asList(sounders);
+  if (!list.length) { areaLegend(null); return; }
+  const field = HDProp.mufField(me, list, { step: 3 });
+  const url = areaImage(field);
+  // Half a cell beyond the grid on each side: the values sit at cell
+  // centres, and at three degrees half a cell is 1.5 of them.
+  const hx = field.step_lon / 2, hy = field.step_lat / 2;
+  const south = field.lat0 - hy;
+  const north = field.lat0 + (field.h - 1) * field.step_lat + hy;
+  const west = field.lon0 - hx;
+  const east = field.lon0 + (field.w - 1) * field.step_lon + hx;
+  HDMap.each((dx) => L.imageOverlay(url,
+    [[south, west + dx], [north, east + dx]],
+    { opacity: 1, interactive: false }).addTo(L_.area));
+  areaLegend(field);
+}
+
+/* A colour field with no scale beside it is decoration. */
+function areaLegend(field) {
+  let el = $('#area-key');
+  if (!field) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'area-key';
+    el.className = 'key';
+    document.querySelector('#map').appendChild(el);
+  }
+  const stops = [HDMap.hex2rgb(THEME.signal), HDMap.hex2rgb(THEME.accent),
+                 HDMap.hex2rgb(THEME.alert)];
+  const swatch = (mhz) => {
+    const c = HDMap.fieldRamp(mhz, AREA_FULL_MHZ, stops);
+    return `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>`;
+  };
+  el.innerHTML = '<b>Highest frequency to here</b>'
+    + [3, 7, 14, 21, 28].map((f) =>
+        `<span>${swatch(f)}${f}</span>`).join('')
+    + '<em>faded where the nearest sounding is far from the path</em>';
+}
+
 function drawStation() {
   if (!L_.station) return;
   L_.station.clearLayers();
@@ -310,8 +437,15 @@ function build() {
   });
   Object.assign(L_, space.groups);
 
+  // Swept from this station, so it belongs with the overlays rather
+  // than with the basemaps.
+  L_.area = L.layerGroup();
+  map.on('overlayadd overlayremove', (e) => {
+    if (e.layer === L_.area) drawArea();
+  });
   L.control.layers(null,
-                   Object.assign({ 'Logged contacts': L_.logged },
+                   Object.assign({ 'Logged contacts': L_.logged,
+                                   'Band to here (MUF)': L_.area },
                                  space.overlays),
                    { collapsed: true }).addTo(map);
 

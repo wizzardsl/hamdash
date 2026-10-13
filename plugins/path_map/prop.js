@@ -101,6 +101,20 @@
       : [along(a, b, 1 / 6), along(a, b, 5 / 6)];
   }
 
+  /* The soundings, however they arrived.
+
+     `/api/space/muf` answers `{stations: [...]}` and a caller holding
+     just the list is also reasonable. Written twice against a guess at
+     this shape - once here and once for `HD.bands()` - and both times
+     the guess and its tests agreed with each other and not with the
+     server. One place to be tolerant beats remembering at each call. */
+  function asList(x) {
+    if (Array.isArray(x)) return x;
+    if (x && Array.isArray(x.stations)) return x.stations;
+    if (x && Array.isArray(x.sounders)) return x.sounders;
+    return [];
+  }
+
   const ageHours = (iso, now) => {
     const t = Date.parse(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + 'Z');
     return Number.isFinite(t) ? (now - t) / 3600e3 : Infinity;
@@ -110,7 +124,7 @@
   function nearest(point, sounders, now, freshHours) {
     const limit = freshHours === undefined ? FRESH_HOURS : freshHours;
     let best = null;
-    (sounders || []).forEach((s) => {
+    asList(sounders).forEach((s) => {
       const fof2 = Number(s.fof2);
       if (!Number.isFinite(fof2) || fof2 <= 0) return;
       const lat = Number(s.lat), lon = Number(s.lon);
@@ -204,7 +218,59 @@
       return end >= lo && start <= hi;
     }).map((b) => String(b[2]));
   }
+  /* The same calculation swept across the whole map.
+
+     For every point: what is the MUF for the path from here to there.
+     That is a different thing from the familiar MUF map, which is
+     MUF(3000) plotted at each place and says nothing about where you
+     are standing - this one is centred on the operator by construction,
+     because every value is a path from them.
+
+     Coarse on purpose. The field is smooth, so three degrees and let the
+     browser interpolate costs a fraction of the work and looks the same
+     - the aurora overlay settled on exactly this trade.
+
+     Returns the distance to the supporting sounding alongside the
+     frequency, because that is what lets the drawing fade out over the
+     oceans instead of pretending.
+  */
+  function mufField(me, sounders, opts) {
+    const o = opts || {};
+    const step = o.step || 3;
+    const now = o.now || Date.now();
+    const w = Math.round(360 / step);
+    const h = Math.round(180 / step) + 1;
+    const muf = new Float32Array(w * h);
+    const far = new Float32Array(w * h);
+    // Filter to usable sounders once rather than per point: this runs
+    // tens of thousands of times and `nearest` would otherwise re-check
+    // every station's age and foF2 on each one.
+    const live = asList(sounders).filter((s) => {
+      const f = Number(s.fof2);
+      return Number.isFinite(f) && f > 0
+        && Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon))
+        && ageHours(String(s.time || ''), now) <= (o.freshHours === undefined
+                                                   ? FRESH_HOURS
+                                                   : o.freshHours);
+    });
+    for (let iy = 0; iy < h; iy++) {
+      const lat = -90 + iy * step;
+      for (let ix = 0; ix < w; ix++) {
+        const lon = -180 + ix * step;
+        const i = iy * w + ix;
+        const p = pathMuf(me, { lat, lon }, live,
+                          { now, freshHours: Infinity, farKm: o.farKm });
+        muf[i] = p.mhz === null ? 0 : p.mhz;
+        far[i] = p.mhz === null ? Infinity : p.far;
+      }
+    }
+    return { w, h, step, lon0: -180, lat0: -90,
+             step_lon: step, step_lat: step, muf, far };
+  }
+
   return { secant, hopsFor, distance, along, controlPoints, nearest,
+           asList,
+           mufField,
            hopMuf, pathMuf, bandsBetween,
            R, H_DEFAULT, MAX_HOP, FRESH_HOURS, FAR_KM };
 }));

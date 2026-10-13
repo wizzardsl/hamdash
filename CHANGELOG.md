@@ -49,6 +49,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   silently do nothing rather than like a network fault. Binding a named
   address always worked and still does.
 ### Added
+- **A propagation layer centred on your station.** “Band to here (MUF)”
+  on the path map colours the whole world by the highest frequency that
+  will reach it *from you* — not the usual MUF map, which says nothing
+  about where you are standing. It fades out where the nearest ionosonde
+  is far from the path, so the oceans look like the guess they are
+  rather than like a measurement.
 - **What band will reach them.** Click a station on the path map and it
   now tells you the MUF for that path, the highest band that will carry
   it, and — this is the point — which ionosonde the answer rests on and

@@ -1380,6 +1380,32 @@ number.** `tests/js/prop.test.js` drives it.
   when there is some. The first version listed every band under the MUF
   and proudly offered 2200 m and 630 m, which propagate by a different
   mechanism entirely.
+- **The area overlay is the same sum swept across the map** - every
+  pixel is the MUF for the path from the operator to that place, which
+  is centred on them by construction and is a different thing from the
+  familiar MUF(3000) map. `mufField` in `prop.js`, drawn as one image
+  per world copy like the aurora. **3 degrees**: measured, 7320 points
+  in 225 ms against 16380 in 533 at 2 degrees, and the field is smooth
+  enough that the browser's interpolation hides the difference.
+- **Every point finds *some* sounder, so nothing comes back unknown and
+  the honesty has to be drawn.** Alpha carries the distance to the
+  supporting sounding, not the frequency - using the ramp's own alpha
+  would say a low MUF is "less there", which is a different claim.
+  Measured against the live network and checked in the rendered pixels:
+  eastern US 989 km away at alpha 105, Europe 1644 at 89, mid-Pacific
+  3970 at 17, Antarctica 4327 at 7. The oceans look like the guess they
+  are.
+- **It is an overlay, not a replacement.** The first attempt peaked at
+  190 of 255 and the continents vanished underneath it; a propagation
+  map you cannot see the land through tells you the band and not the
+  place, which is half an answer.
+- **On a quiet night the colour barely varies** - everything lands near
+  12 MHz - so most of what you see is confidence rather than frequency.
+  That is the data being honest about thirty sounders, not the drawing
+  being broken, and it is worth knowing before concluding the overlay
+  does nothing.
+- **A legend belongs to its layer.** Turning the overlay off left the
+  scale behind, which is a box in the corner describing nothing.
 - **`HD.bands()` returns `{bands: [[start, end, name], ...], names: []}`**
   - triples, wrapped. `bandsBetween` was written against an invented
   shape with `start_mhz` fields, and its tests invented the same shape,
