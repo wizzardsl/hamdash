@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [0.7.0]
+
 ### Added
 - **The receive audio card's input is a dropdown now**, not a box you
   type a device name into from memory. It lists `rig` and `mock` first,
@@ -18,6 +20,54 @@ versions follow [SemVer](https://semver.org/). The version of record is
   anything cannot be demonstrated, and on a fresh install `rig` has no
   radio audio to follow, so it would fall through to the system default
   input — which is to say it would open somebody's microphone unasked.
+- **WSJT-X logging.** Every contact you log in WSJT-X lands in the log
+  as you make it — and only then. A live FT8 session broadcasts hundreds
+  of decodes and status updates a minute; none of them touch the log,
+  because only the record WSJT-X sends when you press **Log QSO** does.
+  Verified against a live WSJT-X 3.0.2: 200 datagrams in, nothing
+  written. Point its
+  *UDP Server* at the same address and port. Contacts go through the
+  same ADIF importer as everything else, so the same QSO arriving twice
+  updates one row rather than making two.
+  **On by default**, on WSJT-X's own default address and port, so
+  pointing WSJT-X at hamdash is the only step. It binds loopback, so it
+  is reachable only from the machine hamdash runs on and nothing is
+  offered to the network.
+- **A status line that says whether it is actually working**, which a
+  stored "enabled" cannot: the port can be open and perfectly correct
+  while WSJT-X points somewhere else, and from here those look identical
+  until a heartbeat arrives. Three states — off, listening but nothing
+  heard, connected with a version and a count — and the two that are not
+  "connected" name the fix.
+- **A port somebody else holds is retried, never shared.** JTAlert and
+  GridTracker commonly have 2237, and on Windows two sockets *can* share
+  a UDP port, with datagrams going to one of them unpredictably — half
+  your contacts to each program. So hamdash will not take it, and keeps
+  asking instead of giving up: close the other program and the listener
+  has the port within a quarter of a minute, with no restart. The
+  message names the likely culprit and points at WSJT-X's multicast
+  support, which is the way to run several at once on purpose.
+- **The path readout has a bottom as well as a top.** It gave the MUF and
+  the highest band and nothing about what the ionosphere was taking away
+  underneath, so a daytime path offered 80 m as readily as 20 m. There are
+  now three lines under it: **D-layer loss** in dB for the bands in play,
+  a **Daylight floor** in MHz, and the existing flare line.
+  The loss model is in `prop.js` beside the MUF, with no DOM and no clock,
+  and `tests/js/prop.test.js` drives it.
+- **It says which numbers are measured and which are modelled, because
+  they are not the same kind of claim.** The MUF comes from ionosondes
+  that physically sounded the layer. Nothing sounds the D layer — it is
+  too low and too collisional — so the floor is computed, and the line
+  says so. The shape is solid physics (1/(f + f_H)², solar zenith angle,
+  solar activity, once per hop); the constant is calibrated. Read the dB
+  as an ordering rather than a measurement: what it is reliably right
+  about is that 160 m is shut in daylight and 20 m is barely touched.
+- **Nothing is called a LUF, deliberately.** Absorption is a property of
+  the path; a LUF is a property of your station. 5 W of FT8, 100 W of CW
+  and a linear have three different answers over the same path at the
+  same second, which is why VOACAP asks for power and antenna gain. So
+  the dB are shown and you apply your own judgement, and the one line
+  that does turn them into a frequency says how much loss it assumed.
 
 ### Fixed
 - **"Something else is already listening on UDP 2237" now names another
@@ -77,58 +127,6 @@ versions follow [SemVer](https://semver.org/). The version of record is
   that was added *and* the counts, so a card reading the contact keeps
   working and a file also gets its totals. An import that changed
   nothing says nothing.
-
-### Added
-- **WSJT-X logging.** Every contact you log in WSJT-X lands in the log
-  as you make it — and only then. A live FT8 session broadcasts hundreds
-  of decodes and status updates a minute; none of them touch the log,
-  because only the record WSJT-X sends when you press **Log QSO** does.
-  Verified against a live WSJT-X 3.0.2: 200 datagrams in, nothing
-  written. Point its
-  *UDP Server* at the same address and port. Contacts go through the
-  same ADIF importer as everything else, so the same QSO arriving twice
-  updates one row rather than making two.
-  **On by default**, on WSJT-X's own default address and port, so
-  pointing WSJT-X at hamdash is the only step. It binds loopback, so it
-  is reachable only from the machine hamdash runs on and nothing is
-  offered to the network.
-- **A status line that says whether it is actually working**, which a
-  stored "enabled" cannot: the port can be open and perfectly correct
-  while WSJT-X points somewhere else, and from here those look identical
-  until a heartbeat arrives. Three states — off, listening but nothing
-  heard, connected with a version and a count — and the two that are not
-  "connected" name the fix.
-- **A port somebody else holds is retried, never shared.** JTAlert and
-  GridTracker commonly have 2237, and on Windows two sockets *can* share
-  a UDP port, with datagrams going to one of them unpredictably — half
-  your contacts to each program. So hamdash will not take it, and keeps
-  asking instead of giving up: close the other program and the listener
-  has the port within a quarter of a minute, with no restart. The
-  message names the likely culprit and points at WSJT-X's multicast
-  support, which is the way to run several at once on purpose.
-- **The path readout has a bottom as well as a top.** It gave the MUF and
-  the highest band and nothing about what the ionosphere was taking away
-  underneath, so a daytime path offered 80 m as readily as 20 m. There are
-  now three lines under it: **D-layer loss** in dB for the bands in play,
-  a **Daylight floor** in MHz, and the existing flare line.
-  The loss model is in `prop.js` beside the MUF, with no DOM and no clock,
-  and `tests/js/prop.test.js` drives it.
-- **It says which numbers are measured and which are modelled, because
-  they are not the same kind of claim.** The MUF comes from ionosondes
-  that physically sounded the layer. Nothing sounds the D layer — it is
-  too low and too collisional — so the floor is computed, and the line
-  says so. The shape is solid physics (1/(f + f_H)², solar zenith angle,
-  solar activity, once per hop); the constant is calibrated. Read the dB
-  as an ordering rather than a measurement: what it is reliably right
-  about is that 160 m is shut in daylight and 20 m is barely touched.
-- **Nothing is called a LUF, deliberately.** Absorption is a property of
-  the path; a LUF is a property of your station. 5 W of FT8, 100 W of CW
-  and a linear have three different answers over the same path at the
-  same second, which is why VOACAP asks for power and antenna gain. So
-  the dB are shown and you apply your own judgement, and the one line
-  that does turn them into a frequency says how much loss it assumed.
-
-### Fixed
 - **A flare floor below the HF bands is no longer reported.** D-RAP reads
   a megahertz or two on a perfectly quiet day, and "absorbed below 1 MHz"
   is a line about nothing — there is no band down there to lose. Harmless
