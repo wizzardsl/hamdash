@@ -1366,6 +1366,29 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   has a map click handler must set `bubblingMouseEvents: false`, or
   `interactive: false` if it is decoration - and was checked against the
   pre-fix file, where it names both markers.
+- **`spaceLayers`' canvas must never take the mouse, and that is not
+  cosmetic.** It is added to `overlayPane` *after* whatever renderer the
+  calling card already built, and **a Leaflet canvas does not pass
+  events through to the canvas beneath it** - so an empty space-weather
+  overlay sat on top of `psk_reporter`'s spots and swallowed every hover
+  and click. `canvas._container.style.pointerEvents = 'none'`, which
+  costs nothing because everything on that renderer is
+  `interactive: false`; the ionosondes, the one space layer with a
+  tooltip, are on the map's default SVG renderer and must stay there.
+  **It presents as intermittent, and that is the lesson.** A card that
+  switches renderer by volume - `psk_reporter` uses SVG under
+  `SVG_LIMIT` and canvas over it - is broken only when busy, because
+  the SVG renderer is appended *after* both canvases and so sits on top.
+  Measured on a live board: 275 stations was SVG and worked, 786 was
+  canvas and was dead, with `elementFromPoint` over a dot returning the
+  space canvas every time.
+  **Synthetic events cannot find this bug and will tell you it is
+  fixed.** `element.dispatchEvent` is delivered to the element named,
+  so dispatching on the dots canvas bypasses the very occlusion in
+  question - which is exactly how it was wrongly declared working
+  earlier the same day. Leaflet also throttles canvas hover to one
+  hit-test per 32 ms, so a tight scan loop reports one miss and stops.
+  Drive it with real input, or read `elementFromPoint`.
 - **A click on the map may re-aim a card, never re-purpose it.** The
   PSK card watches a callsign or a grid square, and a map click used to
   switch the first into the second and rewrite the box - so a click

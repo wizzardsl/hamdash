@@ -7,6 +7,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **Map markers went dead on a busy band.** The shared space-weather
+  layer adds its own canvas to the map, and it landed on top of the one
+  a card had already made for its own markers — a Leaflet canvas does
+  not pass mouse events through, so every hover and click was swallowed
+  by an empty overlay. It only showed when there were enough spots to
+  push the card onto a canvas in the first place, so a quiet band worked
+  and a busy one did not, which is what made it look intermittent.
+  Nothing drawn on that canvas is interactive, so it no longer takes the
+  mouse at all. Fixed in the shared map machinery, so every map card
+  gets it.
 - **Clicking the PSK map no longer changes what the card is watching
   when you are watching a callsign.** In Call mode a click did double
   duty: it switched the card to Grid mode and rewrote the box with the

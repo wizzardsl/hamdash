@@ -571,7 +571,31 @@ window.HDMap = (function () {
   // which are not ours. The host caches all of it for five minutes.
   function spaceLayers(map, opts = {}) {
     const say = opts.report || (() => {});
+    /* The space overlays get their own canvas, and it must never take
+       the mouse.
+
+       It lands in `overlayPane` *after* whatever renderer the calling
+       card already made, and a Leaflet canvas does not let events
+       through to the canvas beneath it - so this one sat on top of the
+       card's own dots and swallowed every hover and click. It presents
+       as a card whose markers have gone dead, and it comes and goes:
+       `psk_reporter` only puts its spots on a canvas once there are
+       enough of them, so a quiet band works and a busy one does not.
+       Measured on a live board - 786 stations, 2358 markers, all on
+       canvas, and `elementFromPoint` over one of them returned *this*
+       canvas every time.
+
+       Nothing drawn here is interactive: the aurora and D-RAP fallback
+       dots are `interactive: false` and the ionosondes, which do have
+       tooltips, use the map's default SVG renderer. So there is nothing
+       to lose by making it inert, and the alternative - a pane of its
+       own - would reorder the drawing as well, putting the greyline on
+       a different level from the aurora.
+
+       `_container` is Leaflet's, not ours; Leaflet is vendored and
+       pinned, and the guard is there so a future one cannot throw. */
     const canvas = L.canvas({ padding: 0.5 }).addTo(map);
+    if (canvas._container) canvas._container.style.pointerEvents = 'none';
     const groups = {
       greyline: L.layerGroup(),
       aurora: L.layerGroup(),

@@ -115,6 +115,53 @@ class TestAMapClickDoesNotChangeWhatTheCardIsAbout(unittest.TestCase):
             "control:", *offenders]))
 
 
+class TestTheSpaceCanvasIsInert(unittest.TestCase):
+    """The shared space-weather renderer must not take the mouse.
+
+    `spaceLayers` adds its own `L.canvas` to the map, and it lands in
+    `overlayPane` *after* whatever renderer the calling card already
+    made. A Leaflet canvas does not pass events through to the canvas
+    beneath it, so this one sat on top of the card's own markers and
+    swallowed every hover and click.
+
+    It comes and goes, which is what made it hard to see: `psk_reporter`
+    only puts its spots on a canvas once there are enough of them, so a
+    quiet band works and a busy one does not. Measured on a live board -
+    786 stations, 2358 markers all on canvas, and `elementFromPoint` over
+    one of them returning the space canvas every time; with the fix, the
+    same dot gives `KH6DC - -18 dB - 40m FT8`.
+
+    Nothing drawn on that renderer is interactive, so there is nothing to
+    lose by making it inert - the aurora and D-RAP dots pass
+    `interactive: false`, and the ionosondes, which do have tooltips, use
+    the map's default SVG renderer.
+    """
+
+    HDMAP = (Path(__file__).resolve().parent.parent
+             / "hamdash" / "static" / "js" / "hdmap.js")
+
+    def test_the_renderer_is_made_non_interactive(self):
+        text = self.HDMAP.read_text(encoding="utf-8")
+        start = text.index("function spaceLayers")
+        body = text[start:start + 4000]
+        self.assertIn("L.canvas(", body, "spaceLayers no longer makes a "
+                                         "renderer - this rule may be stale")
+        self.assertRegex(
+            body, r"pointerEvents\s*=\s*.none.",
+            "the space-weather canvas can take mouse events again, which "
+            "kills hover and click on any card drawing markers to a canvas")
+
+    def test_the_ionosondes_are_not_on_that_renderer(self):
+        # They are the one space layer with a tooltip and a popup. If they
+        # were moved onto the inert canvas they would go dead silently.
+        text = self.HDMAP.read_text(encoding="utf-8")
+        at = text.index("bindTooltip(muf === null")
+        before = text[max(0, at - 700):at]
+        self.assertNotIn("renderer: canvas", before,
+                         "the ionosonde markers are on the inert renderer, "
+                         "so their tooltip and popup cannot fire")
+
+
 class TestTheRulesBite(unittest.TestCase):
     """Checks that the checks fail against the code as it was."""
 
