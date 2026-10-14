@@ -1348,6 +1348,30 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   `display` must carry a `[hidden]` rule. Reading the attribute back does
   *not* catch this - the DOM says hidden and the element is on screen - so
   check `getComputedStyle`.
+- **A click on a marker reaches the map too, on *both* renderers.**
+  Leaflet fires the layer's handler and then the map's. Measured in a
+  browser against the vendored build with a synthesised click: canvas
+  gave layer 1 / map 1, SVG gave layer 1 / map 1, and
+  `bubblingMouseEvents: false` gave layer 1 / map 0 on each. The first
+  guess was that only the canvas renderer did it - reasoned from how
+  `_findEventTargets` adds the map when no layer target is found - and
+  that was wrong, which is the whole argument for building the throwaway
+  map instead of reading the source.
+  It only bites a card with a `map.on('click')` handler, which today is
+  `psk_reporter` alone: clicking a spot to read its report opened the
+  popup and then the map handler read the same click as "watch that grid
+  square", reloaded the card and destroyed the popup. It presents as the
+  card refusing to show you a spot, not as an event bug.
+  `tests/test_map_clicks.py` holds the rule - a marker in a card that
+  has a map click handler must set `bubblingMouseEvents: false`, or
+  `interactive: false` if it is decoration - and was checked against the
+  pre-fix file, where it names both markers.
+- **A dot's tooltip should carry the number the dot is about.** The PSK
+  map's said only the callsign, which is the one thing already obvious,
+  and put the signal report two clicks away. Where a station has several
+  reports the tooltip shows `best`, because `best` is what colours the
+  dot: showing the latest report's figure beside a dot coloured by a
+  different one is two answers on screen at once.
 - **A hidden filter must reset when it is hidden.** The PSK card drops the
   direction filter when it leaves Call mode: one that is invisible but still
   narrowing makes the map look broken with nothing on screen to explain it.

@@ -7,6 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **You can read a single reception report again.** Clicking a spot on
+  the PSK Reporter map opened its popup and then immediately threw it
+  away: the click reached the *map* as well as the dot, and a click on
+  the map means "watch that grid square", so the card switched to grid
+  mode and reloaded. It read as the card refusing to show you a spot.
+  Measured in a browser rather than guessed at — Leaflet fires a click
+  on the layer **and** on the map, on the canvas renderer and the SVG
+  one alike, so the renderer in use was no defence.
+- **Hovering a spot shows the signal, not just the callsign.** The
+  number you want off a reception report was two clicks away. A station
+  with one report shows it — `JG3RPL · -13 dB · 20m FT8 · 2m ago`; one
+  with several shows its best and the count, matching the dot's colour,
+  which is the best report rather than the latest.
 - **The logbook shows a contact logged elsewhere, instead of refreshing
   the page you were on.** A contact arriving from WSJT-X, an ADIF import
   or a QSL pull sorts onto the *first* page — so if you had paged back

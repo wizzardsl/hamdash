@@ -306,6 +306,9 @@ function drawPin() {
     L.circleMarker([at.lat, at.lon + dx], {
       radius: 7, weight: 2, color: THEME.accent, fillColor: THEME.bg,
       fillOpacity: 0.6, dashArray: '3 3',
+      // Same reason as the spots: clicking the pin would re-ask for the
+      // square it is already pinned to and reload the card for nothing.
+      bubblingMouseEvents: false,
     }).bindTooltip(`watching ${grid}`, { direction: 'top', offset: [0, -6] })
       .addTo(L_.pin);
   });
@@ -359,7 +362,14 @@ function draw() {
         color: mine ? THEME.ink : THEME.bg,
         fillColor: snrColour(st.best),
         fillOpacity: 1,
-      }).bindTooltip(st.call, { direction: 'top', offset: [0, -4] })
+        // Measured, not assumed: a click on a dot fires the layer *and*
+        // the map, on both renderers - so it opened this popup and then
+        // `map.on('click')` read the click as "watch that grid square",
+        // which reloaded the card and threw the popup away. It reads as
+        // the card jumping to grid mode whenever you try to look at a
+        // spot, which is exactly how it was reported.
+        bubblingMouseEvents: false,
+      }).bindTooltip(tipFor(st), { direction: 'top', offset: [0, -4] })
         .bindPopup(() => popupFor(st), { maxWidth: 300 })
         .addTo(L_.spots);
     });
@@ -371,6 +381,31 @@ function draw() {
       + (pathsDrawn && pathsDrawn < heard
          ? ` · newest ${pathsDrawn} paths drawn` : '')
     : 'nothing matches these filters';
+}
+
+/* What a dot says before you click it.
+ *
+ * It said only the callsign, which is the one thing already obvious from
+ * the map - the number you actually want off a reception report is the
+ * signal, and it was two clicks away. The colour of the dot is `best`,
+ * so a station with several reports shows `best` and says how many,
+ * rather than quietly showing one report's figure beside a dot coloured
+ * by another's.
+ */
+function dB(v) {
+  return v === null || v === undefined ? '' : `${v > 0 ? '+' : ''}${v} dB`;
+}
+
+function tipFor(st) {
+  const SEP = ' · ';
+  const latest = st.reports.reduce((a, b) => (b.at > a.at ? b : a), st.reports[0]);
+  if (st.reports.length === 1) {
+    return [st.call, dB(latest.snr),
+            [latest.band, latest.mode].filter(Boolean).join(' '),
+            ago(latest.at)].filter(Boolean).join(SEP);
+  }
+  return [st.call, st.best === null ? '' : `best ${dB(st.best)}`,
+          `${st.reports.length} reports`].filter(Boolean).join(SEP);
 }
 
 function popupFor(st) {
