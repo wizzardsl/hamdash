@@ -42,9 +42,10 @@ _lock = threading.Lock()
 # the same rule the spectrum card follows.
 _pa_lock = threading.Lock()
 _taps: dict[str, "Tap"] = {}
-# device -> {tile uid: when it last asked}. Per tile, not per device, so
-# one tile closing its player does not take the audio away from another
-# that is still listening to the same radio.
+# device -> {listener: when it last asked}. A listener is a *page*, not a
+# tile: every browser showing one tile sends the same uid, so counting by
+# tile made two browsers one entry and the first Stop closed the device
+# for both. See `listener()`.
 _wanted: dict[str, dict[str, float]] = {}
 
 
@@ -263,12 +264,32 @@ def look(conf: dict) -> Tap | None:
     return _taps.get(_key_for(conf)[0])
 
 
-def tap_for(conf: dict, uid: str) -> Tap:
+def listener() -> str:
+    """Who is asking - a *page*, not a tile.
+
+    The want used to be keyed on the tile uid, which is the same for
+    every browser showing that tile. Open the board in two places, which
+    is the entire point of a card that plays the radio's audio over the
+    network, and the two are indistinguishable here: one of them pressing
+    Stop takes the device away from the other, whose next poll opens it
+    again. It shows up in the log as a row of "last listener left" and to
+    the operator as audio that will not start - which is exactly how it
+    was reported.
+
+    The page sends `who`, generated once when it loads. Falling back to
+    the tile uid keeps an older page working rather than leaving it with
+    no want at all, which would have the reaper close the device under
+    it every 20 seconds.
+    """
+    return request.args.get("who") or card.tile_uid() or "-"
+
+
+def tap_for(conf: dict, who: str) -> Tap:
     """The tap for these settings, opened if need be, and marked wanted."""
     key, rate = _key_for(conf)
     device = key.rsplit("|", 1)[0]
     now = time.time()
-    _wanted.setdefault(key, {})[uid or "-"] = now
+    _wanted.setdefault(key, {})[who or "-"] = now
     t = _taps.get(key)
     if t is None:
         t = _taps[key] = Tap(device, rate)
@@ -280,12 +301,16 @@ def tap_for(conf: dict, uid: str) -> Tap:
     return t
 
 
-def release(uid: str) -> None:
-    """A tile has stopped listening. Let go of the device now if nothing
-    else wants it - the reason to press Stop is to give the sound card to
-    another program, and in 20 seconds is not now."""
+def release(who: str) -> None:
+    """One listener has stopped. Let go of the device now if nothing else
+    wants it - the reason to press Stop is to give the sound card to
+    another program, and in 20 seconds is not now.
+
+    *If nothing else wants it*: a second browser listening to the same
+    tile keeps its own entry, so stopping here no longer stops them.
+    """
     for key, tiles in list(_wanted.items()):
-        if tiles.pop(uid, None) is not None and not tiles:
+        if tiles.pop(who, None) is not None and not tiles:
             t = _taps.pop(key, None)
             if t is not None:
                 print(f"closing {key or 'default input'}: last listener left")
@@ -334,7 +359,7 @@ def pcm():
     base64 would spend 32 kB saying it. What the caller needs to place it
     in time rides in headers.
     """
-    t = tap_for(card.settings(), card.tile_uid())
+    t = tap_for(card.settings(), listener())
     try:
         seq = int(request.args.get("since", "0"))
     except ValueError:
@@ -357,7 +382,7 @@ def pcm():
 @card.post("/stop")
 def stop():
     """This tile has stopped listening."""
-    release(card.tile_uid())
+    release(listener())
     return {"ok": True}
 
 

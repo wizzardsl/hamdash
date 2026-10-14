@@ -61,6 +61,30 @@
 HD.cardId = 'rx_audio';
 const $ = (s) => document.querySelector(s);
 
+/* Who this page is, for as long as it is loaded.
+ *
+ * The card counts listeners so it knows when to let the sound card go,
+ * and it used to count them by *tile* uid - which is the same for every
+ * browser showing that tile. Two browsers on one board, which is the
+ * whole point of playing the radio's audio over the network, were one
+ * listener as far as the card could tell: either one pressing Stop took
+ * the device from the other, whose next poll took it straight back. It
+ * reads as audio that will not start.
+ *
+ * `crypto.randomUUID` is not used: it is secure-context only, and this
+ * board is plain HTTP on a LAN address exactly when it matters most.
+ * `getRandomValues` has no such restriction.
+ */
+const WHO = (() => {
+  try {
+    const a = new Uint32Array(2);
+    crypto.getRandomValues(a);
+    return a[0].toString(36) + a[1].toString(36);
+  } catch (e) {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+})();
+
 let conf = {};
 let ctx = null, gain = null;
 let running = false, timer = null;
@@ -93,7 +117,7 @@ async function pull() {
   const t0 = performance.now();
   let r;
   try {
-    r = await HD.cardRaw('rx_audio', `/api/pcm?since=${lastSeq}`);
+    r = await HD.cardRaw('rx_audio', `/api/pcm?since=${lastSeq}&who=${WHO}`);
     if (!r.ok) throw new Error(`audio request failed (${r.status})`);
   } catch (e) {
     say(String(e.message || e), true);
@@ -265,7 +289,11 @@ async function stop(quiet) {
   // Tell the card now rather than letting the reaper notice in 20 s: the
   // reason to press Stop is usually to give the sound card to another
   // program, and "in twenty seconds" is not that.
-  try { await HD.card('rx_audio', '/api/stop', {}); } catch (e) { /* gone */ }
+  // `who`, not the tile: this releases *this page's* listening and
+  // leaves any other browser on the same tile playing.
+  try {
+    await HD.card('rx_audio', `/api/stop?who=${WHO}`, {});
+  } catch (e) { /* gone */ }
 }
 
 function setVolume() {

@@ -228,18 +228,21 @@ class TestAskingIsNotWanting(unittest.TestCase):
     def test_stop_releases_rather_than_waiting_for_the_reaper(self):
         """Twenty seconds is not "now", and now is what Stop means."""
         self.assertIn("def release(", self.SRC)
-        self.assertIn("release(card.tile_uid())", self.SRC)
+        self.assertIn("release(listener())", self.SRC)
 
-    def test_wants_are_counted_per_tile(self):
-        """Two tiles can listen to one radio; one stopping must not take
-        the audio away from the other."""
+    def test_wants_are_counted_per_listener(self):
+        """One listener stopping must not take the audio from another.
+
+        This said *per tile* and asserted it, which was the bug rather
+        than the guard: every browser showing a tile sends the same uid,
+        so two of them were one entry and the first Stop closed the
+        device for both. `tests/test_rx_listeners.py` holds the rule now
+        and drives it rather than grepping for it.
+        """
         src = self.SRC[self.SRC.index("def release("):]
         src = src[:src.index("def _reap_idle")]
-        self.assertIn("if tiles.pop(uid, None) is not None and not tiles:",
-                      src)
+        self.assertIn("tiles.pop(who, None) is not None and not tiles", src)
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestItSaysWhyThereIsNoSound(unittest.TestCase):
@@ -283,3 +286,6 @@ class TestItSaysWhyThereIsNoSound(unittest.TestCase):
         # about the half-second the status line covers.
         self.assertIn("peakWindow = Math.max(peakWindow, peak)", self.page)
         self.assertIn("peakWindow = 0", self.page)
+
+if __name__ == "__main__":
+    unittest.main()

@@ -7,6 +7,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **Stopping receive audio in one browser no longer stops it in
+  another.** The card counted listeners by *tile*, and every browser
+  showing a tile sends the same id — so with the board open in two
+  places, which is the whole point of playing the radio over the
+  network, either one pressing Stop took the sound card from the other,
+  whose next poll took it straight back. It reads as audio that will not
+  start again after a Stop. Each page now identifies itself, so Stop
+  releases only your own listening and the device closes when the last
+  real listener goes.
 - **The receive audio card says why there is no sound.** It printed
   "Listening." whether or not a single sample reached the speakers,
   which is the one thing you actually care about — so a silent card and

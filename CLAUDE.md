@@ -833,11 +833,29 @@ follows it):
   must reap it: every request marks its device wanted, and a thread closes
   anything unwanted for 30s. Without that, changing the input in tile settings
   leaks the old one and the radio's audio stays locked against other software.
-- **Count the wants per tile, not per device.** The decoder's Stop has to
-  close the input *now* - the reason to press it is to give the sound card to
-  another program - but only if no other tile is still listening to it. A
-  single timestamp per device cannot answer that, so `_wanted` is
-  `device -> {tile: when}` and Stop removes one entry.
+- **Count the wants per *listener*, not per device - and a listener is a
+  page, not a tile.** The decoder's Stop has to close the input *now* -
+  the reason to press it is to give the sound card to another program -
+  but only if nobody else is still listening. A single timestamp per
+  device cannot answer that, so `_wanted` is
+  `device -> {listener: when}` and Stop removes one entry.
+  It was `{tile: when}`, and that is wrong for the one card whose whole
+  purpose is being open somewhere else: **every browser showing a tile
+  sends the same uid**, so two of them were one entry and whichever
+  pressed Stop closed the device for the other, whose next poll opened
+  it again. The log fills with `last listener left` and the operator
+  sees audio that will not start after a Stop - which is how it was
+  reported, the second listener being a stale tab of mine.
+  `rx_audio` takes a `who` from the page (`listener()`), generated once
+  per load. **`crypto.randomUUID` is no good for it**: it is
+  secure-context only and this board is plain HTTP on a LAN address
+  exactly when it matters, so every page would fall back to the same
+  value and be one listener again. `getRandomValues` has no such limit.
+  **`plugins/decoder` still keys its Stop on the tile uid and has the
+  same bug**; `spectrum` has no Stop route, so only its reaper is
+  involved and it is unaffected.
+  `tests/test_rx_listeners.py` drives the bookkeeping rather than
+  grepping for it, and includes the old behaviour shown failing.
 - **Don't respin a failed resource on every request.** Doing so means the
   caller only ever sees a brand new object in its "starting" state and never
   the error saying what is wrong. Retry on a timer instead.
