@@ -62,7 +62,15 @@ class Card:
             spec = spec if isinstance(spec, dict) else {"type": "string",
                                                         "default": spec}
             kind = spec.get("type", "string")
-            if kind not in ("string", "number", "bool", "select", "secret"):
+            # `audio_in` is a select the *host* fills: the card cannot
+            # know what sound cards this machine has, and three cards
+            # were each asking the operator to type part of a device
+            # name from memory. Anything the manifest puts in `options`
+            # is offered first (`rig`, `mock`), then the real inputs.
+            # One line on purpose: tests/test_card_docs.py reads this
+            # tuple to check every type is documented, and its regex
+            # cannot span lines.
+            if kind not in ("string", "number", "bool", "select", "secret", "audio_in"):
                 kind = "string"
             out.append({
                 "name": name,

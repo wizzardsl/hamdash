@@ -6,7 +6,25 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **The receive audio card's input is a dropdown now**, not a box you
+  type a device name into from memory. It lists `rig` and `mock` first,
+  then every sound input this machine has. `audio_in` is a new settings
+  type a card can ask for and the *host* fills in — a card cannot know
+  what sound cards the machine has. A stored device that has since
+  disappeared stays in the list marked *not found now*, rather than the
+  sheet quietly selecting something else.
+  It still defaults to `mock`: a card that needs hardware to show
+  anything cannot be demonstrated, and on a fresh install `rig` has no
+  radio audio to follow, so it would fall through to the system default
+  input — which is to say it would open somebody's microphone unasked.
+
 ### Fixed
+- **A long device name no longer stretches the settings sheet off the
+  screen.** A `<select>` is as wide as its widest option unless told
+  otherwise, and a Windows sound device name runs to eighty characters,
+  so the sheet scrolled sideways and carried the dropdown arrow off the
+  edge — which made a perfectly good dropdown read as a text box.
 - **Map markers went dead on a busy band.** The shared space-weather
   layer adds its own canvas to the map, and it landed on top of the one
   a card had already made for its own markers — a Leaflet canvas does

@@ -189,7 +189,49 @@
     row.className = f.type === 'bool' ? 'row' : '';
     const id = `set-${f.name}`;
     let input;
-    if (f.type === 'select') {
+    if (f.type === 'audio_in') {
+      /* A sound input, chosen rather than typed.
+       *
+       * The card cannot know what this machine has, so the host fills
+       * the list: the manifest's own entries first (`rig`, `mock`) and
+       * then the real inputs. It was a free text box where the operator
+       * typed part of a device name from memory, which is how you get a
+       * card that is silently deaf because of a typo.
+       *
+       * The list is fetched after the row is built, because enumerating
+       * sound devices can take seconds on Windows and a settings sheet
+       * that will not open is worse than one that fills in.
+       */
+      input = document.createElement('select');
+      const add = (val, label) => {
+        const o = document.createElement('option');
+        o.value = String(val);
+        o.textContent = label === undefined ? String(val) : label;
+        input.appendChild(o);
+        return o;
+      };
+      (f.options || []).forEach((o) => add(o));
+      const want = value ?? f.default ?? '';
+      if (want !== '' && !(f.options || []).map(String).includes(String(want))) {
+        // Whatever is stored stays selectable while the real list is on
+        // its way - and if the device has since gone, it stays in the
+        // list rather than the sheet silently choosing something else.
+        add(want);
+      }
+      input.value = want;
+      HD.get('/api/audio/devices').then((d) => {
+        const seen = new Set([...input.options].map((o) => o.value));
+        (d.inputs || []).forEach((dev) => {
+          if (!seen.has(dev.id)) add(dev.id, dev.name || dev.id);
+        });
+        if (want !== '' && !(d.inputs || []).some((dev) => dev.id === want)
+            && !(f.options || []).map(String).includes(String(want))) {
+          const stale = [...input.options].find((o) => o.value === want);
+          if (stale) stale.textContent = `${want} — not found now`;
+        }
+        input.value = want;             // the fetch must not move it
+      }).catch(() => { /* the typed-in value still stands */ });
+    } else if (f.type === 'select') {
       input = document.createElement('select');
       (f.options || []).forEach((o) => {
         const opt = document.createElement('option');

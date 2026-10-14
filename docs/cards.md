@@ -132,7 +132,16 @@ UI, and the operator gets one that looks like every other card's.
 }
 ```
 
-Types: `string`, `number`, `bool`, `select`, `secret`.
+Types: `string`, `number`, `bool`, `select`, `secret`, `audio_in`.
+
+**`audio_in` is a `select` the host fills in.** A card cannot know what sound
+cards the machine has, so listing them is the host's job: whatever you put in
+`options` is offered first — `"options": ["rig", "mock"]` — and this machine's
+real inputs follow. The value you get back is a device *name*, never an index,
+because PortAudio indices shuffle whenever something is plugged in or a
+Bluetooth headset wakes. A stored device that has since disappeared stays in
+the list marked *not found now* rather than the sheet quietly selecting
+something else.
 
 **Settings belong to a tile, not to a card.** Two tiles of your card are two
 sets of settings, and they travel with the tile — docking it into a stack or

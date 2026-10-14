@@ -262,6 +262,15 @@ html, body {
 .sheet-note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
 .sheet label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 .sheet label.row { display: flex; align-items: center; gap: 8px; }
+/* A <select> is as wide as its widest option unless it is told otherwise,
+   and a Windows sound device name runs to eighty characters - "Headset
+   (@System32\driversthhfenum.sys,#2;%1 Hands-Free%0;(Bluedio T))" is a
+   real one from this machine. That pushed the settings sheet into a
+   horizontal scroll and carried the dropdown arrow off the edge, so a
+   perfectly good <select> read as a text box and the whole point of
+   offering a list was lost. */
+.sheet select { max-width: 100%; }
+#tile-fields select { display: block; width: 100%; margin-top: 3px; }
 .sheet input[type="text"], .sheet input:not([type]) {
   display: block; width: 100%; margin-top: 3px;
   font: inherit; color: var(--ink);

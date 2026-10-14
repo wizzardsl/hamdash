@@ -11,19 +11,32 @@
   "h": 2,
   "min_w": 2,
   "min_h": 2,
-  "permissions": ["radio"],
-  "subscribes": ["radio.state"],
+  "permissions": [
+    "radio"
+  ],
+  "subscribes": [
+    "radio.state"
+  ],
   "settings": {
     "device": {
-      "type": "string",
+      "type": "audio_in",
       "label": "Audio input",
+      "options": [
+        "rig",
+        "mock"
+      ],
       "default": "mock",
-      "help": "'rig' follows the audio input set on the active radio, which is usually what you want. 'mock' is a test tone, so the card works with no radio attached. Otherwise part of an input's name, e.g. 'USB Audio CODEC' - the card lists what it can see."
+      "help": "'mock' is a test tone, so the card works with no radio attached - and it is the default for that reason. 'rig' follows the audio input set on the active radio, which is usually what you want once there is one; change radios and the audio moves with it. The rest are this machine's own inputs."
     },
     "rate": {
       "type": "select",
       "label": "Quality",
-      "options": ["8000", "12000", "16000", "24000"],
+      "options": [
+        "8000",
+        "12000",
+        "16000",
+        "24000"
+      ],
       "default": "12000",
       "help": "Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s; 12000 leaves headroom and costs 192. Higher is only worth it on a wired network."
     },

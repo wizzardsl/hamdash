@@ -2112,6 +2112,28 @@ one with Claude Code.
   it: a card put back under a fresh id comes back with the board pointing
   at nothing. So `POST /api/cards` takes an `id`, and the delete path
   takes the tiles off and puts them back with it.
+- **`audio_in` is a settings type the host fills in.** A card cannot
+  know what sound cards the machine has, so three cards each asked the
+  operator to type part of a device name from memory - which is how you
+  get a card that is silently deaf, with nothing on screen wrong and the
+  operator looking at the radio. The manifest contributes the entries
+  that are not devices (`rig`, `mock`) and the host appends the real
+  inputs. A stored device that has gone stays in the list marked *not
+  found now*: selecting something else for them would move their audio
+  to a different sound card without saying so.
+  **It still defaults to `mock`**, and that is not timidity - `rig` on a
+  fresh install has no radio audio to follow, falls through to the empty
+  string, and opens the *system default input*, which is somebody's
+  microphone. The "mock by default" rule for audio cards is load-bearing
+  here.
+  **The tuple in `registry.py` stays on one line**, because
+  `test_card_docs.py` reads it with a regex to check every type is
+  documented and that regex cannot span lines.
+  **A `<select>` is as wide as its widest option**, and a Windows device
+  name is eighty characters - it pushed the settings sheet into a
+  horizontal scroll and carried the dropdown arrow off the edge, so the
+  new dropdown read as a text box and I nearly concluded the change had
+  not loaded. `.sheet select { max-width: 100% }`.
 - **Audio was the gap.** `radio.` and the logbook were reachable from a card
   and sound was not: `spectrum` and `decoder` each import sounddevice and
   each re-derive the device list. `card.host.audio_devices()` now hands over
