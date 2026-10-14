@@ -1366,6 +1366,19 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   has a map click handler must set `bubblingMouseEvents: false`, or
   `interactive: false` if it is decoration - and was checked against the
   pre-fix file, where it names both markers.
+- **A click on the map may re-aim a card, never re-purpose it.** The
+  PSK card watches a callsign or a grid square, and a map click used to
+  switch the first into the second and rewrite the box - so a click
+  anywhere, a near miss on a spot included, silently stopped answering
+  "who is hearing me" and started answering "what is heard over there".
+  Re-aiming within the mode is the point of clicking a map; changing the
+  mode is a thing to do on purpose, and the mode buttons are how. The
+  handler returns early unless the card is already in grid mode.
+  Emptying the watch box still switches to grid - that one is deliberate
+  and is the operator typing, not the map guessing.
+  `tests/test_map_clicks.py` carries both rules now (no `setMode` inside
+  a map click handler, and no bubbling marker in a card that has one),
+  and each was run against the pre-fix file to see it named.
 - **A dot's tooltip should carry the number the dot is about.** The PSK
   map's said only the callsign, which is the one thing already obvious,
   and put the signal report two clicks away. Where a station has several

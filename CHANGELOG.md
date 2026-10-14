@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **Clicking the PSK map no longer changes what the card is watching
+  when you are watching a callsign.** In Call mode a click did double
+  duty: it switched the card to Grid mode and rewrote the box with the
+  square under the pointer, so a click anywhere — including a near miss
+  on a spot you were trying to read — silently stopped answering "who is
+  hearing me". A click re-aims the card only in Grid mode, where
+  pointing at a place is the question being asked. The mode buttons are
+  how you change the question.
 - **You can read a single reception report again.** Clicking a spot on
   the PSK Reporter map opened its popup and then immediately threw it
   away: the click reached the *map* as well as the dot, and a click on

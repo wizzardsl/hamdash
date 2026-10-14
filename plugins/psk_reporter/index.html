@@ -568,13 +568,22 @@ function build() {
   L_.spots = L.layerGroup().addTo(map);
   L_.pin = L.layerGroup().addTo(map);
 
-  // Clicking the map is the quickest way to ask "what is being heard over
-  // there?". PSK Reporter speaks Maidenhead, so a click becomes a grid
-  // square and that becomes the query.
+  /* Clicking the map is the quickest way to ask "what is being heard
+     over there?" - but only when the map is already answering a question
+     about a place. PSK Reporter speaks Maidenhead, so a click becomes a
+     grid square and that becomes the query.
+
+     **In Call mode a click does nothing.** It used to switch modes and
+     retarget, which threw away the callsign being watched: a click
+     anywhere on the map - including a near miss on a spot you were
+     trying to read - silently stopped answering "who is hearing me" and
+     started answering "what is heard over there", with the box rewritten
+     to a grid square. Changing what the card is about is a thing to do
+     on purpose, and the mode buttons are how. */
   map.on('click', (e) => {
+    if (watchMode !== 'grid') return;
     // A place is a grid square, so picking one off the map says so.
     const grid = HDMap.toGrid(e.latlng.lat, e.latlng.lng, 4);
-    if (watchMode !== 'grid') setMode('grid', { reload: false });
     $('#watch').value = grid;
     lastWatched = grid;
     touched = false;
