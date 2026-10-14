@@ -1077,6 +1077,14 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   `Get-CimInstance Win32_Process -Filter 'ProcessId=N'` is how the
   culprit was identified; a stray instance has a `/api/shutdown` of its
   own, so it is stopped properly rather than killed.
+  **A `--home` instance still claims the port, and that is a decision.**
+  Defaulting `wsjtx.enabled` off for one was offered and turned down:
+  it would stop a scratch instance stealing the port, at the cost of an
+  operator who legitimately runs their station from an alternate config
+  dir finding their logging quietly off. The failure as it stands is
+  loud and self-healing - the message names the culprit and the retry
+  takes the port the moment it goes - and trading that for a silent one
+  is the wrong way round. Do not 'fix' it.
 - **`listening` and `connected` are different questions**, and the
   status says both. The port can be open and perfectly correct while
   WSJT-X points elsewhere; from here that is indistinguishable from
