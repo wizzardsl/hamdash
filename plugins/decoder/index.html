@@ -66,6 +66,27 @@
 HD.cardId = 'decoder';
 const $ = (s) => document.querySelector(s);
 
+/* Who this page is, for as long as it is loaded.
+ *
+ * The card counts listeners so it knows when to hand the sound card
+ * back, and counting them by *tile* makes every browser showing this
+ * tile one listener: either one pressing Stop takes the input from the
+ * other, whose next poll takes it back. `rx_audio` had the same bug.
+ *
+ * Not `crypto.randomUUID`: it is secure-context only, and the board is
+ * plain HTTP on a LAN address exactly when a second browser is likely,
+ * so every page would share the fallback and be one listener again.
+ */
+const WHO = (() => {
+  try {
+    const a = new Uint32Array(2);
+    crypto.getRandomValues(a);
+    return a[0].toString(36) + a[1].toString(36);
+  } catch (e) {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+})();
+
 let conf = {};
 let seq = 0;              // the next character we have not seen
 let fading = [];          // spans recently added, to un-highlight
@@ -142,7 +163,7 @@ async function setRunning(on, { save = true } = {}) {
     // Say so rather than just going quiet. The card would work it out from
     // the polling stopping, but half a minute later, and the usual reason to
     // press Stop is to hand the sound card to another program now.
-    try { await HD.card('decoder', '/api/stop', {}); } catch { /* the
+    try { await HD.card('decoder', `/api/stop?who=${WHO}`, {}); } catch { /* the
       reaper will get there eventually */ }
   }
   if (save) {
@@ -155,7 +176,7 @@ async function tick() {
   if (!running || HD.hidden) return;
   let d;
   try {
-    d = await HD.card('decoder', `/api/text?since=${seq}`);
+    d = await HD.card('decoder', `/api/text?since=${seq}&who=${WHO}`);
   } catch (e) {
     $('#err').textContent = e.message;
     return;
@@ -214,12 +235,12 @@ $('#run').onclick = () => setRunning(!running);
 HD.onVisible((on) => {
   if (!running) return;
   if (on) { seq = 0; tick(); }
-  else HD.card('decoder', '/api/stop', {}).catch(() => {});
+  else HD.card('decoder', `/api/stop?who=${WHO}`, {}).catch(() => {});
 });
 
 $('#clear').onclick = async () => {
   try {
-    const r = await HD.card('decoder', '/api/clear', {});
+    const r = await HD.card('decoder', `/api/clear?who=${WHO}`, {});
     $('#out').textContent = '';
     fading = [];
     pinned = true;
@@ -236,7 +257,7 @@ $('#source').onchange = async () => {
   // Let go of the old input before taking the new one: two inputs open for
   // one tile is one sound card nobody else can have.
   if (running) {
-    try { await HD.card('decoder', '/api/stop', {}); } catch { /* ignore */ }
+    try { await HD.card('decoder', `/api/stop?who=${WHO}`, {}); } catch { /* ignore */ }
   }
   conf = { ...conf, source: $('#source').value };
   $('#out').textContent = '';

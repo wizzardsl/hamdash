@@ -22,9 +22,15 @@ import re
 import unittest
 from pathlib import Path
 
-CARD = Path(__file__).resolve().parent.parent / "plugins" / "rx_audio"
+PLUGINS = Path(__file__).resolve().parent.parent / "plugins"
+CARD = PLUGINS / "rx_audio"
 SRC = (CARD / "card.py").read_text(encoding="utf-8")
 PAGE = (CARD / "index.html").read_text(encoding="utf-8")
+
+#: Both cards hold a sound card and both let a tile stop listening, so
+#: both have to tell pages apart. `spectrum` has no Stop route - only the
+#: idle reaper - so nothing there can take the device from anybody.
+HOLDS_AN_INPUT = ("rx_audio", "decoder")
 
 
 def body_of(name: str) -> str:
@@ -39,20 +45,20 @@ class TestTheWantIsPerListener(unittest.TestCase):
     def test_the_routes_ask_who_not_which_tile(self):
         # The tile uid is still right for *settings* - that is what it is
         # for - but it cannot say who is listening.
-        self.assertIn("tap_for(card.settings(), listener())", SRC)
-        self.assertIn("release(listener())", SRC)
+        self.assertIn("tap_for(card.settings(), who())", SRC)
+        self.assertIn("release(who())", SRC)
         self.assertNotIn("tap_for(card.settings(), card.tile_uid())", SRC,
                          "the want is keyed on the tile again, so one "
                          "browser's Stop takes the device from another")
 
     def test_who_comes_from_the_page(self):
-        body = body_of("listener")
+        body = body_of("who")
         self.assertIn('request.args.get("who")', body)
 
     def test_an_older_page_still_registers_a_want(self):
         # Falling back to the tile uid matters: no want at all would have
         # the reaper close the device under a page that is listening.
-        body = body_of("listener")
+        body = body_of("who")
         self.assertIn("card.tile_uid()", body)
 
     def test_release_only_closes_when_nothing_else_wants_it(self):
@@ -132,6 +138,68 @@ class TestTheBookkeepingItself(unittest.TestCase):
         self.want("mic|12000", "tile-1")      # browser B, same key
         self.release("tile-1")                # either one presses Stop
         self.assertEqual(self.closed, ["mic|12000"])
+
+
+
+class TestBothAudioCardsTellPagesApart(unittest.TestCase):
+    """The rule, applied to every card that can be asked to let go.
+
+    `rx_audio` was fixed first and `decoder` carried the same keying for
+    a while - `@card.post("/stop")` on `card.tile_uid()` - but it is
+    reached by a different gesture, which is worth knowing before
+    testing it. The decoder's `running` is a *tile setting*, so pressing
+    Stop saves it and the bus stops every browser showing that tile:
+    both listeners leave and closing the input is correct. What is per
+    page is going hidden (invariant 5b), which tells nobody - the
+    Decoder tab selected in one browser and Spots in another, where the
+    hidden one's `/api/stop` took the input from the visible one.
+    """
+
+    def cards(self):
+        for name in HOLDS_AN_INPUT:
+            yield (name,
+                   (PLUGINS / name / "card.py").read_text(encoding="utf-8"),
+                   (PLUGINS / name / "index.html").read_text(encoding="utf-8"))
+
+    def test_no_card_keys_its_want_on_the_tile(self):
+        for name, src, _page in self.cards():
+            with self.subTest(card=name):
+                self.assertNotRegex(
+                    src, r"(listener_for|tap_for)\([^)]*card\.tile_uid\(\)",
+                    "the want is keyed on the tile, so every browser "
+                    "showing it is one listener")
+
+    def test_every_stop_route_releases_a_page(self):
+        for name, src, _page in self.cards():
+            with self.subTest(card=name):
+                i = src.index('@card.post("/stop")')
+                body = src[i:i + 1200]
+                self.assertIn("who()", body,
+                              "Stop releases the tile, which stops every "
+                              "browser showing it")
+
+    def test_the_decoder_says_who_it_is_when_it_goes_hidden(self):
+        """The gesture that is per page, so the one that must carry it.
+
+        A hidden tile hands the input back without touching the saved
+        `running`, so the browser that still has the tile on screen is
+        still decoding. A stop that did not say which page it came from
+        took the sound card out from under it.
+        """
+        page = (PLUGINS / "decoder" / "index.html").read_text(encoding="utf-8")
+        i = page.index("HD.onVisible(")
+        self.assertIn("/api/stop?who=${WHO}", page[i:i + 400],
+                      "the hidden tile releases the whole tile, which is "
+                      "every browser showing it")
+
+    def test_every_page_identifies_itself(self):
+        for name, _src, page in self.cards():
+            with self.subTest(card=name):
+                self.assertIn("getRandomValues", page)
+                self.assertNotIn("randomUUID()", page,
+                                 "secure-context only - on a plain-HTTP LAN "
+                                 "board every page would share the fallback")
+                self.assertIn("who=${WHO}", page)
 
 
 if __name__ == "__main__":

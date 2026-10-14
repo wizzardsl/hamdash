@@ -256,6 +256,28 @@ def resolve_source(conf: dict) -> tuple[str, str]:
                 "Settings → Radio, or pick an input below.")
 
 
+def who() -> str:
+    """Who is asking - a *page*, not a tile.
+
+    The want was keyed on the tile uid, which every browser showing that
+    tile sends, so two of them were one entry and either one letting go
+    took the input from the other.
+
+    Not the Stop button, which is what `rx_audio` was fixed for: here
+    `running` is a tile setting, so a press saves it and the bus stops
+    every browser showing the tile - both listeners leave and closing is
+    right. The gesture that is per page is **going hidden** (invariant
+    5b): the Decoder tab selected in one browser and Spots in another
+    had the hidden one's `/api/stop` take the input from the visible
+    one.
+
+    The page sends `who`, generated once when it loads. Falling back to
+    the tile uid keeps an older page registering a want rather than none
+    at all, which would have the reaper close the input under it.
+    """
+    return request.args.get("who") or card.tile_uid() or "-"
+
+
 def listener_for(device: str, uid: str = "") -> Listener:
     key = device or ""
     now = time.time()
@@ -320,7 +342,7 @@ def text():
         return {"text": "", "first": 0, "seq": 0, "status": "idle",
                 "error": note, "device": "", "hearing": False,
                 "mode": str(conf.get("mode") or "cw")}
-    li = listener_for(device, card.tile_uid())
+    li = listener_for(device, who())
     try:
         seq = int(request.args.get("since", "0"))
     except ValueError:
@@ -339,7 +361,7 @@ def clear():
     device, note = resolve_source(conf)
     if note:
         return {"ok": True, "seq": 0}
-    li = listener_for(device, card.tile_uid())
+    li = listener_for(device, who())
     li.clear()
     return {"ok": True, "seq": li.seq}
 
@@ -354,7 +376,7 @@ def stop():
     """
     conf = card.settings()
     device, note = resolve_source(conf)
-    uid = card.tile_uid()
+    uid = who()
     closed = release(device, uid) if not note else False
     # Any other input this tile had open - it may have been switched while
     # running - is released too, or stopping leaks whatever it was on before.

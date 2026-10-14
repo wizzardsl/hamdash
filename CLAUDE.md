@@ -846,16 +846,28 @@ follows it):
   it again. The log fills with `last listener left` and the operator
   sees audio that will not start after a Stop - which is how it was
   reported, the second listener being a stale tab of mine.
-  `rx_audio` takes a `who` from the page (`listener()`), generated once
-  per load. **`crypto.randomUUID` is no good for it**: it is
-  secure-context only and this board is plain HTTP on a LAN address
-  exactly when it matters, so every page would fall back to the same
-  value and be one listener again. `getRandomValues` has no such limit.
-  **`plugins/decoder` still keys its Stop on the tile uid and has the
-  same bug**; `spectrum` has no Stop route, so only its reaper is
-  involved and it is unaffected.
+  Both cards take a `who` from the page (`who()`), generated once per
+  load. **`crypto.randomUUID` is no good for it**: it is secure-context
+  only and this board is plain HTTP on a LAN address exactly when it
+  matters, so every page would fall back to the same value and be one
+  listener again. `getRandomValues` has no such limit. `spectrum` has no
+  Stop route, so only its reaper is involved and it is unaffected.
   `tests/test_rx_listeners.py` drives the bookkeeping rather than
   grepping for it, and includes the old behaviour shown failing.
+- **The two cards are exposed to it by different gestures, and the
+  decoder's is not its Stop button.** `running` is a *tile setting*
+  there, so pressing Stop saves it and the bus tells every other browser
+  showing that tile to stop as well - both listeners leave and closing
+  the device is correct. Measured, after an afternoon of reading one
+  close line as the bug it was not. What is per page and tells nobody is
+  **going hidden** (invariant 5b): a board with the Decoder tab selected
+  in one browser and Spots selected in another had the hidden one's
+  `/api/stop` take the input from the visible one. `rx_audio` has no
+  such setting - a browser cannot autoplay and each page owns its own
+  AudioContext - so there its Stop *is* the gesture.
+  Verified live on both halves, two browsers on one board: A's tile goes
+  to the background, B keeps decoding and nothing closes; B follows and
+  the input closes with exactly one line.
 - **Don't respin a failed resource on every request.** Doing so means the
   caller only ever sees a brand new object in its "starting" state and never
   the error saying what is wrong. Retry on a timer instead.

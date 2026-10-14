@@ -228,7 +228,7 @@ class TestAskingIsNotWanting(unittest.TestCase):
     def test_stop_releases_rather_than_waiting_for_the_reaper(self):
         """Twenty seconds is not "now", and now is what Stop means."""
         self.assertIn("def release(", self.SRC)
-        self.assertIn("release(listener())", self.SRC)
+        self.assertIn("release(who())", self.SRC)
 
     def test_wants_are_counted_per_listener(self):
         """One listener stopping must not take the audio from another.

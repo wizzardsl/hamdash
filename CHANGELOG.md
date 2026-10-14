@@ -16,6 +16,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
   start again after a Stop. Each page now identifies itself, so Stop
   releases only your own listening and the device closes when the last
   real listener goes.
+- **A decoder tile in a background tab no longer takes the sound card
+  from another browser showing it.** The decoder counted listeners by
+  tile too. A hidden tile hands its input back — that is what stops a
+  parked decoder holding the radio's audio against WSJT-X — but it was
+  releasing the whole tile, so with the board open in two places and the
+  Decoder tab selected in only one of them, the hidden one's release
+  deafened the one on screen. Its Stop button was never the problem:
+  `running` is a tile setting, so pressing Stop legitimately stops every
+  browser showing the tile.
 - **The receive audio card says why there is no sound.** It printed
   "Listening." whether or not a single sample reached the speakers,
   which is the one thing you actually care about — so a silent card and

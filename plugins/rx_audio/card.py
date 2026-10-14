@@ -45,7 +45,7 @@ _taps: dict[str, "Tap"] = {}
 # device -> {listener: when it last asked}. A listener is a *page*, not a
 # tile: every browser showing one tile sends the same uid, so counting by
 # tile made two browsers one entry and the first Stop closed the device
-# for both. See `listener()`.
+# for both. See `who()`.
 _wanted: dict[str, dict[str, float]] = {}
 
 
@@ -264,7 +264,7 @@ def look(conf: dict) -> Tap | None:
     return _taps.get(_key_for(conf)[0])
 
 
-def listener() -> str:
+def who() -> str:
     """Who is asking - a *page*, not a tile.
 
     The want used to be keyed on the tile uid, which is the same for
@@ -359,7 +359,7 @@ def pcm():
     base64 would spend 32 kB saying it. What the caller needs to place it
     in time rides in headers.
     """
-    t = tap_for(card.settings(), listener())
+    t = tap_for(card.settings(), who())
     try:
         seq = int(request.args.get("since", "0"))
     except ValueError:
@@ -382,7 +382,7 @@ def pcm():
 @card.post("/stop")
 def stop():
     """This tile has stopped listening."""
-    release(listener())
+    release(who())
     return {"ok": True}
 
 
