@@ -555,6 +555,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and the rig card's memory buttons set the mode first now. Measured on an
   FT-890 through flrig: frequency-then-mode landed on 7.037700 for a
   7.037000 spot, mode-then-frequency lands on 7.037000.
+- **Normalising a layout was not idempotent.** The values matched but the keys
+  came out in a different order on each pass, so every save rewrote
+  `layout.json` with the lines shuffled — noise in the one file an operator
+  might open or keep in git. Both normalisers now build a tile in a fixed
+  order, and both sides assert it.
 
 ### Changed
 - **The board's layout model is testable.** What a board *is* — normalising,
@@ -568,13 +573,6 @@ versions follow [SemVer](https://semver.org/). The version of record is
   awkward layouts, `layouts.expected.json` is what the host makes of them,
   and both sides must match it. They both rewrite `layout.json`, so a
   disagreement is a card coming back in the wrong box.
-
-### Fixed
-- **Normalising a layout was not idempotent.** The values matched but the keys
-  came out in a different order on each pass, so every save rewrote
-  `layout.json` with the lines shuffled — noise in the one file an operator
-  might open or keep in git. Both normalisers now build a tile in a fixed
-  order, and both sides assert it.
 
 ## [0.4.0]
 

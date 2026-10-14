@@ -10,6 +10,10 @@ two cases that produce a bad release rather than a failed one:
     once: __init__ said 0.1.0 while the app was 0.3.3)
   - there is no CHANGELOG section for the version, which would otherwise
     publish a release with empty notes
+  - the section repeats a heading (two '### Added' blocks, say), which is
+    what entries landing on top of each other across sessions looks like.
+    It happened before 0.6.0 and again before 0.7.0; both were caught by
+    hand, and a tag cannot be edited afterwards.
 
 Reads __version__ with a regex rather than importing hamdash, so the release
 job needs no runtime dependencies installed.
@@ -46,7 +50,31 @@ def section(changelog: str, version: str) -> str:
         raise SystemExit(
             f"the '## [{version}]' section is empty; a release with no notes "
             f"is worse than no release")
+    repeated = duplicate_headings(body)
+    if repeated:
+        raise SystemExit(
+            f"the '## [{version}]' section repeats a heading: "
+            f"{', '.join(repeated)}.\n"
+            f"That is entries landing on top of each other - merge them into "
+            f"one block each before tagging. A tag cannot be edited after it "
+            f"is published.")
     return body
+
+
+def duplicate_headings(body: str) -> list[str]:
+    """Headings that appear more than once in one section, in order.
+
+    Keep a Changelog has one block per kind. Two of them is what you get
+    when a session adds `### Added` above an `### Added` that was already
+    there, which is easy to do and invisible until the release is out.
+    """
+    seen, twice = set(), []
+    for h in re.findall(r"^(###+ .+?)\s*$", body, re.M):
+        key = h.strip()
+        if key in seen and key not in twice:
+            twice.append(key)
+        seen.add(key)
+    return twice
 
 
 def main(argv: list[str]) -> int:

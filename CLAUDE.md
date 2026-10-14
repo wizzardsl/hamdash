@@ -302,11 +302,22 @@ Tagging is the trigger; the tree is the source of truth.
 
 `release.yml` runs the full CI matrix, then publishes a GitHub Release whose
 notes are that CHANGELOG section, extracted by `tools/release_notes.py`. It
-refuses to publish if the tag disagrees with `__version__` or the section is
-missing or empty — a tag can't be edited after the fact, so those fail the job
+refuses to publish if the tag disagrees with `__version__`, the section is
+missing or empty, **or the section repeats a heading** — a tag can't be edited after the fact, so those fail the job
 rather than shipping wrong notes. Write the changelog entry when the fix
 lands, not at release time; the 0.3.3 entry had to be reconstructed from the
 README and is guesswork as a result.
+
+**A section with two `### Added` blocks is what "write it when it lands"
+costs**, and it happened three times before anything checked: 0.5.0 shipped
+with two `### Fixed`, and 0.6.0 and 0.7.0 were each caught by eye on the way
+out. A session adds a heading above one that is already there, which is easy
+to do and invisible until the notes are published - and a tag cannot be
+edited afterwards. `duplicate_headings` in `tools/release_notes.py` fails the
+release job, and `tests/test_release_notes.py` fails on every push, including
+for `Unreleased`, which is where the mistake is actually made and still free
+to fix. The 0.5.0 section was merged when the test first ran; all 30 entries
+were diffed before and after.
 
 ## The board UI
 

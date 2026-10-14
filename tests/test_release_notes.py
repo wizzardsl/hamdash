@@ -6,7 +6,8 @@ of the tag. Run with:  python -m unittest discover -s tests
 """
 import unittest
 
-from tools.release_notes import declared_version, section
+from tools.release_notes import (declared_version, duplicate_headings,
+                                 section)
 
 CHANGELOG = """\
 # Changelog
@@ -86,3 +87,44 @@ class TestDeclaredVersion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoSectionRepeatsAHeading(unittest.TestCase):
+    """Entries landing on top of each other, caught on push.
+
+    Twice now a release has gone to be cut with `Added/Fixed/Added/Fixed`
+    in one section - a session adds `### Added` above an `### Added` that
+    was already there, which is easy to do and invisible until the notes
+    are published. Both times it was spotted by eye.
+
+    `release_notes.py` refuses it at tag time, which is the backstop that
+    matters because a tag cannot be edited afterwards. This is the one
+    that fires first, on every push, including for `Unreleased` - where
+    the mistake is actually made and where it is still free to fix.
+    """
+
+    REPEATED = "\n".join(
+        ["### Added", "- a", "### Fixed", "- b", "### Added", "- c"])
+    CLEAN = "\n".join(["### Added", "- a", "### Fixed", "- b"])
+
+    def test_the_detector_sees_a_repeat(self):
+        self.assertEqual(duplicate_headings(self.REPEATED), ["### Added"])
+
+    def test_the_detector_leaves_a_clean_section_alone(self):
+        self.assertEqual(duplicate_headings(self.CLEAN), [])
+
+    def test_every_section_of_the_real_changelog_is_clean(self):
+        import re
+        from pathlib import Path
+        text = (Path(__file__).resolve().parent.parent
+                / "CHANGELOG.md").read_text(encoding="utf-8")
+        # Split on the version headings, keeping each one's name.
+        parts = re.split(r"^(## .+)$", text, flags=re.M)
+        bad = []
+        for i in range(1, len(parts) - 1, 2):
+            name, body = parts[i].strip(), parts[i + 1]
+            for h in duplicate_headings(body):
+                bad.append(f"{name} repeats {h}")
+        self.assertEqual(bad, [], "\n".join(
+            ["Merge these into one block each - the release notes are "
+             "copied from the section verbatim:", *bad]))
