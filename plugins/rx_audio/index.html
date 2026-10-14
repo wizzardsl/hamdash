@@ -67,6 +67,10 @@ let running = false, timer = null;
 let nextAt = 0, lastSeq = 0, lastDraw = 0;
 let clockOffset = 0, bestRtt = Infinity;
 let st = null;
+// The loudest thing seen since the status line was last painted, so
+// "the radio is sending silence" is a claim about a window rather than
+// about whichever single block happened to land on the paint.
+let peakWindow = 0, saidWhy = null;
 
 function fresh() {
   return { lat: [], drops: 0, bytes: 0, t0: performance.now(), played: 0 };
@@ -106,7 +110,9 @@ async function pull() {
   const blockMs = 1000 * blockN / rate;
   const capturedAt = parseFloat(r.headers.get('X-Captured-At')) * 1000;
   const serverNow = parseFloat(r.headers.get('X-Server-Now')) * 1000;
-  meter(parseFloat(r.headers.get('X-Peak')) || 0);
+  const peak = parseFloat(r.headers.get('X-Peak')) || 0;
+  peakWindow = Math.max(peakWindow, peak);
+  meter(peak);
 
   // Offset from the exchange with the SMALLEST round trip, the way NTP
   // does it: the error is at most half the trip, so the quickest one is
@@ -181,6 +187,45 @@ function paintLink() {
   $('#kbps').textContent = secs > 1
     ? `${Math.round(st.bytes * 8 / secs / 1000)} kbit/s` : '—';
   $('#link').classList.toggle('bad', st.drops > 0);
+  sayWhy();
+  peakWindow = 0;
+}
+
+/* Why there is no sound, when there is no sound.
+ *
+ * The card printed "Listening." whether or not a single sample reached
+ * the speakers, which is the one thing the operator actually cares
+ * about. It was reported as "the button works but I get no audio" - and
+ * the card went on insisting it was listening while the radio, the card
+ * and the browser were all working perfectly. It knows enough to say
+ * which of these it is, so it should.
+ *
+ * Nothing here is a failure: every one of them is a thing the operator
+ * can put right in a second once they are told which it is.
+ */
+function why() {
+  // The browser suspends a context when the tab is backgrounded, and on
+  // some it needs a fresh gesture to come back.
+  if (ctx && ctx.state !== 'running') {
+    return 'the browser has paused audio — press Listen again';
+  }
+  // Stored per browser, so a refresh does not reset it, which is what
+  // makes a zeroed slider survive every attempt to fix it by reloading.
+  if (gain && gain.gain.value === 0) return 'the volume here is at zero';
+  // Arriving, and silent. The radio is muted or on a dead band, or the
+  // wrong input is selected in this tile's settings.
+  if (st && st.played > 0 && peakWindow === 0) {
+    return 'the audio arriving is silent — check the radio and this '
+         + "tile's input";
+  }
+  return '';
+}
+
+function sayWhy() {
+  const reason = why();
+  if (reason === saidWhy) return;          // do not repaint every 500 ms
+  saidWhy = reason;
+  say(reason ? `Listening, but ${reason}.` : 'Listening.', !!reason);
 }
 
 function say(text, warn) {
@@ -198,6 +243,7 @@ async function start() {
   await ctx.resume();
   st = fresh();
   nextAt = 0; bestRtt = Infinity; clockOffset = 0;
+  peakWindow = 0; saidWhy = null;          // say it again for this run
   // Start at the live edge. Asking for everything the ring holds is
   // right for a waterfall and wrong for audio: it hands over seconds of
   // backlog and every block of it is permanent delay.

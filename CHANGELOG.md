@@ -6,6 +6,17 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **The receive audio card says why there is no sound.** It printed
+  "Listening." whether or not a single sample reached the speakers,
+  which is the one thing you actually care about — so a silent card and
+  a working one looked identical. It now names the three things that
+  produce silence with everything else working: the browser having
+  paused audio, the volume slider at zero (stored per browser, so
+  reloading the page cannot clear it), and audio arriving that is itself
+  silent. None of them is a failure; each is a second's work once you
+  are told which it is.
+
 ## [0.7.0]
 
 ### Added

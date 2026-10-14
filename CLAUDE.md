@@ -901,6 +901,21 @@ it. Reach for a new transport only if a measurement says this one failed.
   that is a 50 Hz buzz laid over the audio - and dropping the decimation
   phase makes blocks come out a sample long or short, which is a player
   that drifts and glitches every few minutes with nothing in the log.
+- **"Listening." was a lie when nothing reached the speakers**, and it
+  cost an evening: reported as "the button works but I get no audio",
+  with the radio, the card and the browser all measurably fine - peak
+  0.07 at the capture, seq advancing 55/s, 51 buffers scheduled in three
+  seconds, `ctx.state` running. The silence was at the listener's end
+  and the card had everything it needed to say so. It now names the
+  three: a suspended `AudioContext`, a zeroed volume (**stored in
+  `localStorage`, so reloading the page - the first thing anybody tries
+  - cannot clear it**), and audio arriving that is itself silent. The
+  peak is maxed over the paint window, because a single block is silent
+  between syllables.
+  **Split capture from playback before looking at either.**
+  `/api/info` answers the first half on its own - device, `in_rate`,
+  `seq`, `peak`, `overflows`, `error` - and it was `peak` 0.07 with
+  `seq` climbing that said the card was innocent in one line.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

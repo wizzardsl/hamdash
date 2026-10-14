@@ -240,3 +240,46 @@ class TestAskingIsNotWanting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestItSaysWhyThereIsNoSound(unittest.TestCase):
+    """"Listening." is a lie when nothing reaches the speakers.
+
+    Reported as "the button works but I get no audio" - and the card
+    went on saying it was listening while the radio, the card and the
+    browser were all measurably fine: peak 0.07 at the capture, seq
+    advancing, 51 buffers scheduled in three seconds. The silence was at
+    the operator's end, and the card had everything it needed to say so
+    and said nothing.
+
+    None of the three is a failure. Each is a thing to put right in a
+    second, once you are told which it is. Verified live in a browser:
+    zeroing the slider and suspending the context each produce their own
+    line, and each reverts to "Listening." when undone.
+    """
+
+    def setUp(self):
+        self.page = (CARD / "index.html").read_text(encoding="utf-8")
+
+    def test_the_status_is_repainted_while_playing(self):
+        self.assertIn("sayWhy()", self.page,
+                      "nothing re-examines the status once it says Listening")
+
+    def test_a_suspended_context_is_named(self):
+        self.assertIn("ctx.state !== 'running'", self.page)
+        self.assertIn("paused audio", self.page)
+
+    def test_a_zeroed_volume_is_named(self):
+        # Stored per browser, so reloading the page - the first thing
+        # anybody tries - cannot clear it.
+        self.assertIn("gain.gain.value === 0", self.page)
+        self.assertIn("volume here is at zero", self.page)
+
+    def test_silence_on_the_wire_is_named(self):
+        self.assertIn("peakWindow === 0", self.page)
+
+    def test_the_peak_is_a_window_not_one_block(self):
+        # A single block can be silent between syllables; the claim is
+        # about the half-second the status line covers.
+        self.assertIn("peakWindow = Math.max(peakWindow, peak)", self.page)
+        self.assertIn("peakWindow = 0", self.page)
