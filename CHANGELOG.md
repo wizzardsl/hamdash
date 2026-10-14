@@ -20,6 +20,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   input — which is to say it would open somebody's microphone unasked.
 
 ### Fixed
+- **"Something else is already listening on UDP 2237" now names another
+  copy of hamdash first.** A second instance — a `--home` one left over
+  from testing, say — claims that port on startup like anything else,
+  and the message sent you looking at JTAlert instead. Close whatever
+  holds it and the listener takes the port by itself within a quarter of
+  a minute; no restart.
 - **A long device name no longer stretches the settings sheet off the
   screen.** A `<select>` is as wide as its widest option unless told
   otherwise, and a Windows sound device name runs to eighty characters,

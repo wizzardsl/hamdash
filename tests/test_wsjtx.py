@@ -386,9 +386,17 @@ class TestTheListener(unittest.TestCase):
         try:
             self.assertFalse(second.start())
             self.assertFalse(second.listening)
-            # Names the likely culprit and a way out, not just errno.
+            # Names the likely culprits and a way out, not just errno.
             self.assertIn("JTAlert", second.error)
             self.assertIn(str(self.port), second.error)
+            # **Another hamdash comes first in that list**, because it is
+            # the one nobody suspects. It happened: a leftover `--home`
+            # instance from a different session held 2237 for a quarter
+            # of an hour while the real station retried and the operator
+            # read "JTAlert" and went looking at a program that was not
+            # even installed.
+            self.assertIn("hamdash", second.error)
+            self.assertIn("--home", second.error)
             # And it has not given up - False from start() means "not
             # yet", which is the whole point of the retry below.
             self.assertTrue(second.retrying)

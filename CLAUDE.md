@@ -1065,6 +1065,18 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   one of them unpredictably - half the contacts to JTAlert and half
   here. Refusing to start and naming the likely culprit is better than
   silently getting half.
+- **A second hamdash claims the port too, and that is the one nobody
+  suspects.** A `--home` instance left running from testing binds 2237
+  on startup like anything else, and the real station then sits
+  retrying. It happened for a quarter of an hour while the message said
+  "JTAlert, GridTracker or another WSJT-X companion" and the operator
+  went looking at a program that was not installed - the holder was a
+  scratch instance from a *different Claude session*. Another copy of
+  hamdash is named first in that message now, and
+  `tests/test_wsjtx.py` pins it. `netstat -ano | grep 2237` then
+  `Get-CimInstance Win32_Process -Filter 'ProcessId=N'` is how the
+  culprit was identified; a stray instance has a `/api/shutdown` of its
+  own, so it is stopped properly rather than killed.
 - **`listening` and `connected` are different questions**, and the
   status says both. The port can be open and perfectly correct while
   WSJT-X points elsewhere; from here that is indistinguishable from

@@ -317,10 +317,20 @@ class Listener:
     def _why(self, exc: OSError) -> str:
         """What to do about it, not just what failed."""
         if getattr(exc, "errno", None) in (98, 10048) or "in use" in str(exc).lower():
+            # **Another copy of hamdash is named first, and deliberately.**
+            # It is the one nobody thinks of: a second instance - a
+            # `--home` run left over from testing, say - claims this port
+            # on startup like any other, and then the real station sits
+            # here retrying while the operator reads "JTAlert" and goes
+            # looking at a program they are not even running. That is
+            # exactly how it went the first time.
             return (f"something else is already listening on UDP {self.port} — "
-                    "JTAlert, GridTracker or another WSJT-X companion. Close "
-                    "it, or point them all at a multicast address such as "
-                    "239.255.0.1 and set the same one here.")
+                    "another copy of hamdash (any second instance claims "
+                    "this port too, including a --home one), or JTAlert, "
+                    "GridTracker or another WSJT-X companion. Close it and "
+                    "this takes the port by itself within a quarter of a "
+                    "minute; or point them all at a multicast address such "
+                    "as 239.255.0.1 and set the same one here.")
         if getattr(exc, "errno", None) in (99, 10049):
             return (f"this machine has no address {self.bind} — use 127.0.0.1, "
                     "or the address of the interface WSJT-X sends to.")
