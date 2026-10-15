@@ -4,6 +4,31 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Added
+- **A phone shell.** The board is a grid you drag tiles around on, and on
+  a phone that is twelve columns of thirty pixels — a six-card board came
+  out as 190-pixel windows two abreast, each scrolled inside itself. Open
+  the board on a phone and you now get one card at a time, chosen from a
+  bar along the bottom: the logbook first, then spots, then rig control
+  and receive audio, then whatever else is on your board, with **More**
+  for the rest. It is the same board and the same per-tile settings —
+  there is no second layout to keep in step — and nothing to configure.
+  Cards load only when you first open them and are told when you switch
+  away, so a phone does not start every card on your station to show you
+  one, and nothing holds the radio's sound card from a tab you last
+  looked at this morning. **More → Full dashboard** gives you the real
+  board anyway; the choice is remembered in that browser, and until you
+  make one the shell follows the window, so turning the phone sideways
+  changes it with you.
+
+### Fixed
+- **The logbook and spots tables no longer wrap into five-line rows when
+  the card is narrow.** A phone, or a two-column tile on a crowded board:
+  the Where column is free text from somebody else's API, and left to
+  wrap it meant six spots filled the screen where twenty now do.
+
 ## [0.7.1]
 
 ### Fixed

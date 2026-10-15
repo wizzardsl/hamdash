@@ -44,6 +44,14 @@
   .del:hover { color: var(--alert); }
   .err { color: var(--alert); font-size: 12px; }
 
+  /* Narrow: a phone, or a small tile. A card page is an iframe, so this
+     measures the iframe and not the screen. Without it a distance wrapped
+     under its own number and a callsign under its flag, which made a
+     fifteen-row page scroll like a fifty-row one. */
+  @media (max-width: 520px) {
+    td, th { white-space: nowrap; }
+  }
+
   /* What is known about the station being typed, before it is logged. */
   .peek {
     border: 1px solid var(--rule); border-left: 3px solid var(--accent);

@@ -213,3 +213,37 @@ shows a distance uses it — the path card, the map, the logbook readout — and
 they all show **one** distance. Printing km beside miles looks generous and
 is really the card declining to decide, leaving the reader to pick. Changing
 it takes effect immediately, with no reload.
+
+## On a phone
+
+The board is a grid you drag tiles around on. On a phone that is twelve
+columns of thirty pixels, so hamdash shows a different shell there: one card
+at a time, chosen from a bar along the bottom.
+
+It is picked by the size of the window, not by what browser you are using —
+so a narrow desktop window gets it too, and a tablet in landscape does not.
+Nothing is configured, and nothing is stored on the server: open the board
+from your phone and it is simply there.
+
+The bar holds four cards and a **More**, which lists the rest. Which four
+follows what you reach for away from the desk: the logbook first, then spots,
+then rig control and receive audio, then whatever else is on your board in
+board order. Every card that is on the board is reachable, including ones
+stacked behind a tab — there are no tabs here, so each gets its own place.
+
+**It is the same board.** There is no separate phone layout to keep in step:
+add a card on the phone and it is on the board at the desk, in the next free
+row. Per-tile settings are the tile's, so they travel too (⚙ in the strip
+above the card, when that card has any).
+
+To use the real board anyway — it works, it is just cramped — **More → Full
+dashboard**. A **Phone view** button then appears in the top rail to go back.
+That choice is remembered in the browser you made it in, so it never follows
+you to another machine, and until you make one the shell follows the window:
+turn the phone sideways and it changes with you.
+
+Cards only load when you first open them, so a phone does not start every
+card process on your station to show you one, and the card you switch away
+from is told nobody is looking — which is what stops a decoder or receive
+audio holding the radio's sound card from a tab you last looked at in the
+morning.

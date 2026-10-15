@@ -420,6 +420,85 @@ were diffed before and after.
 - Buttons built from nested spans need an explicit `aria-label`. The menu's
   six checkboxes computed an empty accessible name until they got one.
 
+## The phone shell
+
+`hamdash/static/js/mobile.js`, and `docs/board.md` has the operator's half.
+One card at a time with a bar along the bottom, because the board is a
+pixel grid and 375 px is not a small grid, it is the wrong shape:
+measured, a six-card board came out as ~190 px windows two abreast, each
+scrolled inside itself, with every card mounted and polling at once.
+
+- **One shell is ever live, and that is the load-bearing rule.** Build the
+  board and the phone together and every card has two iframes - two
+  listeners, two openers of one sound card. That is exactly the bug
+  `tests/test_rx_listeners.py` exists for, arrived at from the other end,
+  so `buildShell` destroys before it builds and `tests/test_mobile_view.py`
+  asserts the order of those two statements.
+- **Tearing a shell down tells every card it is hidden on the way out.**
+  An iframe removed without being told leaves a card holding the radio's
+  audio until its own reaper notices - thirty seconds during which the
+  operator has switched views and another program still cannot have the
+  sound card. Both `destroy()` methods do it.
+- **`tellVisible` is in `frames.js` and nowhere else.** It was a `Board`
+  method; there are two shells now and two copies of this particular
+  answer are only ever noticed as a locked sound card. One sender of
+  `__hamdash: 'visible'` in the whole tree, which a test counts.
+- **Mounting is lazy, and keeping is not.** A card is built the first time
+  it is chosen - a phone must not start six card processes to show one -
+  and kept afterwards, because a rebuild reloads the iframe and loses a
+  half-typed contact. Both halves have a test; `setTiles` must not mount.
+- **Detection is the viewport, never the user agent.** A phone is a narrow
+  viewport and so is a narrow window; sniffing the UA is wrong in both
+  directions for ever. The second clause (`pointer: coarse` and short) is
+  a phone turned sideways, which is not narrow but is still no place to
+  drag a tile by a 28 px header - and it must not catch a short *desktop*
+  window, which is why the pointer is in it.
+- **A width of zero is not a narrow screen.** A window that has not been
+  laid out - a hidden pane, a tab being restored - reports 0 and matches
+  every `max-width` query there is. It booted the phone shell on a 1280 px
+  window, and `wants()` then answered correctly a second later with the
+  wrong shell already built. "Narrow" and "nothing measured yet" are
+  different answers and must not look like one.
+- **The shell follows the window until the operator overrules it**, and
+  the choice lives in `localStorage` (`hd.view`) like `hd.learned.*`. It
+  is a fact about this person at this screen: the same board is opened
+  from a desk and from a pocket, so a choice in `layout.json` or
+  `config.json` would make one of those two wrong. Both accessors are
+  wrapped, because `localStorage` throws outright in some privacy modes
+  and this runs on boot.
+- **The phone offers no pop-out and does not detect one.** A second OS
+  window means nothing there, and `HDPopout.detect()` in a mobile browser
+  answers `none` - which would greet every phone with a toast about
+  installing pywebview.
+- **A tile is a box of cards, but a phone has no tabs**, so every card in
+  a stack gets its own place in the bar or behind More. Four and a More:
+  five fit across 375 px, and a bar that scrolls sideways hides exactly
+  what it is for.
+- **The ordering is the only judgement in the file**, so it is pure and
+  `tests/js/phone.test.js` drives it. Logging and spots lead because the
+  operator said so; the radio and the audio are what you do sitting in
+  front of it. Unranked cards keep board order - a stable sort by rank
+  alone, not alphabetical.
+- **A card page is an iframe, so its own media queries measure the
+  iframe.** That is why "narrow" belongs in each card's CSS rather than
+  in the shell: the same `@media (max-width: 520px)` that fixes a phone
+  fixes a two-column tile on a crowded board. `logbook` and `spots` stop
+  their tables wrapping there - the spots Where column is free text from
+  somebody else's API and turned every row into five lines, so six spots
+  filled the screen where twenty now do.
+- **`.tile-body iframe` was the sizing rule and the phone stage is not a
+  tile body**, so the first build left every card at the browser's default
+  300x150 - which reads as a card that failed to load, not as a CSS
+  selector that missed.
+- **Card pages carry no `<meta viewport>`.** Irrelevant in an iframe,
+  where the frame's width is the viewport, but a card opened directly on
+  a phone lays out at 980 px and comes up zoomed out.
+- **An emulated viewport change fires no `resize`.** The follow-the-window
+  handler looked broken in the browser pane and was fine; a dispatched
+  `resize` rebuilt the shell immediately. The same lesson as the PSK
+  hover bug, from the other side: the synthetic environment lied about a
+  thing that works with real input.
+
 ## Space weather on the rail
 
 SFI, sunspot number, A, K and the X-ray flare class, from three small

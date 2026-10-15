@@ -2,6 +2,7 @@
 (async function () {
   const $ = (s) => document.querySelector(s);
   const gridEl = $('#grid');
+  const phoneEl = $('#phone');
   let cards = [];
   let themes = [];
   let config = {};
@@ -119,8 +120,42 @@
     $('#s-theme').value = t.id;
   }
 
-  // ---- board ----------------------------------------------------------
-  const board = new Board(gridEl, {
+  // ---- the shell: a board, or a phone ---------------------------------
+  //
+  // One card, in its holder. A tile may hold several and shows one at a
+  // time; every one of them is mounted, so this runs once per card rather
+  // than once per tile. The phone shell mounts lazily and calls the same
+  // function, so there is one answer to "what is a card on this board".
+  function renderBody(entry, host) {
+    const card = cards.find((c) => c.id === entry.card);
+    const frame = document.createElement('iframe');
+    const st = entry.settings || {};
+    if (card && card.kind === 'url') {
+      frame.src = st.url || entry.url || card.url;
+    } else {
+      // the tile uid goes with it: one process, many tiles
+      frame.src = `/cards/${entry.card}/?uid=${encodeURIComponent(entry.uid)}`;
+    }
+    frame.dataset.uid = entry.uid;
+    frame.setAttribute('title', entry.title || entry.card);
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    host.appendChild(frame);
+    shell.setConfigurable(entry.uid, !!(card && card.schema && card.schema.length));
+    if (card && card.kind === 'python') {
+      HD.post(`/api/cards/${card.id}/start`).then((i) => {
+        shell.status(card.id, i.status);
+      }).catch(() => shell.status(card.id, 'failed'));
+    } else {
+      shell.status(entry.card, 'n/a');
+    }
+  }
+
+  const titleOf = (entry) => entry.title
+    || (cards.find((c) => c.id === entry.card) || {}).name
+    || entry.card;
+
+  function makeBoard() {
+    return new Board(gridEl, {
     cols: 12,
     rowPx: 80,
     onChange: saveLayout,
@@ -136,33 +171,89 @@
     // they know and a hint that keeps coming back is just noise.
     onHint: (what) => { if (what === 'drag') hintDock(); },
     onDocked: () => { learned('dock'); },
-    // One card, in its holder inside the tile. A tile may hold several and
-    // shows one at a time; every one of them is mounted, so this runs once
-    // per card rather than once per tile.
-    renderBody: (entry, host) => {
-      const card = cards.find((c) => c.id === entry.card);
-      const frame = document.createElement('iframe');
-      const st = entry.settings || {};
-      if (card && card.kind === 'url') {
-        frame.src = st.url || entry.url || card.url;
-      } else {
-        // the tile uid goes with it: one process, many tiles
-        frame.src = `/cards/${entry.card}/?uid=${encodeURIComponent(entry.uid)}`;
-      }
-      frame.dataset.uid = entry.uid;
-      frame.setAttribute('title', entry.title || entry.card);
-      frame.setAttribute('referrerpolicy', 'no-referrer');
-      host.appendChild(frame);
-      board.setConfigurable(entry.uid, !!(card && card.schema && card.schema.length));
-      if (card && card.kind === 'python') {
-        HD.post(`/api/cards/${card.id}/start`).then((i) => {
-          board.status(card.id, i.status);
-        }).catch(() => board.status(card.id, 'failed'));
-      } else {
-        board.status(entry.card, 'n/a');
-      }
-    },
+    renderBody,
+    });
+  }
+
+  function makePhone() {
+    return new HDPhone.Phone(phoneEl, {
+      onChange: saveLayout,
+      onSettings: (entry) => openTileSettings(entry),
+      titleOf,
+      renderBody,
+    });
+  }
+
+  /* Which shell, and the operator's say in it.
+   *
+   * `HDPhone.wants()` decides by viewport, not by user agent - see there.
+   * A choice is remembered in `localStorage` and nowhere else: it is a
+   * fact about this person at this screen, like `hd.learned.*`, and the
+   * same board is opened from a desk and from a pocket. Putting it in
+   * `layout.json` or `config.json` would make one of those two wrong.
+   */
+  const VIEW_KEY = 'hd.view';
+  const savedView = () => {
+    try { return localStorage.getItem(VIEW_KEY) || ''; } catch { return ''; }
+  };
+  const rememberView = (v) => {
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* private window */ }
+  };
+  const wantPhone = () =>
+    (savedView() || (HDPhone.wants() ? 'phone' : 'board')) === 'phone';
+
+  let shell = null;
+  let shellKind = '';
+
+  /* Build one shell and only one.
+   *
+   * Both at once is every card mounted twice - two iframes, two listeners,
+   * two openers of one sound card - which is the bug
+   * `tests/test_rx_listeners.py` exists for, reached from the other end.
+   * So the old one is destroyed first, and destroying tells its frames
+   * they are hidden on the way out. */
+  function buildShell(kind) {
+    if (shellKind === kind) return;
+    const keep = shell ? shell.tiles : null;
+    if (shell) shell.destroy();
+    shellKind = kind;
+    gridEl.hidden = kind !== 'board';
+    phoneEl.hidden = kind !== 'phone';
+    shell = kind === 'phone' ? makePhone() : makeBoard();
+    shell.onError = (msg) => toast(msg);
+    // The way back, and only where it is needed. On a desk the board is
+    // right and the button is noise; on a phone showing the full board it
+    // is the only way out, so it goes in the rail. In the phone shell the
+    // rail has no room for it and it lives in More instead - one route,
+    // whichever shell you are in.
+    const t = $('#view-toggle');
+    t.hidden = kind === 'phone' || !HDPhone.wants();
+    t.textContent = 'Phone view';
+    if (keep) shell.setTiles(keep);
+  }
+
+  /* Follow the screen until the operator overrules it.
+   *
+   * A phone turned sideways, or a desktop window dragged narrow, should
+   * land in the shell that fits - but only while nobody has chosen. Once
+   * they have, rebuilding under them would throw away the choice and the
+   * card they were looking at. */
+  HDPhone.onChange(() => {
+    if (savedView()) return;
+    buildShell(HDPhone.wants() ? 'phone' : 'board');
   });
+
+  $('#view-toggle').onclick = () => {
+    const to = shellKind === 'phone' ? 'board' : 'phone';
+    rememberView(to);
+    buildShell(to);
+  };
+  $('#phone-full').onclick = () => {
+    $('#phone-more').close();
+    rememberView('board');
+    buildShell('board');
+  };
+  $('#phone-more-close').onclick = () => $('#phone-more').close();
 
   let saveTimer;
   function saveLayout(tiles) {
@@ -177,8 +268,6 @@
         .catch((e) => toast(e.message));
     }, 300);
   }
-
-  board.onError = (msg) => toast(msg);
 
   // ---- per-tile settings ----------------------------------------------
   let settingTile = null;
@@ -303,7 +392,7 @@
     try {
       await HD.put(`/api/tiles/${settingTile.uid}/settings`, { values });
       settingTile.settings = values;
-      board.markPopped(settingTile.uid, !!settingTile.popped);   // repaint
+      shell.markPopped(settingTile.uid, !!settingTile.popped);   // repaint
       const node = document.querySelector(`.tile[data-uid="${settingTile.uid}"] iframe`);
       if (node) node.src = node.src;
       $('#tile-sheet').close();
@@ -333,7 +422,7 @@
       const def = { card: c.id, title: c.name, w: c.w, h: c.h,
         min_w: c.min_w, min_h: c.min_h, url: c.url };
       li.querySelector('button').onclick = () => {
-        board.add(def);
+        shell.add(def);
         toast(`${c.name} added`);
       };
       if (!c.error) {
@@ -367,7 +456,7 @@
   const menuEl = () => $('#cards-menu');
 
   function tilesOf(cardId) {
-    return board.cards.filter((c) => c.card === cardId);
+    return shell.cards.filter((c) => c.card === cardId);
   }
 
   function renderCardsMenu() {
@@ -433,7 +522,7 @@
   function toggleCard(c) {
     const mine = tilesOf(c.id);
     if (!mine.length) {
-      board.add({ card: c.id, title: c.name, w: c.w, h: c.h,
+      shell.add({ card: c.id, title: c.name, w: c.w, h: c.h,
                   min_w: c.min_w, min_h: c.min_h, url: c.url });
       toast(`${c.name} added`);
     } else {
@@ -443,15 +532,15 @@
       // only way "where it was" survives. A browser confirm() is the one bit
       // of chrome this app has never used, for the same reason it never uses
       // window.open.
-      const before = JSON.parse(JSON.stringify(board.tiles));
-      mine.forEach((entry) => board.remove(entry.uid));
+      const before = JSON.parse(JSON.stringify(shell.tiles));
+      mine.forEach((entry) => shell.remove(entry.uid));
       toast(`${c.name} removed${mine.length > 1 ? ` (${mine.length} tiles)` : ''}`,
             { label: 'Undo',
               fn: () => {
                 // Every card is remounted, so the board reloads - the price
                 // of putting a tab back exactly where it was.
-                board.setTiles(before);
-                saveLayout(board.tiles);
+                shell.setTiles(before);
+                saveLayout(shell.tiles);
                 renderCardsMenu();
                 toast(`${c.name} restored`);
               } });
@@ -473,11 +562,11 @@
    */
   async function deleteCard(c) {
     const was = { id: c.id, name: c.name, url: c.url, w: c.w, h: c.h };
-    const before = JSON.parse(JSON.stringify(board.tiles));
+    const before = JSON.parse(JSON.stringify(shell.tiles));
     try {
       await HD.del(`/api/cards/${encodeURIComponent(c.id)}`);
     } catch (e) { toast(e.message); return; }
-    tilesOf(c.id).forEach((entry) => board.remove(entry.uid));
+    tilesOf(c.id).forEach((entry) => shell.remove(entry.uid));
     cards = await HD.get('/api/cards', { rescan: 1 });
     renderCardsMenu();
     renderPalette();
@@ -488,8 +577,8 @@
           await HD.post('/api/cards', was);
         } catch (e) { toast(e.message); return; }
         cards = await HD.get('/api/cards', { rescan: 1 });
-        board.setTiles(before);
-        saveLayout(board.tiles);
+        shell.setTiles(before);
+        saveLayout(shell.tiles);
         renderCardsMenu();
         renderPalette();
         toast(`${was.name} back`);
@@ -506,18 +595,18 @@
    * not here left the easier button as the unrecoverable one.
    */
   function closeCard(cardUid) {
-    const entry = board.get(cardUid);
+    const entry = shell.get(cardUid);
     if (!entry) return;
     const card = cards.find((c) => c.id === entry.card);
     const name = (card && card.name) || entry.card;
-    const before = JSON.parse(JSON.stringify(board.tiles));
-    board.remove(cardUid);
+    const before = JSON.parse(JSON.stringify(shell.tiles));
+    shell.remove(cardUid);
     renderCardsMenu();
     toast(`${name} closed`, {
       label: 'Undo',
       fn: () => {
-        board.setTiles(before);
-        saveLayout(board.tiles);
+        shell.setTiles(before);
+        saveLayout(shell.tiles);
         renderCardsMenu();
         toast(`${name} back`);
       },
@@ -579,16 +668,16 @@
    */
   $('#menu-tidy').onclick = () => {
     openMenu(false);
-    const before = JSON.parse(JSON.stringify(board.tiles));
-    const moved = HDLayout.compact(board.tiles);
+    const before = JSON.parse(JSON.stringify(shell.tiles));
+    const moved = HDLayout.compact(shell.tiles);
     if (!moved) { toast('Already tidy'); return; }
-    board.setTiles(board.tiles);
-    saveLayout(board.tiles);
+    shell.setTiles(shell.tiles);
+    saveLayout(shell.tiles);
     toast(`Tidied up — ${moved} tile${moved === 1 ? '' : 's'} moved`, {
       label: 'Undo',
       fn: () => {
-        board.setTiles(before);
-        saveLayout(board.tiles);
+        shell.setTiles(before);
+        saveLayout(shell.tiles);
         toast('Put back');
       },
     });
@@ -645,7 +734,7 @@
     renderPalette();
     // Put it on the board: they asked for a page in a tile, not for an
     // entry in a menu.
-    board.add({ card: made.id, title: made.name, w: made.w, h: made.h,
+    shell.add({ card: made.id, title: made.name, w: made.w, h: made.h,
                 min_w: made.min_w, min_h: made.min_h, url: made.url });
     toast(`${made.name} added`);
   });
@@ -1427,7 +1516,7 @@
   }
 
   // ---- bus wiring -----------------------------------------------------
-  HD.on('card.status', (p) => board.status(p.id, p.status));
+  HD.on('card.status', (p) => shell.status(p.id, p.status));
   HD.on('config.changed', (p) => { config = p; paintStation(); });
 
   // ---- boot -----------------------------------------------------------
@@ -1455,21 +1544,24 @@
 
   HDPopout.onReturn = (uid) => {
     // window closed from the OS or from inside the card: put the tile back
-    if (board.get(uid)) board.markPopped(uid, false);
+    if (shell.get(uid)) shell.markPopped(uid, false);
   };
   HD.on('ui.pop_in', (p) => {
-    if (p && p.uid && board.get(p.uid)) board.markPopped(p.uid, false);
+    if (p && p.uid && shell.get(p.uid)) shell.markPopped(p.uid, false);
   });
 
   const layout = await HD.get('/api/layout');
-  board.cols = layout.cols || 12;
-  board.rowPx = layout.row_px || 80;
+  buildShell(wantPhone() ? 'phone' : 'board');
+  if (shellKind === 'board') {
+    shell.cols = layout.cols || 12;
+    shell.rowPx = layout.row_px || 80;
+  }
   // With one shared stream, events reach a card page through its parent
   // rather than through its own filtered connection, so the filtering has to
   // happen here. The board already has every manifest.
   window.__hamdashRelayFilter = (frame, topic) => {
     const uid = new URL(frame.src, location.href).searchParams.get('uid');
-    const entry = board.get(uid);
+    const entry = shell.get(uid);
     const card = entry && cards.find((c) => c.id === entry.card);
     if (!card) return true;                       // not a card frame
     const want = card.subscribes || [];
@@ -1481,15 +1573,20 @@
       || topic.startsWith(w.replace(/\*$/, '').replace(/\.$/, '') + '.'));
   };
 
-  board.setTiles(layout.tiles || []);
-  cards.forEach((c) => board.warn(c.id, c.warnings));
+  shell.setTiles(layout.tiles || []);
+  cards.forEach((c) => shell.warn(c.id, c.warnings));
   renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';
 
   // Backend detection waits for the native bridge, which can take a moment.
   // Do it *after* the board is painted: the cards matter more than the
   // pop-out buttons, and blocking boot on it left an empty window.
-  HDPopout.detect().then(async (backend) => {
+  //
+  // Not on the phone shell at all. There is no pop-out button there - a
+  // second OS window means nothing on a phone - and `detect()` in a mobile
+  // browser answers `none`, which would greet every phone with a toast
+  // about installing pywebview.
+  if (shellKind === 'board') HDPopout.detect().then(async (backend) => {
     document.body.dataset.popout = backend;
     if (backend === 'none') {
       toast('Pop-out unavailable: the desktop bridge did not load. '
@@ -1498,8 +1595,8 @@
     }
     if (backend === 'pywebview') {
       // A popped tile holds exactly one card; the window is its page.
-      for (const t of board.tiles.filter((x) => x.popped)) {
-        const entry = board.get(t.active) || t.cards[0];
+      for (const t of shell.tiles.filter((x) => x.popped)) {
+        const entry = shell.get(t.active) || t.cards[0];
         try { await HDPopout.popOut(entry); } catch (e) { toast(e.message); }
       }
     }
@@ -1508,16 +1605,16 @@
   // reopen windows that were popped out last session. Only the native shell
   // can do this unprompted; browsers need a click, so those tiles show a
   // button instead of silently failing a blocked window.open.
-  board.tiles.filter((t) => t.popped)
-    .forEach((t) => board.markPopped(t.active, true));
+  shell.tiles.filter((t) => t.popped)
+    .forEach((t) => shell.markPopped(t.active, true));
 
   // keep tile status dots honest
   setInterval(async () => {
     try {
       const fresh = await HD.get('/api/cards');
       fresh.forEach((c) => {
-        board.status(c.id, (c.runtime || {}).status);
-        board.warn(c.id, c.warnings);
+        shell.status(c.id, (c.runtime || {}).status);
+        shell.warn(c.id, c.warnings);
       });
       cards = fresh;
     } catch { /* host restarting; the next tick will catch up */ }

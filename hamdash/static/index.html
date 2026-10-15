@@ -47,12 +47,30 @@
       </div>
     </div>
     <button id="settings" class="btn btn-quiet">Settings</button>
+    <!-- Only on a screen the board does not fit: offering "phone view" on a
+         desktop is a button nobody needs, and hiding it on a phone would
+         leave somebody who chose the full board with no way back. -->
+    <button id="view-toggle" class="btn btn-quiet" hidden>Phone view</button>
   </div>
 </header>
 
 <main id="grid" class="grid" aria-label="Dashboard">
   <p class="empty" id="empty">Nothing on the board yet. Add a card to start.</p>
 </main>
+
+<!-- The phone shell. Only ever one of these two is built: mounting both
+     means every card has two iframes, which is two openers of one sound
+     card. `mobile.js` says why at length. -->
+<main id="phone" class="phone" aria-label="Dashboard" hidden></main>
+
+<dialog id="phone-more" class="sheet">
+  <h2>Cards</h2>
+  <ul id="phone-more-list" class="phone-more-list"></ul>
+  <footer class="sheet-foot">
+    <button class="btn btn-quiet" id="phone-full">Full dashboard</button>
+    <button class="btn" id="phone-more-close">Done</button>
+  </footer>
+</dialog>
 
 <dialog id="palette" class="sheet">
   <h2>Cards</h2>
@@ -290,9 +308,12 @@
 
 <script src="/static/js/hamdash.js"></script>
 <script src="/static/js/popout.js"></script>
+<!-- telling a card page whether anybody is looking at it: both shells use it -->
+<script src="/static/js/frames.js"></script>
 <!-- what a board is, with no DOM: grid.js needs it first -->
 <script src="/static/js/layout.js"></script>
 <script src="/static/js/grid.js"></script>
+<script src="/static/js/mobile.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

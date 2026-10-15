@@ -409,29 +409,24 @@
     }
 
     _tellVisible(holder, visible) {
-      if (holder._visible === visible) return;   // don't shout every reflow
-      holder._visible = visible;
-      const frame = holder.querySelector('iframe');
-      if (!frame) return;
-      const tell = () => {
-        try {
-          frame.contentWindow.postMessage(
-            { __hamdash: 'visible', visible }, location.origin);
-        } catch { /* not loaded yet, or not ours */ }
-      };
-      tell();
-      // A card mounted hidden has not loaded when it is first told, and it
-      // would then poll merrily behind a tab nobody is looking at.
-      if (!frame._hdVisibleWired) {
-        frame._hdVisibleWired = true;
-        frame.addEventListener('load', () => {
-          try {
-            frame.contentWindow.postMessage(
-              { __hamdash: 'visible', visible: !!holder._visible },
-              location.origin);
-          } catch { /* ignore */ }
+      global.HDFrames.tellVisible(holder, visible);
+    }
+
+    /* Take the board down, for switching to the phone shell.
+     *
+     * Every card is told it is hidden on the way out. Tearing an iframe
+     * out of the document without saying so leaves a card that holds a
+     * sound card or a cluster socket waiting on its own reaper to notice
+     * - thirty seconds in which the operator has switched views and the
+     * radio's audio is still locked against everything else. */
+    destroy() {
+      this._nodes.forEach((node) => {
+        node.querySelectorAll('.tile-card').forEach((holder) => {
+          global.HDFrames.tellVisible(holder, false);
         });
-      }
+        node.remove();
+      });
+      this._nodes.clear();
     }
 
     /* ---- dragging ---------------------------------------------------- */

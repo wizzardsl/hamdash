@@ -233,7 +233,11 @@ html, body {
    still gets resize work done on it for a tab nobody is looking at. */
 .tile-card { display: none; width: 100%; height: 100%; }
 .tile-card.on { display: block; }
-.tile-body iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--panel); }
+/* Both shells put a card in a holder, so both need this: scoped to
+   `.tile-body` alone it left the phone's iframes at the browser's
+   default 300x150, which reads as a card that failed to load. */
+.tile-body iframe,
+.phone-stage iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--panel); }
 
 .resize {
   position: absolute; right: 0; bottom: 0;
@@ -497,4 +501,107 @@ html, body {
   vertical-align: -.08em; margin-right: .4em;
   border: 1px solid var(--rule); border-radius: 1px;
   background: var(--panel-2);
+}
+
+/* ---------- the phone shell ----------
+
+   One card at a time, chosen from a bar along the bottom. See `mobile.js`
+   for why the board is not simply made narrow: twelve columns of thirty
+   pixels is the wrong shape, not a small one. */
+.phone {
+  height: calc(100% - var(--rail-h));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* `[hidden]` loses to an author `display: flex` - the sixth time in this
+   tree, which is why `tests/test_hidden_display.py` fails on it. */
+.phone[hidden] { display: none; }
+
+.phone-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  flex: none;
+  padding: 0 4px 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+}
+.phone-title {
+  color: var(--ink); font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.phone-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--grip);
+}
+.phone-dot.up { background: var(--signal); }
+.phone-dot.down { background: var(--alert); }
+.phone-grow { flex: 1; }
+
+.phone-stage { flex: 1; min-height: 0; position: relative; background: var(--panel); }
+.phone-stage .tile-card { position: absolute; inset: 0; }
+.phone-empty { color: var(--muted); padding: 24px; }
+.phone-empty[hidden] { display: none; }
+
+/* The bar. Big enough to hit with a thumb - 56px plus whatever the phone
+   keeps for its own home indicator, which `safe-area-inset-bottom` is. */
+.phone-nav {
+  flex: none;
+  display: flex;
+  background: var(--panel-2);
+  border-top: 1px solid var(--rule);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pnav {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 56px;
+  position: relative;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pnav.on { color: var(--accent); }
+/* The active card is marked on the edge the thumb is not covering. */
+.pnav.on::before {
+  content: ""; position: absolute; top: 0; left: 18%; right: 18%;
+  height: 2px; background: var(--accent);
+}
+.pnav-i { width: 22px; height: 22px; flex: none; }
+.pnav-n {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; letter-spacing: .01em;
+}
+.pnav-dot {
+  position: absolute; top: 7px; right: 50%; margin-right: -16px;
+  width: 5px; height: 5px; border-radius: 50%; background: transparent;
+}
+.pnav-dot.down { background: var(--alert); }
+.pnav-dot.warn { background: var(--accent); }
+
+.phone-more-list { list-style: none; margin: 0; padding: 0;
+                   display: flex; flex-direction: column; gap: 4px; }
+.phone-more-list .btn { width: 100%; text-align: left; }
+
+/* The rail carries too much for 375px. What survives is who you are and
+   what time it is in UTC, which is what goes in a log. */
+@media (max-width: 620px) {
+  .rail { gap: 8px; padding: 0 8px; }
+  .rail .wordmark,
+  .rail #clock-local,
+  .rail #clock-zone,
+  .rail #theme-pick { display: none; }
+  .rail-left, .rail-right { gap: 8px; min-width: 0; }
+  .station { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

@@ -58,6 +58,20 @@
   .note { color: var(--muted); font-size: 11px; }
   .note.warn { color: var(--alert); }
   .ref { color: var(--muted); }
+
+  /* Narrow: a phone, or a two-column tile on a crowded board. A card page
+     is an iframe, so its own media queries measure the iframe rather than
+     the screen - the same rule covers both without knowing which it is.
+
+     The Where column is free text from somebody else's API ("Teganuma
+     Shizen Fureai Greenway Prefectural ..."), and left to wrap it turned
+     every row into five lines, so six spots filled the screen. One line
+     each and the table scrolls sideways, which it already does. */
+  @media (max-width: 520px) {
+    td, th { white-space: nowrap; }
+    td .ref { display: inline-block; max-width: 11em; overflow: hidden;
+              text-overflow: ellipsis; vertical-align: bottom; }
+  }
   .empty { padding: 14px 6px; color: var(--muted); font-size: 12px; }
 
   /* Contests. A running one is the answer to "why is the band full", so it
