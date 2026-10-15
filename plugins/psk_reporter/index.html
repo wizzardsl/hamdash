@@ -451,23 +451,54 @@ function visible() {
   });
 }
 
-// The choices come from the data, so a band with nothing on it is not offered.
+/* The choices come from the data, so a band with nothing on it is not
+   offered - and the count beside each one is what says so.
+
+   Without the counts the list is indistinguishable from a short
+   hardcoded menu: on a quiet evening it reads "Any band / 40m / 80m",
+   which looks exactly like a card that only knows two bands. It was
+   reported that way. Nothing is being dropped - the subscription
+   wildcards the band slot (`pskr/filter/v2/+/+/CALL/...`), so every
+   band arrives and is stored - those were simply the only two on the
+   air.
+
+   The *list* comes from everything held, and the *counts* from the
+   time window. That way the window cannot pull an option out from
+   under a selection - a band heard this morning stays on the list
+   showing (0), which says "nothing recent" rather than vanishing -
+   and the counts are independent of the other filters, so choosing a
+   band does not rewrite the mode counts into a puzzle. */
 function fillChoices() {
-  const fill = (sel, values, keep) => {
+  const cut = Date.now() / 1000 - (filters.since || 86400);
+  const recent = all.filter((r) => r.at >= cut);
+  const fill = (sel, values, keep, countOf) => {
     const el = $(sel);
     const was = el.value;
     el.innerHTML = `<option value="">${keep}</option>`
-      + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      + values.map((v) =>
+        `<option value="${esc(v)}">${esc(v)} (${countOf(v)})</option>`).join('');
     el.value = values.includes(was) ? was : '';
     if (el.value !== was) {
       filters[sel.slice(1)] = el.value;
     }
   };
   const uniq = (fn) => [...new Set(all.map(fn).filter(Boolean))].sort();
-  fill('#band', uniq((r) => r.band), 'Any band');
-  fill('#mode', uniq((r) => r.mode), 'Any mode');
+  const tally = (fn) => {
+    const n = new Map();
+    recent.forEach((r) => {
+      [].concat(fn(r)).filter(Boolean)
+        .forEach((v) => n.set(v, (n.get(v) || 0) + 1));
+    });
+    return (v) => n.get(v) || 0;
+  };
+  fill('#band', uniq((r) => r.band), 'Any band', tally((r) => r.band));
+  fill('#mode', uniq((r) => r.mode), 'Any mode', tally((r) => r.mode));
   fill('#country', [...new Set(all.flatMap((r) => [r.tx_dxcc, r.rx_dxcc])
-                                  .filter(Boolean))].sort(), 'Anywhere');
+                                  .filter(Boolean))].sort(), 'Anywhere',
+       // Either end counts: a report is one sighting of that country
+       // however it was worked, and a station is not two because both
+       // ends happen to be in the same place.
+       tally((r) => [...new Set([r.tx_dxcc, r.rx_dxcc])]));
 }
 
 // ---- fetching --------------------------------------------------------------
@@ -647,6 +678,7 @@ $('#since').onchange = (e) => {
   // Purely local: the card hands over everything it holds and this picks a
   // slice of it. No request, whichever way it moves.
   filters.since = Number(e.target.value);
+  fillChoices();        // the counts are per window, so they move with it
   draw();
   fit();
 };

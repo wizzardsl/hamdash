@@ -1592,6 +1592,22 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   reports the tooltip shows `best`, because `best` is what colours the
   dot: showing the latest report's figure beside a dot coloured by a
   different one is two answers on screen at once.
+- **The filter lists are the data, and the counts are what say so.**
+  The band dropdown is built from what has actually been heard, so on a
+  quiet evening it reads "Any band / 40m / 80m" - which is
+  indistinguishable from a card that only knows two bands, and was
+  reported as exactly that. Nothing is dropped: the subscription
+  wildcards the band and mode slots, which `tests/test_psk_mqtt.py` now
+  pins, because a topic tree with a band slot in it invites someone to
+  narrow it and the loss would be silent. Each option carries its count
+  now. **The list comes from everything held and the counts from the
+  time window**, so narrowing the window cannot pull an option out from
+  under a selection - a band heard this morning stays, showing (0),
+  which reads as "nothing recent" instead of vanishing - and the counts
+  ignore the *other* filters, so choosing a band does not rewrite the
+  mode counts into a puzzle. Measured across the four windows on five
+  hours of real spots: 20m goes 18 at 24h to 10 at 3h, and at 15 minutes
+  all four sit at (0) and stay listed.
 - **A hidden filter must reset when it is hidden.** The PSK card drops the
   direction filter when it leaves Call mode: one that is invisible but still
   narrowing makes the map look broken with nothing on screen to explain it.

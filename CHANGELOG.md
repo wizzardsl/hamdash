@@ -4,6 +4,18 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Changed
+- **The PSK Reporter filters say how much is behind each choice.** The
+  band list is built from what has actually been heard, so on a quiet
+  evening it read "Any band / 40m / 80m" — which looks exactly like a
+  card that only knows two bands. Nothing was being dropped; those were
+  the only two on the air. Each band, mode and country now carries its
+  count, and the counts follow the time window while the list itself
+  does not, so narrowing the window shows you a band at (0) rather than
+  removing the one you had selected.
+
 ## [0.8.0]
 
 ### Added

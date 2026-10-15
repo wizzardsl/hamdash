@@ -208,6 +208,26 @@ class TestWhatToSubscribeTo(unittest.TestCase):
         none of them yours."""
         self.assertEqual(mqtt.topics_for(), [])
 
+    def test_every_band_and_mode_arrives(self):
+        """The band and mode slots are wildcards, and must stay that way.
+
+        Asked as "the band dropdown only offers 40m and 80m - are we
+        filtering the others out or ignoring them?". Neither: the list
+        is built from what has actually been heard, and on that evening
+        those were the only two on the air. But the question is a fair
+        one to ask of a topic tree with a band slot in it, and pinning
+        the wildcard is what makes the answer checkable rather than
+        remembered - narrowing it here would silently drop bands the
+        operator would never know were missing.
+        """
+        for t in (mqtt.topics_for(call="VA7SLL")
+                  + mqtt.topics_for(grid="CN89")):
+            with self.subTest(topic=t):
+                band, mode = t.split("/")[3], t.split("/")[4]
+                self.assertEqual((band, mode), ("+", "+"),
+                                 "a pinned band or mode slot drops every "
+                                 "other one before it reaches the store")
+
 
 if __name__ == "__main__":
     unittest.main()
