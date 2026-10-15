@@ -1054,6 +1054,33 @@ it. Reach for a new transport only if a measurement says this one failed.
   has no job, and holding the radio's input against WSJT-X or fldigi
   for a whole board session to do it is the wrong trade. Do not
   'fix' it.
+- **A card that loses a stream holds the device for the life of its
+  process, and blames somebody else.** Reported as "something holding
+  listen open again". Measured: a standalone process could open the USB
+  input on MME, DirectSound and WASAPI, so Windows thought it free,
+  while the card answered `DSERR_ALLOCATED` - and restarting that one
+  card process cured it. The holder was the card itself, sitting on a
+  stream it no longer had a handle to. `release()` pops the Tap out of
+  `_taps` *before* stopping it, so anything not closed on the way out
+  can never be closed again, and every later open fails with the hint
+  that names WSJT-X and fldigi - which sends the operator to look at
+  programs that are not running. Three ways in, all now shut: a
+  `stream.start()` that raises with the stream already constructed and
+  the closing `finally` not yet entered; a `stop()`/`close()` that
+  raises and propagates to `_fail()`, skipping the close for good; and
+  `Tap.stop()` returning before the thread had let go, so the next open
+  raced the close. The last of those could **not** be made to bite in
+  twelve tight attempts - `_pa_lock` serialises it well - so the join
+  is correctness rather than a reproduced fault, and the test says so.
+  **The lesson is the diagnosis, not the fix**: when a card says the
+  device is busy, ask the *operating system* whether it is, from a
+  process of your own. It was the one measurement that turned "which
+  program is holding it" into "the holder is us".
+- **A crashed host leaves its cards running.** The instance that exited
+  left four orphans whose parent was gone, found with `ParentProcessId`
+  against the live pid list, identified by curling each one's
+  `/_health`. They are harmless but they are indistinguishable from a
+  real holder while you are hunting one - check for them first.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

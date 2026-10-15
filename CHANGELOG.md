@@ -6,6 +6,18 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **Receive audio could end up holding the sound card against itself.**
+  If the input stream failed to start, or failed while being closed,
+  the card lost its handle to it — and because the tap is dropped from
+  the table before it is stopped, nothing could ever close it again.
+  The device stayed held for the life of the card process and every
+  later attempt reported "another program may be holding that input",
+  pointing at WSJT-X or fldigi when the holder was hamdash. Closing is
+  now attempted for any stream that was built, cannot be skipped by an
+  error while closing, and Stop waits for the device to actually be
+  released before it returns.
+
 ### Changed
 - **The PSK Reporter filters say how much is behind each choice.** The
   band list is built from what has actually been heard, so on a quiet

@@ -335,6 +335,73 @@ class TestBeingHiddenIsNotAReasonToStop(unittest.TestCase):
         self.assertRegex(self.page, r"/api/stop\?who=\$\{WHO\}")
 
 
+class TestTheDeviceIsActuallyGivenBack(unittest.TestCase):
+    """Reported as "something holding listen open again, seems broken".
+
+    Measured at the time: a standalone process could open the USB input
+    on MME, DirectSound and WASAPI, so the device was free as far as
+    Windows was concerned - but the card answered
+    `DSERR_ALLOCATED`, and restarting that one card process fixed it.
+    The holder was the card itself: a stream it had lost the handle to.
+
+    `release()` pops the Tap out of `_taps` before stopping it, so a
+    stream that is not closed on the way out can never be closed by
+    anything again - it is held for the life of the process, and every
+    later open fails with the message that blames WSJT-X. Three ways in,
+    all of them shut here:
+
+      * `stream.start()` raising, with the stream already constructed
+        and the `finally` that closes it not yet entered;
+      * `stream.stop()` or `.close()` raising, propagating to the outer
+        handler, which calls `_fail()` and never retries the close;
+      * `stop()` returning before the thread had let go, so the next
+        open raced the close.
+
+    The race could not be made to bite in twelve tight attempts - the
+    PortAudio lock serialises it well - so the join is correctness
+    rather than a reproduced fault, and is written down as such.
+    """
+
+    SRC = (CARD / "card.py").read_text(encoding="utf-8")
+
+    def body(self):
+        i = self.SRC.index("    def _run(")
+        return self.SRC[i:self.SRC.index("    def _fail(")]
+
+    def test_the_stream_is_bound_before_the_try_that_closes_it(self):
+        body = self.body()
+        self.assertIn("stream = None", body,
+                      "a stream that fails to start is not covered by the "
+                      "close, so it holds the device with nothing left to "
+                      "close it")
+        self.assertLess(body.index("stream = None"),
+                        body.index("sd.InputStream("))
+
+    def test_closing_cannot_fail_its_way_out_of_closing(self):
+        body = self.body()
+        tail = body[body.index("finally:"):]
+        self.assertIn("for shut in (stream.stop, stream.close)", tail)
+        self.assertIn("except Exception", tail,
+                      "a raise from stop() skips close() and leaks the "
+                      "device for the life of the process")
+
+    def test_stopping_waits_for_the_thread_to_let_go(self):
+        i = self.SRC.index("    def stop(self")
+        body = self.SRC[i:i + 1600]
+        self.assertIn("self._thread.join(", body,
+                      "release() returns before the device is closed, so "
+                      "an immediate re-open races it")
+        self.assertIn("threading.current_thread() is not self._thread", body,
+                      "joining from the capture thread is a deadlock")
+
+    def test_the_wait_is_bounded(self):
+        """It blocks a request thread (invariant 4), so it cannot be
+        open-ended however badly PortAudio is behaving."""
+        self.assertRegex(self.SRC, r"CLOSE_WAIT = \d")
+        i = self.SRC.index("    def stop(self")
+        self.assertIn("wait: float = CLOSE_WAIT", self.SRC[i:i + 60])
+
+
 class TestTheOtherAudioCardsStillLetGo(unittest.TestCase):
     """The distinction is deliberate, so it is written down as a test.
 

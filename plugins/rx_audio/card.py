@@ -36,6 +36,11 @@ BLOCK_MS = 20           # one numbered block of audio
 HISTORY = 150           # blocks kept: 3 s, enough to ride out a stall
 IDLE_SECONDS = 20.0     # close an input no tile has asked for
 RETRY_SECONDS = 5.0     # before respinning a failed input
+# How long a Stop waits for the capture thread to actually let the
+# device go. The event is already set by then, so this is reached
+# only if PortAudio is slow to close; the normal case is a
+# millisecond. Bounded because it blocks a request thread.
+CLOSE_WAIT = 1.0
 
 _lock = threading.Lock()
 # PortAudio is not thread-safe across enumerate/open: one lock for both,
@@ -87,26 +92,48 @@ class Tap:
                 f"sounddevice is not installed ({exc}).",
                 "Set this tile's input to 'mock' to try the card without a "
                 "radio, or install the sounddevice package.")
+        # Bound *outside* the try, so the close below runs for a stream
+        # that was built and then failed to start. `stream.start()` used
+        # to sit inside the `with _pa_lock` block, ahead of the try that
+        # closes it: a host error there jumped straight to the outer
+        # handler with a constructed stream holding the device and no
+        # reference left anywhere to close it.
+        stream = None
         try:
-            with _pa_lock:
-                index = _resolve_device(sd, self.device)
-                info = sd.query_devices(index)
-                self.in_rate = int(info["default_samplerate"])
-                self._start_dec()
-                stream = sd.InputStream(
-                    device=index, channels=1, dtype="float32",
-                    samplerate=self.in_rate,
-                    blocksize=int(self.in_rate * BLOCK_MS / 1000),
-                    callback=self._on_audio)
-                stream.start()
             try:
+                with _pa_lock:
+                    index = _resolve_device(sd, self.device)
+                    info = sd.query_devices(index)
+                    self.in_rate = int(info["default_samplerate"])
+                    self._start_dec()
+                    stream = sd.InputStream(
+                        device=index, channels=1, dtype="float32",
+                        samplerate=self.in_rate,
+                        blocksize=int(self.in_rate * BLOCK_MS / 1000),
+                        callback=self._on_audio)
+                    stream.start()
                 self.status = "running"
                 while not self._stop.wait(0.25):
                     pass
             finally:
-                with _pa_lock:
-                    stream.stop()
-                    stream.close()
+                # Closing must not be able to fail its way out of
+                # closing. A raise from `stop()` here used to propagate
+                # to the outer handler, which called `_fail()` and left
+                # the stream open - and by then the Tap has been popped
+                # from `_taps`, so nothing holds a reference and nothing
+                # can ever close it. The device is held for the life of
+                # the card process, and every later open answers
+                # DSERR_ALLOCATED, which this card reports as "another
+                # program may be holding that input" - sending the
+                # operator to look for a WSJT-X that is not running.
+                if stream is not None:
+                    with _pa_lock:
+                        for shut in (stream.stop, stream.close):
+                            try:
+                                shut()
+                            except Exception as exc:    # noqa: BLE001
+                                print(f"rx_audio: {self.device or 'default'}:"
+                                      f" {shut.__name__} failed: {exc}")
             self.status = "stopped"
         except Exception as exc:                        # noqa: BLE001
             # Naming the likely cause matters more here than anywhere: a
@@ -206,8 +233,32 @@ class Tap:
                 "overflows": self.overflows,
                 "peak": round(self.peak, 4), "now": time.time()}
 
-    def stop(self) -> None:
+    def stop(self, wait: float = CLOSE_WAIT) -> None:
+        """Ask the capture thread to stop, and wait for it to let go.
+
+        Setting the flag is not releasing the device. The thread still
+        has to leave its loop, take `_pa_lock` and close the stream, and
+        `release()` used to return before any of that - so a Listen
+        pressed straight after a Stop, or the page's own status poll
+        which lands immediately after one, opened the device while the
+        previous stream still held it. PortAudio answers
+        DSERR_ALLOCATED, the card reports "another program may be
+        holding that input", and the failed Tap is then cached for
+        `RETRY_SECONDS` - so the error outlives its cause and names the
+        wrong culprit.
+
+        The wait is bounded and normally microscopic: the event is
+        already set, so the thread only has to reach its `finally`. It
+        is a blocking wait in a request thread (invariant 4), which is
+        the trade - a tenth of a second at the one moment the operator
+        asked for the device to be handed over, against a card that
+        cannot be restarted until the process is.
+        """
         self._stop.set()
+        # Never from the capture thread itself: that is a deadlock, and
+        # it is the thread already doing the closing.
+        if threading.current_thread() is not self._thread:
+            self._thread.join(wait)
 
 
 def _resolve_device(sd, wanted: str):
