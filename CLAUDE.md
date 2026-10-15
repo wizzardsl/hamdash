@@ -2183,6 +2183,37 @@ arithmetic, because that is where the clock ticks.
   machine on the LAN works now. Transmit is what is left, and it needs a
   microphone, which needs a secure context, which means HTTPS with a
   certificate or a tailnet.
+  **Scoped out and shelved, with the findings kept so it does not have
+  to be worked out twice.** Three of the five pieces already exist:
+  `/api/radio/ptt` with `PTT_HOLD`, whose keep-alive is exactly the
+  right shape for a remote mic (the phone loses wifi mid-over and the
+  watchdog takes the rig off the air); `audio_out` already stored and
+  cleaned per rig; and `audio.devices()` already enumerating outputs.
+  What is left is a card that POSTs mic PCM - the receive card in
+  reverse, decimated 48k->12k through the existing `dsp.Decimator` -
+  and a `sounddevice` output stream fed from a jitter buffer.
+  The parts that decide whether it sounds good, rather than whether it
+  works: **`echoCancellation`, `noiseSuppression` and `autoGainControl`
+  default to ON in `getUserMedia`** and are tuned for phone calls, so
+  they pump SSB audio and fight the rig's compression - and nothing
+  looks broken, it just sounds wrong, so prove they are off with a
+  known-amplitude tone rather than by reading the flags. Underrun must
+  output silence, never stale audio. PTT and audio edges have to be
+  sequenced or the first syllable clips. The half-duplex interlock
+  belongs on `radio.state.ptt` rather than a flag in the page, which
+  also mutes when *another* program keys the rig - the same rule as the
+  Transmit button. Voice only: the latency (~150-250 ms, extrapolated
+  from the 31 ms measured one way) makes CW over this useless, and
+  keying belongs as timing, not audio.
+  **The secure context is setup, not code.** `tailscale cert`/`serve`
+  gives a real Let's Encrypt cert for a `.ts.net` name, so the browser
+  has no warning and `getUserMedia` works; it also lets the board go
+  back to binding loopback only, which is *less* exposed than the
+  `--host` it needs today. One catch if it is ever done: behind that
+  reverse proxy every request arrives as `127.0.0.1`, so
+  `_local_addresses()` reads a phone as local and `/api/shutdown`
+  stops being restricted to the machine. Read `Tailscale-User-Login`
+  or the forwarded header rather than widening the check.
 - **Authentication is deliberately not here, and that is the operator's
   decision rather than an oversight.** It was offered and turned down to
   keep the app simple for ham users, who are mostly running one station
