@@ -1046,7 +1046,14 @@ it. Reach for a new transport only if a measurement says this one failed.
   Stop then closed it with exactly one.
   `tests/test_rx_audio.py` pins both halves of the distinction, the
   decoder's and the spectrum's included, because copying this rule
-  across to them is the easy mistake.
+  across to them is the easy mistake - **and it was offered and turned
+  down.** The operator's reason is better than the one reasoned from
+  here: *you would not be scanning and decoding at the same time.*
+  Listening is what you do while doing something else; reading decoded
+  text is the thing you are doing. So a decoder nobody is looking at
+  has no job, and holding the radio's input against WSJT-X or fldigi
+  for a whole board session to do it is the wrong trade. Do not
+  'fix' it.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

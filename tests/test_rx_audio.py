@@ -338,11 +338,17 @@ class TestBeingHiddenIsNotAReasonToStop(unittest.TestCase):
 class TestTheOtherAudioCardsStillLetGo(unittest.TestCase):
     """The distinction is deliberate, so it is written down as a test.
 
-    `rx_audio` produces something you consume while looking elsewhere.
-    The decoder and the spectrum produce something you *read*, and a
-    hidden one holds the radio's input against WSJT-X or fldigi for as
-    long as the board is open. Copying the rule above across to them
-    would be the easy mistake.
+    Copying the rule above across to them is the easy mistake, and it
+    was offered and turned down. The operator's reason, which beats the
+    one reasoned from here: **you would not be scanning and decoding at
+    the same time.** Listening is what you do while doing something
+    else; reading decoded text is the thing you are doing. So a decoder
+    nobody is looking at has no job, and holding the radio's input
+    against WSJT-X or fldigi for the length of a board session to do it
+    is the wrong trade.
+
+    The spectrum is the same: a waterfall you cannot see is not being
+    watched.
     """
 
     def test_the_decoder_releases_its_input_when_hidden(self):
