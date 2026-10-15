@@ -1025,6 +1025,28 @@ it. Reach for a new transport only if a measurement says this one failed.
   `/api/info` answers the first half on its own - device, `in_rate`,
   `seq`, `peak`, `overflows`, `error` - and it was `peak` 0.07 with
   `seq` climbing that said the card was innocent in one line.
+- **Being hidden is not a reason to stop, and this is the one card
+  where that is true.** It used to `stop()` the moment its tile went to
+  the background, on invariant 5b's reasoning - a hidden card holding
+  the radio's sound card has nobody listening. That is right for the
+  spectrum and the decoder, which produce something you *read*, and
+  backwards here: listening while looking at something else is the whole
+  of what this card is for. The phone shell is where it showed, because
+  there every card except the one on screen is hidden - press Listen, go
+  to the rig card to change frequency, audio stops - but it was just as
+  wrong on the board, where it silenced a stacked tile the moment you
+  looked at a neighbour. Playing is an explicit state and **Stop is what
+  ends it**, which is also what hands the device to another program;
+  nothing is held while not playing, because `look()` reports without
+  opening. `pagehide` still stops, since a page that is going away
+  cannot press anything. Measured on a real USB input with the audio
+  playing: switching cards left the device open and the sequence
+  advancing 202 blocks in 4 s - the full ~50/s - peak 0.16, the page
+  still fetching `/api/pcm` at the head, and no `last listener left`;
+  Stop then closed it with exactly one.
+  `tests/test_rx_audio.py` pins both halves of the distinction, the
+  decoder's and the spectrum's included, because copying this rule
+  across to them is the easy mistake.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

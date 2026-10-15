@@ -309,10 +309,29 @@ $('#go').onclick = start;
 $('#stop').onclick = () => stop();
 $('#vol').oninput = setVolume;
 
-// A hidden tab keeps running so switching back is instant - which for
-// this card would mean holding the radio's sound card and somebody's
-// bandwidth with nobody listening (invariant 5b).
-HD.onVisible((on) => { if (!on && running) stop(true); });
+/* Audio is heard, not seen, so being hidden is not a reason to stop.
+ *
+ * This used to `stop()` the moment the tile went to the background, on
+ * the invariant-5b reasoning that a hidden card holding the radio's
+ * sound card has nobody listening. That reasoning is right for the
+ * spectrum and the decoder - nobody is reading a waterfall they cannot
+ * see - and backwards for this one: listening while looking at
+ * something else is the entire point of it.
+ *
+ * The phone shell is where it showed, because there every card except
+ * the one on screen is hidden: press Listen, go to the rig card to
+ * change frequency, and the audio stopped - which reads as the card
+ * failing rather than as a rule firing. It was just as wrong on the
+ * board, where it silenced a stacked tile the moment you looked at one
+ * of its neighbours.
+ *
+ * Playing is an explicit state: the operator pressed a button, and
+ * Stop is the way to end it - which is what hands the sound card to
+ * another program. Nothing is held while not playing (`look()` reports
+ * without opening), so the device is not kept by a tile merely
+ * existing. `pagehide` still stops, because a page that is going away
+ * cannot press anything.
+ */
 window.addEventListener('pagehide', () => { if (running) stop(true); });
 
 HD.onSettings((v) => { conf = v || {}; });

@@ -287,5 +287,76 @@ class TestItSaysWhyThereIsNoSound(unittest.TestCase):
         self.assertIn("peakWindow = Math.max(peakWindow, peak)", self.page)
         self.assertIn("peakWindow = 0", self.page)
 
+
+class TestBeingHiddenIsNotAReasonToStop(unittest.TestCase):
+    """Audio is heard, not seen.
+
+    This card used to `stop()` the moment its tile went to the
+    background, on the invariant-5b reasoning that a hidden card holding
+    the radio's sound card has nobody listening. That is right for the
+    spectrum and the decoder - nobody reads a waterfall they cannot see -
+    and backwards for this one: listening *while looking at something
+    else* is the whole of what it is for.
+
+    The phone shell is where it showed, because there every card except
+    the one on screen is hidden. Reported as: press Listen, go to the rig
+    card to change frequency, and the audio stops. It was just as wrong
+    on the board, where it silenced a stacked tile the moment you looked
+    at one of its neighbours.
+
+    Verified live against a real USB input, phone shell, audio playing:
+    switching to the rig card left the device open with its sequence
+    advancing 202 blocks in 4 s - the full ~50/s - peak 0.16, the page
+    still fetching `/api/pcm` at the head, and no `last listener left` in
+    the card's log. Stop then closed it with exactly one.
+    """
+
+    def setUp(self):
+        self.page = (CARD / "index.html").read_text(encoding="utf-8")
+
+    def test_it_does_not_stop_itself_when_hidden(self):
+        # Matched against the handler alone rather than the whole page,
+        # so a failure names the line instead of printing the card.
+        bad = [ln.strip() for ln in self.page.splitlines()
+               if "onVisible(" in ln and "stop(" in ln]
+        self.assertEqual(bad, [],
+                         "hiding the tile stops the audio, so on a phone - "
+                         "where every other card is hidden - you cannot "
+                         "listen and do anything else at the same time")
+
+    def test_a_page_that_is_going_away_still_stops(self):
+        """It cannot press its own Stop button once it is gone, and the
+        reaper is twenty seconds away."""
+        self.assertRegex(self.page,
+                         r"pagehide[^\n]*\n?[^\n]*stop\(true\)")
+
+    def test_stop_is_still_what_hands_the_device_back(self):
+        self.assertIn("$('#stop').onclick", self.page)
+        self.assertRegex(self.page, r"/api/stop\?who=\$\{WHO\}")
+
+
+class TestTheOtherAudioCardsStillLetGo(unittest.TestCase):
+    """The distinction is deliberate, so it is written down as a test.
+
+    `rx_audio` produces something you consume while looking elsewhere.
+    The decoder and the spectrum produce something you *read*, and a
+    hidden one holds the radio's input against WSJT-X or fldigi for as
+    long as the board is open. Copying the rule above across to them
+    would be the easy mistake.
+    """
+
+    def test_the_decoder_releases_its_input_when_hidden(self):
+        page = (CARD.parent / "decoder" / "index.html").read_text(encoding="utf-8")
+        i = page.index("HD.onVisible(")
+        self.assertIn("/api/stop", page[i:i + 400],
+                      "a decoder parked behind a tab holds the sound card")
+
+    def test_the_spectrum_stops_asking_when_hidden(self):
+        page = (CARD.parent / "spectrum" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("HD.hidden", page,
+                      "a hidden waterfall keeps polling for frames nobody "
+                      "is looking at, and its want keeps the device open")
+
+
 if __name__ == "__main__":
     unittest.main()

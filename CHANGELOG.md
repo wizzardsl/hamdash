@@ -24,6 +24,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   changes it with you.
 
 ### Fixed
+- **Receive audio no longer stops when you look at another card.** It
+  released the sound card as soon as its tile went to the background —
+  defensible for the spectrum and the decoder, which produce something
+  you read, and backwards for the one card whose whole point is being
+  listened to while you do something else. On a phone, where every card
+  but the one on screen is hidden, it meant you could not listen and
+  change frequency at the same time; on the board it silenced a stacked
+  tile the moment you looked at one of its neighbours. Stop is what ends
+  listening now — which is still what hands the sound card to another
+  program.
 - **The logbook and spots tables no longer wrap into five-line rows when
   the card is narrow.** A phone, or a two-column tile on a crowded board:
   the Where column is free text from somebody else's API, and left to
