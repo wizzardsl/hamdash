@@ -648,6 +648,22 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   against. A rig that unkeys itself is noticed, so a pointless unkey is not
   sent later, and a failed unkey is shouted about: the radio may still be
   transmitting and that must not be swallowed.
+- **Nothing may end the rig polling thread**, and that is the same rule
+  as the card bus readers for a much worse reason: the PTT watchdog runs
+  on it. It is the one thing here with consequences outside the
+  computer - it exists because whatever keyed the rig may be gone - so a
+  thread that dies takes a transmitter nobody will unkey with it, while
+  the process stays up looking perfectly healthy and nothing on screen
+  says otherwise. Found in a real log: `AttributeError: 'NoneType'
+  object has no attribute 'features'` out of `state()`, three times in
+  one session, each one killing the poller for the rest of that run.
+  The cause was **check-then-use across threads** - `state()` tested
+  `self._backend` and then reached for it twice more, while the poller
+  runs twice a second and a request thread can be deselecting a rig in
+  between. The backend is taken into a local once now, and the loop
+  body catches and logs rather than letting anything out.
+  `tests/test_rigs.py` drives a real poll into a real exception and
+  checks it keeps polling.
 - **The `finally` around the server does not run when the process is
   interrupted.** On Windows that is most of the time - a plain
   `Stop-Process` terminated it with the transmitter still keyed, which is

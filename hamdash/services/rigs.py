@@ -21,6 +21,7 @@ rather than reimplementing it.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -116,6 +117,10 @@ PTT_TIMEOUT = 120.0
 # How long the card goes on saying why a transmission ended.
 PTT_DROP_NOTICE = 30.0
 MAX_RIGS = 10
+
+# The polling thread logs here rather than printing: a poll that
+# fails must be visible without being able to end the thread.
+LOG = logging.getLogger("hamdash.rigs")
 
 
 def _as_float(v):
@@ -1335,14 +1340,22 @@ class RigManager:
                 "mock": (rig or {}).get("backend") == "mock"}
         if self._error:
             return {**base, "ok": False, "error": self._error}
-        if not self._backend:
+        # Taken once, and used throughout. This read it as
+        # `self._backend` each time, and the polling thread runs twice a
+        # second while a request thread can be deselecting a rig: it
+        # passed the check and then met None two lines later, which is
+        # `AttributeError: 'NoneType' object has no attribute 'features'`
+        # in the log - and that exception killed the polling thread,
+        # which is where the PTT watchdog lives.
+        backend = self._backend
+        if not backend:
             return {**base, "ok": False,
                     "error": "No radio selected. Add one in Settings -> Radio."}
-        out = {**base, **self._backend.state()}
+        out = {**base, **backend.state()}
         # What the card may offer. A backend says what it can do in
         # general; OmniRig refines it per rig file, because one rig file
         # has two VFOs and the next does not.
-        out.setdefault("features", sorted(self._backend.features))
+        out.setdefault("features", sorted(backend.features))
         # Why the radio stopped transmitting, so the card can say rather than
         # the transmission just ending. It expires: a message about something
         # that happened ten minutes ago, still on screen, reads as a fault
@@ -1488,7 +1501,25 @@ class RigManager:
         def loop():
             last = None
             while not self._stop.wait(1.0 / hz):
-                st = self._watch_ptt(self.state())
+                # **Nothing may end this thread.** It is the one the PTT
+                # watchdog runs on, and the watchdog is the only thing
+                # here with consequences outside the computer: it exists
+                # precisely because whatever keyed the rig may be gone.
+                # A thread that dies takes its job with it while the
+                # process stays up looking healthy, so the failure is a
+                # transmitter that nobody will take off the air, and
+                # nothing on screen says so.
+                #
+                # Seen for real: an `AttributeError` out of `state()`
+                # racing a rig being deselected killed it three times in
+                # one session. That particular race is fixed, but the
+                # guard is the point - the next surprise comes from
+                # somebody else's serial port or COM object.
+                try:
+                    st = self._watch_ptt(self.state())
+                except Exception as exc:                # noqa: BLE001
+                    LOG.exception("rig poll failed: %s", exc)
+                    continue
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
                        st.get("ok"), st.get("rig_id"),
                        st.get("audio_in"), st.get("audio_out"),

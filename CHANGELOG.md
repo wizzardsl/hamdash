@@ -7,6 +7,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **The PTT watchdog could be silently killed off.** The rig polling
+  thread is where the watchdog that takes an unheld transmission off
+  the air lives, and an error during a poll ended that thread outright
+  — leaving the app looking healthy with nothing left to unkey the
+  radio. Seen for real: deselecting a radio while a poll was in flight
+  raised inside the status read and stopped the poller three times in
+  one session. The race is fixed and the loop now survives anything a
+  poll can throw.
 - **A logbook push says how far along it is.** World Radio League
   takes one contact per request and allows sixty a minute, so pushing
   87 QSOs takes about three minutes — during which the panel said

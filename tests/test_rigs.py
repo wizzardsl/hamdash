@@ -10,6 +10,7 @@ Run with:  python -m unittest discover -s tests
 import json
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -343,3 +344,60 @@ class TestRigctldSecondVfo(unittest.TestCase):
             "\get_vfo_info VFOB": ["Freq: 14300000", "Mode: USB"],
         })
         self.assertEqual(b.state()["freq_b"], 14_300_000)
+
+
+class TestNothingMayEndThePollingThread(unittest.TestCase):
+    """The thread `start_polling` makes is where the PTT watchdog runs.
+
+    That watchdog is the only thing in this tree with consequences
+    outside the computer: it exists because whatever keyed the rig may
+    be gone, and it takes an unheld transmission off the air. A thread
+    that dies takes its job with it while the process stays up looking
+    healthy - so the failure here is a transmitter nobody will unkey,
+    with nothing on screen saying so.
+
+    Found in a real log: `AttributeError: 'NoneType' object has no
+    attribute 'features'` out of `state()`, three times in one session,
+    each one killing the poller for the rest of that run.
+    """
+
+    def manager(self):
+        cfg, home = a_config()
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        man = rigs.RigManager(cfg)
+        self.addCleanup(man.stop)
+        return man
+
+    def test_a_poll_that_raises_does_not_end_it(self):
+        man = self.manager()
+        calls = []
+
+        def boom():
+            calls.append(1)
+            raise RuntimeError("the serial port went away")
+
+        with mock.patch.object(man, "state", side_effect=boom):
+            man.start_polling(hz=50.0)
+            end = time.time() + 2.0
+            while len(calls) < 5 and time.time() < end:
+                time.sleep(0.01)
+        self.assertGreaterEqual(
+            len(calls), 5,
+            "the polling thread stopped at the first exception, taking "
+            "the PTT watchdog with it")
+
+    def test_the_backend_is_read_once_per_state(self):
+        """`state()` checked `self._backend` and then used it twice more.
+
+        The poller runs twice a second and a request thread can be
+        deselecting a rig between those reads, which is how None got
+        past the guard.
+        """
+        src = Path(rigs.__file__).read_text(encoding="utf-8")
+        i = src.index("    def state(")
+        body = src[i:src.index("    def _do(", i)]
+        after = body[body.index("backend = self._backend"):]
+        self.assertNotIn("self._backend.", after,
+                         "state() reaches for self._backend again after "
+                         "checking it, so a rig deselected in between is "
+                         "an AttributeError that kills the poller")
