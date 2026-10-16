@@ -605,6 +605,26 @@ class Runner:
             self._thread.start()
         return started
 
+    def note(self, message: str) -> None:
+        """Say how far along a long job is.
+
+        World Radio League takes one contact per request and allows
+        sixty a minute, so a push paces itself at `WRITE_PAUSE` - and
+        87 QSOs is three minutes with "working…" as the only thing on
+        screen. That is indistinguishable from hung, and was reported
+        as hung: the push was working perfectly and finished `87 sent,
+        0 failed`.
+
+        Only while running. A note after the job has ended would
+        overwrite the result with a stale line, and the result is the
+        part worth keeping.
+        """
+        if not self.state.get("running"):
+            return
+        self.state["message"] = message
+        self.state["at"] = time.time()
+        self._emit()
+
     def _run(self, job: str, fn) -> None:
         try:
             result = fn() or {}

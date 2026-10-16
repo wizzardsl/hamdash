@@ -207,6 +207,34 @@ class TestRunner(unittest.TestCase):
         self.assertFalse(r.state["ok"])
         self.assertIn("unexpectedly", r.state["message"])
 
+    def test_a_long_job_can_say_where_it_has_got_to(self):
+        """Reported as "the WRL push gets stuck in working state".
+
+        It was not stuck: World Radio League takes one contact per
+        request and allows sixty a minute, so the push paces itself and
+        87 QSOs took three minutes - finishing `87 sent, 0 failed`. The
+        whole time the only thing on screen was "working…", which is
+        indistinguishable from hung.
+        """
+        seen = []
+        r = Runner(lambda topic, p: seen.append(p["message"]))
+        r.start("wrl push", lambda: (r.note("sending 1 of 2…"),
+                                     r.note("sending 2 of 2…"),
+                                     {"message": "2 sent"})[-1])
+        self.wait(r)
+        self.assertEqual(seen, ["working…", "sending 1 of 2…",
+                                "sending 2 of 2…", "2 sent"])
+
+    def test_a_note_after_the_job_cannot_overwrite_the_result(self):
+        """The result is the part worth keeping - a late note from a
+        thread winding down would replace it with a stale line."""
+        r = Runner(lambda *a: None)
+        r.start("job", lambda: {"message": "87 sent"})
+        self.wait(r)
+        r.note("sending 40 of 87…")
+        self.assertEqual(r.state["message"], "87 sent")
+        self.assertTrue(r.state["ok"])
+
     def test_one_at_a_time(self):
         r = Runner(lambda *a: None)
         r.start("slow", lambda: time.sleep(0.5))

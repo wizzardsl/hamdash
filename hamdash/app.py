@@ -1134,7 +1134,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                                    f"{' from ' + since if since else ''}. "
                                    f"Untick dry run to send them."}
             book, sent, failed = _qrz(), 0, []
-            for rec in rows:
+            total = len(rows)
+            for i, rec in enumerate(rows):
+                # No rate pause here, but it is still one request per
+                # contact: a few hundred QSOs is minutes of silence.
+                syncer.note(f"sending {i + 1} of {total}…")
                 one = log.export_adif_record(rec, my_callsign=mine)
                 try:
                     book.push_record(one)
@@ -1170,9 +1174,15 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             # import. Pacing here keeps an ordinary push inside the budget
             # instead of earning a 429 halfway through.
             book, sent, dupes, failed = _wrl(), 0, 0, []
+            total = len(rows)
             for i, rec in enumerate(rows):
                 if i:
                     time.sleep(book.WRITE_PAUSE)
+                # Their rate limit makes this minutes long, so it has to
+                # say where it has got to: "working…" for three minutes
+                # is indistinguishable from stuck, and was reported as
+                # stuck while the push was working perfectly.
+                syncer.note(f"sending {i + 1} of {total}…")
                 try:
                     out = book.push_record(rec, my_callsign=mine)
                     sent += 1

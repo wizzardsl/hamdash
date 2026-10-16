@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Fixed
+- **A logbook push says how far along it is.** World Radio League
+  takes one contact per request and allows sixty a minute, so pushing
+  87 QSOs takes about three minutes — during which the panel said
+  "working…" and nothing else, which is indistinguishable from stuck.
+  It now counts them off as they go. Nothing was wrong with the push
+  itself.
 - **Receive audio could end up holding the sound card against itself.**
   If the input stream failed to start, or failed while being closed,
   the card lost its handle to it — and because the tap is dropped from

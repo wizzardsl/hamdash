@@ -1171,6 +1171,18 @@ QRM or fading.
   LoTW itself uses). `import_adif` merges onto a match instead of inserting,
   and returns `{added, updated, skipped}` — "nothing was added" and "nothing
   happened" are different answers.
+- **A long job has to say where it has got to.** Reported as "the WRL
+  push gets stuck in working state". It was not stuck: World Radio
+  League takes one contact per request and allows sixty a minute, so
+  the push paces itself at `WRITE_PAUSE` and 87 QSOs took **three
+  minutes**, finishing `87 sent, 0 failed`. The whole time the only
+  thing on screen was `working…`, which is indistinguishable from hung
+  - and the operator has no way to tell the difference, so they are
+  right to report it. `Runner.note()` emits progress on `log.sync` and
+  both record-at-a-time pushes call it; the board already renders
+  `p.message` while a job is running, so nothing in the UI changed.
+  A note is ignored once the job has ended, because the result is the
+  part worth keeping and a late one would overwrite it.
 - A sync runs in `qsl.Runner`, one at a time, off the request thread, and
   reports on `log.sync`. Doing it inline would hold a server thread for a
   minute (invariant 4).
