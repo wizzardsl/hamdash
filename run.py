@@ -87,9 +87,22 @@ def why_not_bindable(host: str, port: int) -> str:
     Windows, does not say the thing that is actually true - that
     something already has it. Whoever passes --port for a fixed address
     is exactly who meets this.
+
+    **SO_REUSEADDR on POSIX, and only there.** waitress sets it on the
+    socket it really listens on, and without it here the probe was the
+    stricter of the two: on Linux the connections a stopped instance
+    leaves in TIME_WAIT refuse a plain bind for about a minute, so a
+    restart said "something is already using it" with nothing listening
+    at all. With it, a live listener still refuses, which is the case
+    that matters. Not on Windows: there SO_REUSEADDR lets a bind succeed
+    on top of somebody's live listener, which would turn this check into
+    one that never fires - and Windows does not hold TIME_WAIT against a
+    bind in the first place.
     """
     s = socket.socket()
     try:
+        if os.name != "nt":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, port))
         return ""
     except OSError as exc:

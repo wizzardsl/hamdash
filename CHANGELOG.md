@@ -28,6 +28,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   grown. Extra copies of one contact are counted apart now and the
   message says so: `... 87 already had - World Radio League sent 193
   records, 106 of them extra copies of the same QSOs`.
+- **Restarting on Linux said the port was taken for a minute.** The
+  check that runs before the server starts refused a port whose old
+  connections were still in TIME_WAIT, though nothing was listening and
+  waitress itself would have bound it. The check now allows that on
+  macOS and Linux, as waitress does; a port somebody is really listening
+  on is still refused. Windows is unchanged.
 
 ### Changed
 - **The JS tests run as `node --test 'tests/js/*.test.js'`, on Node 24

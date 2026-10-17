@@ -14,6 +14,7 @@ be a URL a browser elsewhere in the house can load.
 Run with:  python -m unittest discover -s tests
 """
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -185,6 +186,30 @@ class TestAPortThatIsTaken(unittest.TestCase):
     def test_a_free_port_is_fine(self):
         import run as runpy
         self.assertEqual(runpy.why_not_bindable("127.0.0.1", 0), "")
+
+    @unittest.skipIf(os.name == "nt", "Windows does not hold TIME_WAIT "
+                     "against a bind; the option is POSIX-only")
+    def test_a_port_left_in_time_wait_is_free(self):
+        """Stopping an instance and starting it again on Linux said
+        "something is already using it" for about a minute, with nothing
+        listening: the connections it had served sat in TIME_WAIT, which
+        a plain bind refuses and waitress - setting SO_REUSEADDR - does
+        not. A real TIME_WAIT, made the way a server makes one: the
+        listening side closes the connection first."""
+        import socket
+        import run as runpy
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        cli = socket.create_connection(("127.0.0.1", port))
+        conn, _ = srv.accept()
+        conn.close()            # the server closes first: it gets TIME_WAIT
+        cli.recv(1)
+        cli.close()
+        srv.close()             # nothing is listening any more
+        self.assertEqual(runpy.why_not_bindable("127.0.0.1", port), "")
 
     def test_the_message_says_what_to_do(self):
         self.assertIn("pick another with --port", RUN_PY)

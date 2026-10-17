@@ -684,6 +684,13 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   `WinError 10013 ... forbidden by its access permissions`, naming
   neither the port nor the real cause, so it is checked before anything
   is built and says `something is already using it`.
+  **The check must not be stricter than waitress.** On Linux it was:
+  waitress sets `SO_REUSEADDR` and the probe did not, so for about a
+  minute after a stop the TIME_WAIT connections refused the probe and a
+  restart said the port was taken with nothing listening on it. The
+  probe sets it too - **on POSIX only**, because on Windows the same
+  option lets a bind succeed over a live listener, which would make the
+  check never fire.
 - **Headless has no window, so there was no safe way to stop it.** The
   signal handlers cover Ctrl-C in its own console and a native window can
   be asked to close; `--browser` has neither, and on Windows `taskkill`
