@@ -117,6 +117,22 @@ updated with whatever the other log knows and you don't, so a confirmation
 lands on the QSO it belongs to rather than beside it. Run the same pull twice
 and the second says "nothing new".
 
+**A push sends only what that service does not already have.** hamdash keeps
+track, per contact, of which services hold it: a pull marks everything it
+brought in or matched, and a push marks what it delivered. So a log you
+pulled from QRZ onto a new install is not offered back to QRZ, and a contact
+on QRZ is still pending for World Radio League until it goes there too. The
+**Push (n)** count on each button is that number.
+
+**World Radio League is asked first.** QRZ refuses a QSO it already has;
+World Radio League stores a second copy, flags it as a duplicate and reports
+success. So before sending, a WRL push reads what your WRL logbook holds and
+leaves out anything that matches, using the same rule as a pull. Copies that
+earlier pushes already stored there have to be deleted on WRL's own site —
+hamdash does not delete anything from an online logbook. Until they are, a
+WRL pull says how many records were extra copies, so its count matches the
+QSOs in your log rather than the records on WRL.
+
 **LoTW uploads cannot be done with a password.** ARRL only accepts QSOs signed
 with your station certificate, and that certificate lives inside
 [TQSL](https://www.arrl.org/tqsl-download) and does not leave it. So "Push to

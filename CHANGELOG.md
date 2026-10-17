@@ -6,6 +6,29 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **A pulled log was offered straight back to the service it came
+  from.** A push chose what to send by row id against a per-service
+  marker that a pull never moved, so a new install that pulled 87 QSOs
+  from QRZ showed `Push QRZ (87)` - and a dated push sent everything in
+  the range regardless. Each contact now records which services hold
+  it: a pull marks what it brought in or matched, a push marks what it
+  delivered (a QRZ duplicate refusal included), and only what a service
+  lacks is pending or sent. The old marker in config still counts, so
+  an existing install does not re-push anything.
+- **World Radio League collected duplicate copies of the log.** It
+  stores a QSO it already has, flags it `isDuplicate` and answers
+  success, so every full push added another copy - one account held 193
+  records of 87 QSOs. A WRL push, dry run included, now reads what the
+  logbook holds first and sends only what does not match. Copies already
+  stored have to be removed on WRL's site; hamdash deletes nothing from
+  an online logbook.
+- **A pull counted records, not contacts.** The same account pulled as
+  "193 already had" against a log of 87, which reads as the log having
+  grown. Extra copies of one contact are counted apart now and the
+  message says so: `... 87 already had - World Radio League sent 193
+  records, 106 of them extra copies of the same QSOs`.
+
 ### Changed
 - **The JS tests run as `node --test 'tests/js/*.test.js'`, on Node 24
   in CI.** `node --test tests/js/` fails on Node 22 and later, which

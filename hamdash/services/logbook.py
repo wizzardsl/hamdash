@@ -69,6 +69,12 @@ class Logbook:
             for f in FIELDS:
                 if f not in have:
                     db.execute(f"ALTER TABLE qso ADD COLUMN {f} TEXT")
+            # Which online logbooks already have which contacts. A row per
+            # (contact, service), written by a pull that found the contact
+            # there and by a push that put it there - see `unheld`.
+            db.execute("CREATE TABLE IF NOT EXISTS held "
+                       "(qso_id INTEGER NOT NULL, service TEXT NOT NULL, "
+                       "PRIMARY KEY (qso_id, service))")
 
     # --------------------------------------------------------------- writing
     def add(self, qso: dict, notify: bool = True) -> dict:
@@ -111,6 +117,7 @@ class Logbook:
     def delete(self, qso_id: int) -> bool:
         with self._lock, self._conn() as db:
             n = db.execute("DELETE FROM qso WHERE id=?", (int(qso_id),)).rowcount
+            db.execute("DELETE FROM held WHERE qso_id=?", (int(qso_id),))
         if n:
             BUS.publish("log.qso_deleted", {"id": int(qso_id)}, source="logbook")
         return bool(n)
@@ -142,25 +149,16 @@ class Logbook:
         date = str(qso.get("qso_date") or "").strip()
         if not (call and date):
             return None
-        band = str(qso.get("band") or "").strip().lower()
-        mode = str(qso.get("mode") or "").strip().upper()
-        want = _minutes(qso.get("time_on"))
         with self._conn() as db:
             rows = [dict(r) for r in db.execute(
                 "SELECT * FROM qso WHERE call=? AND qso_date=?", (call, date))]
-        best = None
+        best, best_gap = None, None
         for r in rows:
-            if band and (r.get("band") or "").lower() != band:
+            gap = qso_gap(qso, r, minutes)
+            if gap is None:
                 continue
-            if mode and (r.get("mode") or "").upper() != mode:
-                continue
-            if want is None:
-                return r
-            got = _minutes(r.get("time_on"))
-            if got is None or abs(got - want) > minutes:
-                continue
-            if best is None or abs(got - want) < abs(_minutes(best["time_on"]) - want):
-                best = r
+            if best is None or gap < best_gap:
+                best, best_gap = r, gap
         return best
 
     # --------------------------------------------------------------- reading
@@ -228,6 +226,43 @@ class Logbook:
             return [dict(r) for r in db.execute(
                 "SELECT * FROM qso WHERE id > ? ORDER BY id LIMIT ?",
                 (int(qso_id or 0), int(limit)))]
+
+    def mark_held(self, service: str, ids) -> None:
+        """Record that `service` has these contacts."""
+        ids = sorted({int(i) for i in ids if i})
+        if not ids:
+            return
+        with self._lock, self._conn() as db:
+            db.executemany("INSERT OR IGNORE INTO held (qso_id, service) "
+                           "VALUES (?, ?)", [(i, service) for i in ids])
+
+    def unheld(self, service: str, since: str = "", marker: int = 0,
+               limit: int = 10 ** 7) -> list[dict]:
+        """QSOs `service` does not have yet, oldest first - what a push sends.
+
+        Pushing by row id alone was wrong the first time a log was pulled
+        rather than typed: the contacts a pull brings in get fresh ids, so
+        on a new install every one of them read as "not pushed yet" and a
+        push offered to send the service its own log back. QRZ refuses
+        those; World Radio League stores them, flagged as duplicates, and
+        that is how one account came to hold 193 records of 87 QSOs. So a
+        contact is held once a pull has found it there or a push has put
+        it there, and only what is held nowhere is sent.
+
+        `marker` is the old per-service high-water mark from config: rows at
+        or below it were pushed before this table existed, so they count as
+        held without rewriting anybody's config.
+        """
+        d = "".join(ch for ch in str(since or "") if ch.isdigit())
+        sql = ("SELECT * FROM qso WHERE id > ? AND id NOT IN "
+               "(SELECT qso_id FROM held WHERE service=?)")
+        args: list = [int(marker or 0), service]
+        if d:
+            sql += " AND qso_date >= ?"
+            args.append(d)
+        with self._conn() as db:
+            return [dict(r) for r in db.execute(
+                sql + " ORDER BY id LIMIT ?", [*args, int(limit)])]
 
     def max_id(self) -> int:
         with self._conn() as db:
@@ -297,7 +332,8 @@ class Logbook:
         return " ".join(f"<{f.upper()}:{len(str(r[f]))}>{r[f]}"
                         for f in FIELDS if r.get(f)) + " <EOR>"
 
-    def import_adif(self, text: str, merge: bool = True) -> dict:
+    def import_adif(self, text: str, merge: bool = True,
+                    held_by: str = "") -> dict:
         """Import ADIF, without duplicating what is already there.
 
         `merge` updates a QSO already in the log with any field the incoming
@@ -305,30 +341,52 @@ class Logbook:
         LoTW lands on the contact it belongs to instead of beside it. Returns
         counts rather than one number, because "nothing was added" and
         "nothing happened" are different answers.
+
+        `held_by` names the service the text was pulled from: every contact
+        it added or matched is one that service already has, so a push
+        must not send it back (`unheld`).
+
+        `repeats` counts records that are a second or later copy of one
+        contact *within this text*. They are not in the other three, which
+        count contacts: World Radio League stores duplicates, and a pull
+        from an account holding 193 records of 87 QSOs said "193 already
+        had" - true of the records, and read as the log having grown.
         """
-        added = updated = skipped = 0
+        added = updated = skipped = repeats = 0
         last = None
+        changed = False
+        seen: set[int] = set()
         for rec in self.parse_adif(text):
             existing = self.find_match(rec)
             if existing is None:
                 try:
                     last = self.add(rec, notify=False)
+                    seen.add(last["id"])
                     added += 1
+                    changed = True
                 except ValueError:
                     skipped += 1
                 continue
-            if not merge:
-                skipped += 1
-                continue
+            repeat = existing["id"] in seen
+            seen.add(existing["id"])
             fresh = {f: rec[f] for f in FIELDS
                      if rec.get(f) and not (existing.get(f) or "").strip()}
-            if fresh:
+            if merge and fresh:
+                # A later copy can still know something the first did not,
+                # so it is merged like any other match - only counted apart.
                 self.update(existing["id"], fresh)
+                changed = True
+            if repeat:
+                repeats += 1
+            elif merge and fresh:
                 updated += 1
             else:
                 skipped += 1
-        counts = {"added": added, "updated": updated, "skipped": skipped}
-        if added or updated:
+        if held_by:
+            self.mark_held(held_by, seen)
+        counts = {"added": added, "updated": updated, "skipped": skipped,
+                  "repeats": repeats}
+        if changed:
             # One event for the whole import, carrying a contact that was
             # actually added as well as the counts. A single-record
             # import - which is what WSJT-X sends on every contact - then
@@ -340,6 +398,36 @@ class Logbook:
             BUS.publish("log.qso_added", {**(last or {}), **counts},
                         source="logbook")
         return counts
+
+
+def qso_gap(qso: dict, row: dict, minutes: int = DUPE_MINUTES) -> int | None:
+    """How many minutes apart two records of the same contact are, or None
+    if they are not the same contact.
+
+    The rule `find_match` uses, on its own so that a check against somebody
+    else's log - World Radio League keeps duplicates rather than refusing
+    them - agrees with the importer about what "the same QSO" means.
+    """
+    call = str(qso.get("call") or "").strip().upper()
+    date = str(qso.get("qso_date") or "").strip()
+    if not (call and date):
+        return None
+    if (str(row.get("call") or "").strip().upper() != call
+            or str(row.get("qso_date") or "").strip() != date):
+        return None
+    band = str(qso.get("band") or "").strip().lower()
+    mode = str(qso.get("mode") or "").strip().upper()
+    if band and (row.get("band") or "").lower() != band:
+        return None
+    if mode and (row.get("mode") or "").upper() != mode:
+        return None
+    want = _minutes(qso.get("time_on"))
+    if want is None:
+        return 0
+    got = _minutes(row.get("time_on"))
+    if got is None or abs(got - want) > minutes:
+        return None
+    return abs(got - want)
 
 
 def _minutes(hhmm) -> int | None:

@@ -1167,6 +1167,34 @@ QRM or fading.
   ticking one unticks the other. Both running would upload the same contacts
   twice and then re-upload each other's confirmations on the next round.
 
+- **What a push sends is "not held by that service", never "above a row
+  id".** It used to be the latter, against `<service>_pushed_id` in
+  config, and a pull never moved the marker - so the first install that
+  *pulled* its log rather than typing it saw every pulled contact as
+  unpushed and offered the whole log back to the service it came from.
+  The `held` table in the logbook is `(qso_id, service)`: a pull marks
+  everything it added **or matched** (`import_adif(held_by=)`), a push
+  marks what it delivered, and a QRZ duplicate refusal is QRZ saying it
+  holds one. `Logbook.unheld` is the only question a push asks, dated or
+  not. The old marker is still read as "held up to here" so no config is
+  rewritten. An ADIF file dropped on the card marks nothing - it came
+  from nowhere in particular.
+- **World Radio League keeps duplicates; it does not refuse them.** A
+  QSO it already has is stored again, flagged `isDuplicate`, with a
+  success reply. QRZ refuses, which is why relying on the far end to
+  dedupe worked there and quietly did not here: one account reached 193
+  records of 87 QSOs from three full pushes, 87 of them on one day.
+  So `wrl_already` in `app.py` reads WRL's list before sending - in a
+  dry run too, because the count is what misled - and matches with
+  `logbook.qso_gap`, the importer's own rule, rather than a second
+  opinion of "the same QSO". If the list cannot be read, nothing is
+  sent. The copies already there are not ours to delete.
+  **They also inflate a pull**, which reported "193 already had" for a
+  log of 87. `import_adif` counts a later copy of a contact it has
+  already seen in the same text as `repeats`, outside added, updated
+  and skipped, so those three count contacts and the message says
+  where the rest went. A repeat is still merged - a second copy can
+  know a field the first did not.
 - **World Radio League is the one that does not speak ADIF over the wire.**
   It keeps one instant rather than ADIF's date and time, camelCases its
   fields, and takes a band as a number of metres or as a name. `as_contact`

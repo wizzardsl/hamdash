@@ -23,8 +23,9 @@ from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import dxcc
 from .services import grid as gridlib
 from .services.callsign import Lookup
-from .services.logbook import Logbook
-from .services.qsl import Lotw, QrzLogbook, Runner, SyncError, WrlLogbook
+from .services.logbook import Logbook, qso_gap
+from .services.qsl import (Lotw, QrzLogbook, Runner, SyncError, WrlLogbook,
+                           as_qso)
 from .services.radio import MODES
 from .services import audio as audiosvc
 
@@ -1043,7 +1044,10 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         c = cfg.data.get("logbook_sync", {})
         lotw = _lotw()
         newest = log.max_id()
-        pending = lambda k: max(0, len(log.after_id(int(c.get(k) or 0))))  # noqa: E731
+
+        def pending(service):
+            return len(log.unheld(service, marker=int(
+                c.get(f"{service}_pushed_id") or 0)))
         return jsonify({
             "state": syncer.state,
             "newest_id": newest,
@@ -1054,14 +1058,14 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 "can_push": bool(lotw.tqsl()),
                 "tqsl": lotw.tqsl() or "",
                 "pushed_id": int(c.get("lotw_pushed_id") or 0),
-                "pending": pending("lotw_pushed_id"),
+                "pending": pending("lotw"),
             },
             "qrz": {"configured": bool(c.get("qrz_api_key")),
                     "pushed_id": int(c.get("qrz_pushed_id") or 0),
-                    "pending": pending("qrz_pushed_id")},
+                    "pending": pending("qrz")},
             "wrl": {"configured": bool(c.get("wrl_api_key")),
                     "pushed_id": int(c.get("wrl_pushed_id") or 0),
-                    "pending": pending("wrl_pushed_id")},
+                    "pending": pending("wrl")},
         })
 
     @app.post("/api/log/sync/<service>/<direction>")
@@ -1073,24 +1077,45 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         # undo, and "push my log" to a logbook with ten years in it is not
         # something to find out you meant differently afterwards.
         dry_run = bool(body.get("dry_run", True))
-        # An automatic upload sends only what has been logged since the last
-        # one. The marker is per service and lives in config, so a restart
-        # does not re-send the whole log.
+        # A push sends what that service does not already have - not pulled
+        # from it, not pushed to it (`Logbook.unheld`), so a log that came
+        # *from* a service is never offered back to it. `since` narrows a
+        # manual push to a date range; the automatic upload asks with
+        # `new_only` and no range. The old per-service marker in config
+        # still counts as "pushed up to here".
         new_only = bool(body.get("new_only"))
         mine = cfg.data["station"].get("callsign", "")
 
         def to_send(service):
-            if new_only:
-                mark = int(cfg.data.get("logbook_sync", {})
-                           .get(f"{service}_pushed_id") or 0)
-                return log.after_id(mark)
-            return log.since(since)
+            mark = int(cfg.data.get("logbook_sync", {})
+                       .get(f"{service}_pushed_id") or 0)
+            return log.unheld(service, since="" if new_only else since,
+                              marker=mark)
 
-        def mark_sent(service):
-            cfg.data.setdefault("logbook_sync", {})[f"{service}_pushed_id"] =                 log.max_id()
-            cfg.save()
+        def wrl_already(book, rows) -> tuple[list[dict], int]:
+            """Drop the contacts World Radio League already has.
 
-        def _pulled(res: dict) -> dict:
+            QRZ refuses a duplicate. WRL stores it, flags it `isDuplicate`
+            and answers success - so a push that relies on the far end to
+            dedupe, as the QRZ one does, adds another copy of the log every
+            time it is run. Measured on a real account: 193 records of 87
+            QSOs, from three pushes. Ask what is there first, and match it
+            the way the importer would.
+            """
+            if not rows:
+                return rows, 0
+            syncer.note("checking what World Radio League already has…")
+            theirs: dict[tuple, list[dict]] = {}
+            for c in book.contacts():
+                q = as_qso(c)
+                theirs.setdefault((q.get("call"), q.get("qso_date")), []).append(q)
+            have = {r["id"] for r in rows if any(
+                qso_gap(r, t) is not None for t in theirs.get(
+                    (str(r.get("call") or "").upper(), r.get("qso_date")), []))}
+            log.mark_held("wrl", have)
+            return [r for r in rows if r["id"] not in have], len(have)
+
+        def _pulled(res: dict, where: str) -> dict:
             """The same ending for all three pulls.
 
             Including the bus event: a pull that imported contacts has
@@ -1100,16 +1125,24 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             """
             res["message"] = (f"{res['added']} new, {res['updated']} updated, "
                               f"{res['skipped']} already had")
+            if res.get("repeats"):
+                # Said, because the alternative is a count bigger than the
+                # log - which reads as something here going wrong.
+                total = sum(res[k] for k in
+                            ("added", "updated", "skipped", "repeats"))
+                res["message"] += (f" - {where} sent {total} records, "
+                                   f"{res['repeats']} of them extra copies "
+                                   f"of the same QSOs")
             return res
 
         def pull_lotw():
             text = _lotw().pull(since=since, owncall=mine)
-            res = log.import_adif(text)
-            return _pulled(res)
+            res = log.import_adif(text, held_by="lotw")
+            return _pulled(res, "LoTW")
 
         def pull_qrz():
-            res = log.import_adif(_qrz().pull())
-            return _pulled(res)
+            res = log.import_adif(_qrz().pull(), held_by="qrz")
+            return _pulled(res, "QRZ")
 
         def push_lotw():
             rows = to_send("lotw")
@@ -1123,6 +1156,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             adif = "\n".join(log.export_adif_record(r, my_callsign=mine)
                              for r in rows)
             out = _lotw().push("<EOH>\n" + adif + "\n")
+            log.mark_held("lotw", [r["id"] for r in rows])
             out["message"] = f"TQSL accepted {len(rows)} QSOs"
             return out
 
@@ -1143,37 +1177,43 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 try:
                     book.push_record(one)
                     sent += 1
+                    log.mark_held("qrz", [rec["id"]])
                 except SyncError as exc:
                     # QRZ rejects a QSO it already has. That is the normal
-                    # case on a re-run, not a failure worth stopping for.
+                    # case on a re-run, not a failure worth stopping for -
+                    # and it is QRZ saying it holds this one.
                     if "duplicate" in str(exc).lower():
+                        log.mark_held("qrz", [rec["id"]])
                         continue
                     failed.append(f"{rec.get('call')}: {exc}")
                     if len(failed) > 20:
                         break
-            if new_only and not failed:
-                mark_sent("qrz")
             return {"sent": sent, "failed": failed,
                     "message": f"{sent} sent"
                                + (f", {len(failed)} refused" if failed else "")}
 
         def pull_wrl():
-            res = log.import_adif(_wrl().pull(since=_iso(since)))
-            return _pulled(res)
+            res = log.import_adif(_wrl().pull(since=_iso(since)), held_by="wrl")
+            return _pulled(res, "World Radio League")
 
         def push_wrl():
-            rows = to_send("wrl")
+            book = _wrl()
+            # In a dry run too: a count that includes what is already
+            # there is the number that misled in the first place.
+            rows, there = wrl_already(book, to_send("wrl"))
+            already = f"{there} already on World Radio League. " if there else ""
             if dry_run:
                 return {"would_send": len(rows), "dry_run": True,
-                        "message": f"{len(rows)} QSOs would be sent to World "
-                                   f"Radio League"
+                        "already": there,
+                        "message": f"{already}{len(rows)} QSOs would be sent "
+                                   f"to World Radio League"
                                    f"{' from ' + since if since else ''}. "
                                    f"Untick dry run to send them."}
             # One contact per request, 60 a minute: their API has no bulk
             # endpoint and says so - a whole log belongs in their own ADIF
             # import. Pacing here keeps an ordinary push inside the budget
             # instead of earning a 429 halfway through.
-            book, sent, dupes, failed = _wrl(), 0, 0, []
+            sent, dupes, failed = 0, 0, []
             total = len(rows)
             for i, rec in enumerate(rows):
                 if i:
@@ -1187,17 +1227,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                     out = book.push_record(rec, my_callsign=mine)
                     sent += 1
                     dupes += 1 if out.get("duplicate") else 0
+                    log.mark_held("wrl", [rec["id"]])
                 except SyncError as exc:
                     failed.append(f"{rec.get('call')}: {exc}")
                     # A rate limit will not clear by trying harder, and the
                     # rest of the log is still here for the next run.
                     if "rate limiting" in str(exc) or len(failed) > 20:
                         break
-            if new_only and not failed:
-                mark_sent("wrl")
-            return {"sent": sent, "failed": failed,
+            return {"sent": sent, "failed": failed, "already": there,
                     "message": f"{sent} sent"
-                               + (f", {dupes} already there" if dupes else "")
+                               + (f", {there} already there" if there else "")
+                               + (f", {dupes} stored again as duplicates"
+                                  if dupes else "")
                                + (f", {len(failed)} refused" if failed else "")}
 
         def test_wrl():
