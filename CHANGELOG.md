@@ -4,6 +4,17 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Fixed
+- **Test connection tested the saved key, not the one just typed.** The
+  logbook sync buttons in Settings - Test connection, Pull and Push for
+  LoTW, QRZ and World Radio League - ran from stored config, so a key
+  pasted and tested straight away was reported missing, and the only way
+  through was Save, reopen Settings, Test. They now save what is on
+  screen first, as the callsign lookup's Test always has, and the sheet
+  stays open with the result.
+
 ## [0.8.2]
 
 ### Fixed

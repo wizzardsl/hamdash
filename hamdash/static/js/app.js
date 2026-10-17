@@ -766,7 +766,7 @@
     try {
       const s = await HD.get('/api/log/sync');
       if (!s.lotw.configured) {
-        syncNote('lotw', 'Enter your LoTW username and password, then save.');
+        syncNote('lotw', 'Enter your LoTW username and password, then Test connection.');
       } else if (!s.lotw.can_push) {
         syncNote('lotw', 'Ready to pull. Push needs TQSL, which is not '
                  + 'installed here — pulling works either way.');
@@ -774,10 +774,10 @@
         syncNote('lotw', `Ready. TQSL found at ${s.lotw.tqsl}`, 'good');
       }
       syncNote('qrz', s.qrz.configured
-        ? 'Ready.' : 'Paste the logbook API key, then save.',
+        ? 'Ready.' : 'Paste the logbook API key, then Test connection.',
         s.qrz.configured ? 'good' : '');
       syncNote('wrl', s.wrl && s.wrl.configured
-        ? 'Ready.' : 'Paste the developer API key, then save.',
+        ? 'Ready.' : 'Paste the developer API key, then Test connection.',
         s.wrl && s.wrl.configured ? 'good' : '');
     } catch (e) { /* settings can open before the host is warm */ }
   }
@@ -790,6 +790,11 @@
     el.onclick = async () => {
       syncNote(service, `${VERBS[direction]}…`);
       try {
+        // Saved first, as the lookup's Test does. The job runs on the host
+        // from stored config, so a key pasted and tested straight away was
+        // tested as "no key" - and the only way to make Test work was
+        // Save, reopen Settings, then Test.
+        await saveSettings({ quiet: true });
         await HD.post(`/api/log/sync/${service}/${direction}`, {
           since: $('#s-sync-since').value.trim(),
           // Defaults to true server side too, so a caller that forgets this

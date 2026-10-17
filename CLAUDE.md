@@ -1170,6 +1170,15 @@ QRM or fading.
 
 ## Logbook sync
 
+- **A button in Settings acts on what is on screen, so it saves first.**
+  Every sync job runs on the host from stored config, and the sync
+  buttons used to post without saving - a key pasted and tested straight
+  away was tested as "no key", reported as "I have to save, reopen and
+  then Test". `wireSync` now does `await saveSettings({ quiet: true })`
+  before it starts the job, which is what the lookup's Test always did;
+  `quiet` keeps the sheet open so the result is still there to read.
+  Anything new in the sheet that starts a host-side job needs the same.
+  `tests/test_settings_test_buttons.py` holds it.
 - **Auto sync is exclusive.** Only one service may be automatic at a time;
   ticking one unticks the other. Both running would upload the same contacts
   twice and then re-upload each other's confirmations on the next round.
