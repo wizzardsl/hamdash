@@ -4,6 +4,15 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Changed
+- **The JS tests run as `node --test 'tests/js/*.test.js'`, on Node 24
+  in CI.** `node --test tests/js/` fails on Node 22 and later, which
+  read a directory argument as a module and report one failed test
+  (`Cannot find module`) rather than running any. The glob needs Node
+  21+, so CI moves off Node 20, which is end-of-life.
+
 ## [0.8.1]
 
 ### Fixed

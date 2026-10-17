@@ -14,7 +14,7 @@ python run.py                      # native window
 python run.py --browser            # http://127.0.0.1:8765, no webview
 python run.py --home ./dev         # throwaway config dir
 python -m unittest discover -s tests
-node --test tests/js/              # the board's layout model; needs Node
+node --test 'tests/js/*.test.js'   # the board's layout model; Node 21+
 
 pyinstaller hamdash.spec           # -> dist/hamdash/  (needs pip install pyinstaller)
 python tools/smoke_frozen.py       # starts that build and makes it run a card
@@ -388,8 +388,8 @@ were diffed before and after.
   half-typed contact), and that care is what made it additive.
 - **`tests/js/tile-body.test.js` is the first test of `grid.js`.** It drives
   the real `_paintBody` through a DOM shim small enough to read, by calling
-  it on a stand-in `this` rather than building a Board. Node is not
-  installed on this machine, so `node --test` only runs in CI; a browser
+  it on a stand-in `this` rather than building a Board. Node was not
+  installed on the Windows machine it was written on, so a browser
   harness built from the same shim was used to check the test fails against
   the pre-fix file and passes against the fixed one, which is the thing
   worth checking about any regression test.
@@ -2333,11 +2333,17 @@ arithmetic, because that is where the clock ticks.
   frame-rate measurements meaningless: the drag auto-scroll measured
   anywhere between 34 and 830 px/s on one board, which is why that rate is
   worked out from the clock rather than per frame.
-- **Node is not installed on this machine**, so `node --test` only runs in
-  CI. The pattern that works: build a page that loads the real file the way
-  the node test does (`new Function('window','document',src)`) with the
-  same shim and assertions, serve it from a dev server, and read the
-  result. Then run it against `git show HEAD:<file>` too - a regression
+- **Node is installed on the Linux machine (24.19, Ubuntu's `nodejs`) and
+  not on the Windows one.** Where it is, run `node --test
+  'tests/js/*.test.js'` - and check a new test against `git show
+  HEAD:<file>` the same way. **Not `node --test tests/js/`**: Node 22 and
+  later read a directory argument as a module to run and fail with
+  `Cannot find module`, which reports as one failed test rather than as
+  a wrong command. The quoted glob needs Node 21+, which is why CI pins
+  24. Where Node is absent, the pattern that works: build a page that
+  loads the real file the way the node test does
+  (`new Function('window','document',src)`) with the same shim and
+  assertions, serve it from a dev server, and read the result. Then run it against `git show HEAD:<file>` too - a regression
   test that passes against the old code is not testing anything.
 - **A map card re-frames its own map**, so its zoom level is not a stable
   signal; watch the call rather than the zoom.

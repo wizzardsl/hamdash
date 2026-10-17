@@ -1,6 +1,6 @@
 /* What a path will carry, from measured soundings.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * `prop.js` has no DOM and no network for the same reason `cw.py` has
  * none: a propagation number that is 30% out still looks exactly like a

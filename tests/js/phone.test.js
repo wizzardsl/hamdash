@@ -1,6 +1,6 @@
 /* The phone shell's ordering, under `node --test`.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * `order` and `split` are the only judgement in `mobile.js` - everything
  * else is painting - so they are pure and tested here, the same way

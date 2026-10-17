@@ -27,7 +27,7 @@ Cards that use audio default to a test tone for the same reason.
 
 ```bash
 python -m unittest discover -s tests
-node --test tests/js/             # the board's layout model; needs Node
+node --test 'tests/js/*.test.js'  # the board's layout model; Node 21+
 ```
 
 Both run in CI on Linux, macOS and Windows, and on Python 3.11 and 3.13. CI

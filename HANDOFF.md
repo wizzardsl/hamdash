@@ -43,6 +43,7 @@ python run.py                 # native window
 python run.py --browser       # http://127.0.0.1:8765, no webview
 python run.py --home ./dev    # throwaway config dir — use this on a new machine
 python -m unittest discover -s tests
+node --test 'tests/js/*.test.js'   # Node 21+
 ```
 
 Python 3.13 here. `requirements.txt` covers it, including the card-only deps
@@ -53,10 +54,12 @@ the hamdash binary, so a card's dependency is in every build.
 station, radios and credentials in it that will not exist there, and a scratch
 home keeps you from writing into something you have not got.
 
-**`node --test tests/js/` needs Node, which is NOT installed on this machine.**
-CLAUDE.md documents a browser-harness workaround written for that fact — if
-the new machine *has* Node, you can just run the JS tests directly and that
-workaround is no longer needed. Check before assuming.
+**Node is installed on the Linux machine** (24.19, Ubuntu's `nodejs`; Python
+3.14.8 in `.venv` there), so `node --test 'tests/js/*.test.js'` runs the JS
+tests directly — 146 pass. It is **not** installed on the Windows machine,
+which is what CLAUDE.md's browser-harness workaround was written for. The old
+`node --test tests/js/` fails on Node 22+ (a directory is read as a module),
+so use the glob form everywhere.
 
 ## What does not travel with the repo
 

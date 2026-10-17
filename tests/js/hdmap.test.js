@@ -1,6 +1,6 @@
 /* The map's wheel, under `node --test`.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * A map inside a scrollable dashboard has to tell two gestures apart. The
  * browser already does the hard part: a trackpad **pinch** arrives as a

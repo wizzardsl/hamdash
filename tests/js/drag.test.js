@@ -1,6 +1,6 @@
 /* Cancelling a drag, under `node --test`.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * Escape has to put a tile back exactly, and - the part worth guarding -
  * must leave nothing behind it: no dock, no pop-out, no save. Dropping is

@@ -1,6 +1,6 @@
 /* The board's layout model, under `node --test`.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * No npm, no framework, no DOM: layout.js is deliberately free of all three
  * so the part that can be wrong invisibly is the part that gets tested. A

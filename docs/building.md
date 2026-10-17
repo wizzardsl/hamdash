@@ -17,7 +17,7 @@ of `grid.js` so the part that can be wrong invisibly is the part that gets
 tested. `grid.js` keeps the pixels.
 
 ```bash
-node --test tests/js/
+node --test 'tests/js/*.test.js'
 ```
 
 No npm and no package.json: Node's own runner, and the thing being tested has

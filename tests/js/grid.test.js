@@ -1,7 +1,7 @@
 /* What the board does with tiles, under `node --test`: what a tile's body
  * contains, and where a drop docks.
  *
- *   node --test tests/js/
+ *   node --test 'tests/js/*.test.js'
  *
  * grid.js owns the pixels, so it needs a DOM. The shim below is deliberately
  * tiny: it implements only what `_paintBody` touches, and the test drives the
