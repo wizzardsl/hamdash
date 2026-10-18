@@ -4,7 +4,7 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
-## [Unreleased]
+## [0.8.3]
 
 ### Fixed
 - **Test connection tested the saved key, not the one just typed.** The
