@@ -21,6 +21,7 @@
   ],
   "subscribes": [
     "log.qso_added",
+    "log.qso_deleted",
     "radio.state",
     "log.sync"
   ]

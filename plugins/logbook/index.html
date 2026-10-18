@@ -504,6 +504,9 @@ $('#save').onclick = async () => {
     hidePeek();
     $('#err').textContent = '';
     refresh();
+    // Not left to the bus alone: this page's own contact should move its
+    // own Push count whether or not the event makes it back.
+    refreshSync();
   } catch (e) { $('#err').textContent = e.message; }
 };
 
@@ -869,6 +872,7 @@ async function refresh() {
       e.stopPropagation();           // deleting a row is not selecting it
       await HD.log.remove(r.id);
       refresh();
+      refreshSync();
     };
     tr.appendChild(acts);
     // Clicking a contact makes it the one every other card is looking at.
@@ -895,11 +899,18 @@ async function refresh() {
    new contact sorts onto the *first* page, so an operator who had paged
    back through the log got a refresh of page three and saw nothing
    change. A search is left alone - that is an explicit question, and
-   silently clearing it would answer a different one. */
+   silently clearing it would answer a different one.
+
+   The Push buttons are part of what changed. Their count was read at
+   boot and after a sync and at no other time, so a push left them at
+   "nothing to send", disabled - and the next contact logged could not
+   be pushed until the card was reloaded. Reported exactly that way. */
 HD.on('log.qso_added', () => {
   if (!$('#q').value.trim()) offset = 0;
   refresh();
+  refreshSync();
 });
+HD.on('log.qso_deleted', () => { refresh(); refreshSync(); });
 HD.on('radio.state', (s) => { rig = s; follow(); });
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }

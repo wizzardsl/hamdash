@@ -14,6 +14,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   through was Save, reopen Settings, Test. They now save what is on
   screen first, as the callsign lookup's Test always has, and the sheet
   stays open with the result.
+- **A contact logged after a push could not be pushed.** The logbook
+  card's `Push QRZ (n)` / `Push WRL (n)` counts were read when the card
+  loaded and when a sync finished, so a push left them at "nothing to
+  send", disabled, and the next contact stayed unpushable until the card
+  was reloaded. They now follow every contact logged, arriving or
+  deleted - including a delete made in another tile or browser, which
+  the card had not been listening for at all.
 
 ## [0.8.2]
 

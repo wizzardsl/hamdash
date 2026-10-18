@@ -1394,6 +1394,14 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   `payload["call"]` in `docs/cards.md` goes on working; a file gets
   totals as well. Changing it to bare counts would have broken the
   documented example.
+- **The Push counts are part of "the log changed".** The logbook card
+  read `Push QRZ (n)` at boot and after a sync only, so a push left the
+  button disabled at zero and the next contact could not be pushed
+  without reloading the card - reported as exactly that. Every log
+  change now calls `refreshSync()` beside `refresh()`, and the card
+  subscribes to `log.qso_deleted`, which it had never heard: the board
+  relays only what `subscribes` names, so a delete from another tile
+  simply did not arrive. `tests/test_logbook_push_count.py`.
 - **Refreshing is not showing.** The card refreshed *in place* on the
   event, and a new contact sorts onto the **first** page - so an
   operator who had paged back through the log got page three redrawn and
