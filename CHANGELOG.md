@@ -21,6 +21,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   was reloaded. They now follow every contact logged, arriving or
   deleted - including a delete made in another tile or browser, which
   the card had not been listening for at all.
+- **Contacts from WSJT-X had no name, QTH, country or state.** A contact
+  typed into the logbook card is filled in from the callsign lookup;
+  one logged by WSJT-X went in as WSJT-X sent it - call, grid, reports.
+  It showed as Canadian contacts with a blank province the lookup
+  plainly knew. WSJT-X contacts are now filled the same way, blanks only:
+  the grid that came over the air is kept, and a lookup that takes more
+  than five seconds is not waited for - the contact is logged without it.
 
 ## [0.8.2]
 

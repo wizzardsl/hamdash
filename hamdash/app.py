@@ -23,9 +23,9 @@ from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import dxcc
 from .services import grid as gridlib
 from .services.callsign import Lookup
-from .services.logbook import Logbook, qso_gap
+from .services.logbook import Logbook, fill_blanks, qso_gap
 from .services.qsl import (Lotw, QrzLogbook, Runner, SyncError, WrlLogbook,
-                           as_qso)
+                           adif_record, as_qso)
 from .services.radio import MODES
 from .services import audio as audiosvc
 
@@ -59,6 +59,10 @@ def _local_addresses() -> set[str]:
 # A proxied reply at or over this streams; under it is sent as bytes.
 # 64 kB covers every JSON reply and every ordinary card page.
 STREAM_CHUNK = 65536
+
+# How long a contact from WSJT-X waits for its callsign lookup before it
+# is logged without one. Usually answered from the cache in milliseconds.
+ENRICH_WAIT = 5.0
 
 HOP_BY_HOP = {"content-encoding", "content-length", "transfer-encoding",
               "connection", "keep-alive", "upgrade", "proxy-authenticate",
@@ -108,12 +112,38 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     # card's process exists only while a tile does - close the tile and
     # the socket goes with it, and the failure is a session of FT8 that
     # was never logged with nothing on screen saying so.
+    def _looked_up(call: str) -> dict:
+        """A lookup that gives up after `ENRICH_WAIT` rather than holding
+        the WSJT-X reader: with every provider slow that is tens of
+        seconds, and a contact is logged whether or not it is filled in.
+        A late answer still lands in the cache for the next one."""
+        box: dict = {}
+
+        def ask():
+            try:
+                box["info"] = look.lookup(call)
+            except Exception as exc:  # noqa: BLE001 - logging must not wait on it
+                LOG.info("wsjtx: lookup of %s failed: %s", call, exc)
+        t = threading.Thread(target=ask, daemon=True, name=f"lookup-{call}")
+        t.start()
+        t.join(ENRICH_WAIT)
+        return box.get("info") or {}
+
     def _wsjtx_logged(adif: str) -> dict:
+        # Filled from a lookup the way a contact typed into the logbook
+        # card is (`fill_blanks`): WSJT-X sends the call, the grid and
+        # the reports, so its contacts used to arrive with no name, QTH,
+        # country or state - reported as Canadian contacts with a blank
+        # province that the lookup plainly knew.
+        mine = cfg.data.get("station", {}).get("callsign", "")
+        recs = [fill_blanks(r, _looked_up(r.get("call", "")), mine)
+                for r in Logbook.parse_adif(adif)]
         # No bus event here: `Logbook.import_adif` publishes
         # `log.qso_added` itself, as every writer to the log does. Doing
         # it again from the caller was a second event per contact and
         # every logbook tile refreshing twice.
-        return log.import_adif(adif)
+        return log.import_adif("<EOH>\n" + "\n".join(
+            adif_record(r) for r in recs) + "\n" if recs else adif)
 
     wsjtx = wsjtxsvc.Listener(on_adif=_wsjtx_logged,
                               log=lambda line: LOG.warning(line))

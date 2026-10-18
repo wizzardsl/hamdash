@@ -1348,6 +1348,18 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   loud and self-healing - the message names the culprit and the retry
   takes the port the moment it goes - and trading that for a silent one
   is the wrong way round. Do not 'fix' it.
+- **A WSJT-X contact is filled from the lookup, like a typed one.** It
+  was not: the card's `prefill` copies name, QTH, country and state,
+  and WSJT-X's ADIF went straight to `import_adif` with none of them -
+  reported as Canadian contacts with a blank province, which made it
+  look like a "state" versus "province" question when every WSJT-X
+  contact was blank alike. `logbook.fill_blanks` is the rule for both
+  (`FROM_LOOKUP`): blanks only, never the grid - the locator sent over
+  the air is where they were, the lookup's is where the licence is - and
+  an `approximate` (prefix table) answer gives the country and nothing
+  else. The lookup runs on a side thread and the reader waits at most
+  `ENRICH_WAIT`: with every provider slow that is tens of seconds, and
+  a contact must be logged whether or not it gets a name.
 - **`listening` and `connected` are different questions**, and the
   status says both. The port can be open and perfectly correct while
   WSJT-X points elsewhere; from here that is indistinguishable from

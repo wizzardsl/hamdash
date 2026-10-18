@@ -400,6 +400,41 @@ class Logbook:
         return counts
 
 
+# What a callsign lookup may fill in on a contact, as (QSO field, lookup
+# field). The same four the logbook card's prefill copies, so a contact
+# from WSJT-X carries what a typed one does. Not the grid: the locator the
+# other station sent is what was actually worked, and a lookup's is where
+# the licence is registered.
+FROM_LOOKUP = (("name", "name"), ("qth", "qth"), ("country", "country"),
+               ("state", "state"))
+
+
+def fill_blanks(qso: dict, info: dict, my_callsign: str = "") -> dict:
+    """`qso` with its empty fields filled from a lookup answer.
+
+    Only blanks: anything the record arrived with is what the logging
+    program knew, and it wins. An `approximate` answer is the prefix table
+    guessing from the callsign - a country centre - so it may give the
+    country and nothing else; a name or a province from it would be made
+    up.
+    """
+    out = dict(qso)
+    if info and info.get("ok", True) is not False:
+        rough = bool(info.get("approximate"))
+        for field, key in FROM_LOOKUP:
+            if rough and field != "country":
+                continue
+            if not str(out.get(field) or "").strip() and info.get(key):
+                out[field] = str(info[key]).strip()
+    if not str(out.get("my_callsign") or "").strip():
+        # WSJT-X says who it was as STATION_CALLSIGN, which is not one of
+        # this log's fields; failing that, the station in Settings.
+        mine = out.get("station_callsign") or my_callsign
+        if mine:
+            out["my_callsign"] = str(mine).strip().upper()
+    return out
+
+
 def qso_gap(qso: dict, row: dict, minutes: int = DUPE_MINUTES) -> int | None:
     """How many minutes apart two records of the same contact are, or None
     if they are not the same contact.
