@@ -1248,6 +1248,13 @@ QRM or fading.
   matching uses: equal as shown, or one side giving only the family -
   the copies already pushed as bare MFSK are the same contacts, and a
   strict comparison would pull every one back in as a duplicate.
+  **The rig's mode name is not ADIF's either.** The logbook card fills
+  the mode from the radio, which says USB/LSB; ADIF has SSB + USB.
+  `adif_mode` puts it right in `Logbook.add`, so it holds for every
+  writer (card, API, imports from other loggers) and only where no
+  submode came with the record. It runs *after* the RST default, which
+  is keyed on the shown mode via `PHONE` - normalising first, with SSB
+  missing from the old list, gave phone contacts a 599.
 - **Dedupe is the whole game on pull.** `Logbook.find_match` is callsign +
   date + band + mode + start time within `DUPE_MINUTES` (30, which is what
   LoTW itself uses). `import_adif` merges onto a match instead of inserting,

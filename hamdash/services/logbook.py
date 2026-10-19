@@ -104,8 +104,10 @@ class Logbook:
             row["freq"] = f"{float(qso['freq_hz']) / 1e6:.6f}"
         if not row["band"] and row["freq"]:
             row["band"] = band_for(float(row["freq"]))
-        row["rst_sent"] = row["rst_sent"] or ("59" if row["mode"] in ("USB", "LSB", "FM", "AM") else "599")
+        row["rst_sent"] = row["rst_sent"] or (
+            "59" if shown_mode(row) in PHONE else "599")
         row["rst_rcvd"] = row["rst_rcvd"] or row["rst_sent"]
+        row.update(adif_mode(row))
 
         with self._lock, self._conn() as db:
             cur = db.execute(
@@ -438,6 +440,29 @@ def fill_blanks(qso: dict, info: dict, my_callsign: str = "") -> dict:
         if mine:
             out["my_callsign"] = str(mine).strip().upper()
     return out
+
+
+# Voice modes, for the signal report a contact defaults to: 59, not 599.
+PHONE = ("SSB", "USB", "LSB", "AM", "FM")
+
+# A radio's mode name that ADIF spells as family and member. The logbook
+# card fills its mode from the rig, and a rig says USB - so contacts were
+# logged and pushed as MODE=USB, which ADIF does not have: it is SSB with
+# a USB submode, and that is the form LoTW reads.
+_AS_SUBMODE = {"USB": "SSB", "LSB": "SSB"}
+
+
+def adif_mode(qso: dict) -> dict:
+    """`mode` and `submode` as ADIF spells them.
+
+    Only where the record gave no submode of its own: one that arrived
+    as a proper pair is already right and is left exactly as it came.
+    """
+    mode = str(qso.get("mode") or "").strip().upper()
+    sub = str(qso.get("submode") or "").strip().upper()
+    if mode in _AS_SUBMODE and not sub:
+        return {"mode": _AS_SUBMODE[mode], "submode": mode}
+    return {"mode": mode, "submode": sub}
 
 
 def shown_mode(qso: dict) -> str:

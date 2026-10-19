@@ -111,6 +111,70 @@ class TestTheSameContact(unittest.TestCase):
         self.assertFalse(same_mode({"mode": "CW"}, {"mode": ""}))
 
 
+class TestSidebandIsSsb(unittest.TestCase):
+    """The radio says USB; ADIF says SSB with a USB submode.
+
+    The logbook card fills its mode from the rig, so seven contacts were
+    logged - and pushed to QRZ and WRL - as MODE=USB or LSB, which ADIF
+    does not have and LoTW reads as nothing it knows.
+    """
+
+    def test_a_contact_logged_as_usb_is_stored_as_the_adif_pair(self):
+        for given, sub in (("USB", "USB"), ("LSB", "LSB"), ("usb", "USB")):
+            row = a_log().add({"call": "W7G", "band": "15m", "mode": given})
+            self.assertEqual((row["mode"], row["submode"]), ("SSB", sub), given)
+
+    def test_it_still_reads_as_usb(self):
+        row = a_log().add({"call": "W7G", "band": "15m", "mode": "USB"})
+        self.assertEqual(shown_mode(row), "USB")
+
+    def test_it_goes_out_as_the_pair(self):
+        log = a_log()
+        log.add({"call": "W7G", "band": "15m", "mode": "USB"})
+        rec = log.export_adif_record(log.recent(1)[0])
+        self.assertIn("<MODE:3>SSB", rec)
+        self.assertIn("<SUBMODE:3>USB", rec)
+
+    def test_an_import_from_another_logger_is_put_right_too(self):
+        log = a_log()
+        log.import_adif("<EOH>\n<CALL:3>W7G <QSO_DATE:8>20261018 "
+                        "<TIME_ON:4>1927 <BAND:3>15m <MODE:3>USB <EOR>\n")
+        row = log.recent(1)[0]
+        self.assertEqual((row["mode"], row["submode"]), ("SSB", "USB"))
+
+    def test_a_pair_that_arrived_right_is_left_alone(self):
+        row = a_log().add({"call": "W7B", "band": "20m", "mode": "MFSK",
+                           "submode": "FT4"})
+        self.assertEqual((row["mode"], row["submode"]), ("MFSK", "FT4"))
+        row = a_log().add({"call": "K1", "band": "20m", "mode": "CW"})
+        self.assertEqual((row["mode"], row["submode"] or ""), ("CW", ""))
+
+    def test_phone_defaults_to_a_two_figure_report(self):
+        """SSB was not on the phone list, so a contact logged as SSB got
+        599 - a CW report - by default."""
+        for mode in ("SSB", "USB", "LSB", "AM", "FM"):
+            self.assertEqual(a_log().add({"call": "K1", "band": "20m",
+                                          "mode": mode})["rst_sent"], "59", mode)
+        self.assertEqual(a_log().add({"call": "K1", "band": "20m",
+                                      "mode": "CW"})["rst_sent"], "599")
+
+    def test_the_copies_already_pushed_as_usb_are_the_same_contacts(self):
+        """QRZ and WRL hold these as MODE=USB. A pull must match them."""
+        log = a_log()
+        log.import_adif("<EOH>\n<CALL:3>W7G <QSO_DATE:8>20261018 "
+                        "<TIME_ON:4>1927 <BAND:3>15m <MODE:3>USB <EOR>\n")
+        for back in ("<MODE:3>USB", "<MODE:3>SSB",
+                     "<MODE:3>SSB <SUBMODE:3>USB"):
+            res = log.import_adif("<EOH>\n<CALL:3>W7G <QSO_DATE:8>20261018 "
+                                  f"<TIME_ON:4>1927 <BAND:3>15m {back} <EOR>\n")
+            self.assertEqual(res["added"], 0, back)
+        self.assertEqual(log.stats()["total"], 1)
+
+    def test_the_other_sideband_is_a_different_contact(self):
+        self.assertFalse(same_mode({"mode": "SSB", "submode": "LSB"},
+                                   {"mode": "SSB", "submode": "USB"}))
+
+
 class TestNoDuplicateOnThePull(unittest.TestCase):
     """The point of matching on the shown mode: a pull must find the FT4
     contact, however the far end spells it, rather than add it again."""

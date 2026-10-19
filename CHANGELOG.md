@@ -15,6 +15,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   mode, and sent to World Radio League as FT4. A copy already pushed as
   bare MFSK is recognised as the same contact, so a pull does not bring
   it back as a duplicate.
+- **Sideband contacts were logged as `MODE=USB` or `LSB`.** The logbook
+  card takes its mode from the radio, which says USB; ADIF has no such
+  mode - it is SSB with a USB submode, which is what LoTW reads. Every
+  contact written to the log is put in that form now, whoever writes it,
+  and still reads as USB or LSB in the logbook. Copies already on QRZ or
+  World Radio League as USB are recognised as the same contacts.
+- **A contact logged as SSB defaulted to a 599 report.** SSB was missing
+  from the list of voice modes that default to 59.
 
 ## [0.9.0]
 
