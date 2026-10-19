@@ -49,6 +49,11 @@
   td { padding: 2px 6px; border-bottom: 1px solid var(--rule); vertical-align: top; }
   tr:hover td { background: var(--panel-2); }
   .mono { font-family: var(--mono); }
+  /* A mode read from a cluster spotter's comment rather than from a mode
+     field. Said in the cell itself - italic and muted, with the reason on
+     hover - because a mode that looks exactly like a known one is the
+     wrong answer that looks like a right one. */
+  td.guessed { font-style: italic; color: var(--muted); }
 
   .call { font-family: var(--mono); font-weight: 600; }
   .freq { font-family: var(--mono); }
@@ -196,9 +201,10 @@ function visible() {
   return data.spots.filter((s) => {
     if (off.has(s.kind)) return false;
     if (filters.band && s.band !== filters.band) return false;
-    // A cluster spot carries no mode at all - the network has no such
-    // field - so filtering it out on mode would hide every one of them the
-    // moment a mode was chosen, which reads as the cluster being down.
+    // A cluster spot carries no mode field. One whose comment names a mode
+    // outright has it (`mode_from: 'comment'`) and filters like any other;
+    // one that does not is kept, because hiding every unknown the moment a
+    // mode was chosen reads as the cluster being down.
     if (filters.mode && s.mode && s.mode !== filters.mode) return false;
     if (filters.mode && !s.mode && s.kind !== 'dx') return false;
     if (!q) return true;
@@ -271,11 +277,14 @@ function paintSpots() {
       <td class="mono dim">${hhmm(s.at)}</td>
       <td class="call">${esc(s.call)}</td>
       <td>${s.hz ? (tune
-          ? `<button class="freq" data-tune="${s.hz}" data-mode="${esc(s.mode)}"
+          ? `<button class="freq" data-tune="${s.hz}" data-mode="${
+                     s.mode_from ? '' : esc(s.mode)}"
                      title="Tune the radio here">${(s.hz / 1e6).toFixed(3)}</button>`
           : `<span class="freq">${(s.hz / 1e6).toFixed(3)}</span>`) : ''}</td>
       <td class="mono dim">${esc(s.band)}</td>
-      <td class="mono">${esc(s.mode)}</td>
+      <td class="mono${s.mode_from ? ' guessed' : ''}"${s.mode_from
+          ? ` title="From the spotter's comment - the cluster has no mode field"`
+          : ''}>${esc(s.mode)}</td>
       <td>${HD.flag(s.iso, s.country)}${esc(s.ref ? `${s.ref} ` : '')}<span
             class="ref">${esc(where(s))}</span></td>
       <td class="mono dim">${esc(s.spotter)}</td>

@@ -36,6 +36,8 @@ from collections import deque
 
 from hamdash.services.bands import for_hz as band_for
 
+from sources import mode_in_comment
+
 # RBN's own, and a cluster is whatever the operator points us at.
 RBN_HOST = "telnet.reversebeacon.net"
 RBN_CW_PORT = 7000             # CW, RTTY and the other skimmed modes
@@ -98,8 +100,16 @@ def parse(line: str, kind: str = "rbn", now: float | None = None) -> dict | None
     except (TypeError, ValueError):
         return None
     info = m.group("info") or ""
-    first = info.split()[0].upper() if info.split() else ""
-    mode = first if first in MODES else ""
+    if kind == "rbn":
+        # A skimmer decoded the signal, so its mode is a measurement and is
+        # the first word of the line.
+        first = info.split()[0].upper() if info.split() else ""
+        mode, mode_from = (first if first in MODES else ""), ""
+    else:
+        # A DX cluster line is a person's comment: the same rule, and the
+        # same mark, as a cluster spot from DX Summit (`mode_in_comment`).
+        mode = mode_in_comment(info)
+        mode_from = "comment" if mode else ""
 
     snr = SNR.search(info)
     wpm = WPM.search(info)
@@ -110,6 +120,7 @@ def parse(line: str, kind: str = "rbn", now: float | None = None) -> dict | None
         "hz": hz,
         "band": band_for(hz),
         "mode": mode,
+        "mode_from": mode_from,
         "at": _when(m.group("utc"), now),
         "ref": "",
         "place": "",

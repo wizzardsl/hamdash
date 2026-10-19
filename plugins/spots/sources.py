@@ -24,6 +24,7 @@ the future and sorts the list backwards.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import requests
 
@@ -93,8 +94,9 @@ def _spot(**kw) -> dict:
     """
     hz = int(kw.get("hz") or 0)
     row = {"kind": "", "call": "", "hz": hz, "band": band_for(hz), "mode": "",
-           "at": 0.0, "ref": "", "place": "", "where": "", "grid": "",
-           "lat": None, "lon": None, "spotter": "", "comment": "", "url": ""}
+           "mode_from": "", "at": 0.0, "ref": "", "place": "", "where": "",
+           "grid": "", "lat": None, "lon": None, "spotter": "", "comment": "",
+           "url": ""}
     row.update({k: v for k, v in kw.items() if k in row})
     row["call"] = str(row["call"] or "").upper().strip()
     row["mode"] = _mode(row["mode"])
@@ -112,6 +114,40 @@ def _mode(mode: str) -> str:
     """
     name = str(mode or "").upper().strip()
     return {"PHONE": "SSB", "DIGI": "DATA", "DIGITAL": "DATA"}.get(name, name)
+
+
+# Modes a spotter writes out in a cluster comment, as whole words. Matched
+# without regard to case, except AM and FM, which are also English ("am")
+# and so count only in capitals. Bare "PSK" is left out: "via PSK" is
+# usually PSK Reporter, not PSK31.
+_COMMENT_MODES = re.compile(
+    r"(?<![\w/])(?:(?i:FT8|FT4|FST4|CW|SSB|USB|LSB|RTTY|PSK31|PSK63|JT65|JT9"
+    r"|MSK144|Q65|JS8|SSTV|OLIVIA)|AM|FM)(?![\w/])")
+_COMMENT_FOLD = {"USB": "SSB", "LSB": "SSB"}
+# A mode right after one of these is a request, not a report: "PSE SSB" is
+# a spotter asking a CW station to go to sideband. Found on the live feed -
+# H49A on 12 m, shown as SSB on the strength of somebody hoping it was.
+_ASKING = {"PSE", "PLS", "PLZ", "PLEASE", "QSY", "TRY"}
+
+
+def mode_in_comment(comment) -> str:
+    """The mode a cluster comment names outright, or "".
+
+    The cluster has no mode field, so a spot from it carried none and
+    every one of them read as unknown - though "FT8 -14 dB 1028 Hz" is the
+    spotter saying exactly what they heard, no less than POTA's own mode
+    field, which is also typed by the spotter. Only a comment naming one
+    mode counts: "CW or SSB" is a question, not an answer, and gets none;
+    and a mode asked for ("PSE SSB") is not the mode being heard.
+    """
+    text = str(comment or "")
+    found = set()
+    for m in _COMMENT_MODES.finditer(text):
+        before = text[:m.start()].split()
+        if before and before[-1].upper().strip(".,:!") in _ASKING:
+            continue
+        found.add(_COMMENT_FOLD.get(m.group(0).upper(), m.group(0).upper()))
+    return found.pop() if len(found) == 1 else ""
 
 
 # --------------------------------------------------------------- POTA
@@ -183,18 +219,21 @@ def dx(raw=None, limit: int = 60) -> list[dict]:
         call = r.get("dx_call")
         if not call:
             continue
+        # The cluster has no mode field. A comment that names one outright
+        # supplies it, marked `mode_from: "comment"` so the card can say
+        # where it came from and will not hand it to the radio; anything
+        # vaguer leaves the mode empty rather than invented.
+        mode = mode_in_comment(r.get("info"))
         out.append(_spot(
             kind="dx",
             call=call,
             hz=_hz(r.get("frequency"), 1_000),          # kHz, as a float
+            mode=mode,
+            mode_from="comment" if mode else "",
             at=_when(r.get("time")),
             place=r.get("dx_country") or "",
             lat=r.get("dx_latitude"), lon=r.get("dx_longitude"),
             spotter=r.get("de_call"),
-            # The cluster has no mode field. What a spotter types in the
-            # comment is a guess, so it is shown as a comment and the mode
-            # is left empty rather than invented - an invented one would be
-            # filtered on as though it were known.
             comment=r.get("info"),
         ))
     return out

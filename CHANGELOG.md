@@ -17,6 +17,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
   repeated, and anything published while it was reconnecting is delivered
   rather than lost. A new page still starts from the current state.
 
+### Changed
+- **Cluster spots show a mode when the spotter's comment names one.** The
+  DX cluster has no mode field, so every cluster spot used to show none,
+  even with "FT8 -14 dB" in its comment. A comment naming exactly one mode
+  now supplies it, shown in italics with a tooltip saying it came from the
+  comment, and the mode filter uses it. Two modes, or a request such as
+  "PSE SSB", give none. Clicking such a spot's frequency tunes without
+  changing the radio's mode. The telnet cluster follows the same rule
+  instead of taking the comment's first word unmarked.
+
 ## [0.8.3]
 
 ### Fixed

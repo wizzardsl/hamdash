@@ -218,8 +218,17 @@ the band simply reads *out of band*, which is worth seeing before you log a
 contact from there.
 
 **Clicking a frequency tunes the radio** (and sets the mode when the spot
-carries one; cluster spots do not). It is the frequency rather than the whole
-row on purpose, so a mis-click cannot move the rig.
+carries one). It is the frequency rather than the whole row on purpose, so a
+mis-click cannot move the rig.
+
+**A cluster spot's mode comes from its comment, and says so.** The DX cluster
+has no mode field, so when the spotter's comment names one outright — "FT8
+-14 dB", "CW 25 wpm", "LSB" — that becomes the mode, shown in *italics* with
+a tooltip saying where it came from, and the mode filter uses it. A comment
+naming two modes, or asking for one ("PSE SSB"), gives none, and a spot with
+no mode is kept whatever mode you filter on. Clicking the frequency of such a
+spot tunes but does not change the radio's mode: a comment is good enough to
+filter on, not to switch the rig.
 
 The **Contests** tab leads with what is on *now* and how long is left, because
 a contest that started yesterday is exactly the one that explains the band and

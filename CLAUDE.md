@@ -1975,10 +1975,22 @@ the live service.
   paint with `currentColor`, so the row's colour still carries and the
   filter chip and the column keep showing the same mark; the chip is the
   legend, so anything added to one has to be added to the other.
-- **The cluster has no mode field**, so none is invented from the comment -
-  an invented one would then be filtered on as though it were known. The page
-  therefore keeps cluster spots when a mode filter is set, or choosing a mode
-  would empty that source entirely and read as the cluster being down.
+- **The cluster has no mode field, so a comment that names one outright
+  supplies it - marked.** It used to supply nothing, on the reasoning that
+  a comment is a guess; but every cluster spot then read as mode unknown
+  (42 of 42 when it was reported) while "FT8 -14 dB 1028 Hz" sat in the
+  comment, and POTA's mode field is typed by a spotter too.
+  `sources.mode_in_comment` takes exactly one mode named as a whole word;
+  two modes ("CW or SSB") or a request ("PSE SSB" - found live, H49A on
+  12 m, which was not on SSB) give none, and AM/FM count only in capitals
+  because they are English. The row carries `mode_from: "comment"`: shown
+  italic and muted with the reason on hover, filtered on like any mode,
+  and **not** sent to the radio on a click - good enough to filter on, not
+  to switch the rig. RBN's mode is a skimmer's measurement and is never
+  marked; the telnet cluster used to take the first word of a comment as
+  the mode, unmarked, and now follows the same rule as DX Summit. A spot
+  with no mode is still kept under a mode filter, or choosing a mode would
+  empty the cluster and read as it being down.
 - **SOTA's spots endpoint moved and the old one lies in place.**
   `/api/spots/{n}/all` answers 200 with a single row whose every field says
   DEPRECATED; the live one is `api2.sota.org.uk/api/spots/{n}/all/all`, with
