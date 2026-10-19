@@ -1237,6 +1237,17 @@ QRM or fading.
   Don't "simplify" this into an HTTP POST; there isn't one.
 - LoTW answers a bad password with an HTML page and a 200, so the pull checks
   the body looks like ADIF rather than trusting the status code.
+- **ADIF names some modes by family and member, and `submode` is a
+  field.** FT4 is `MODE=MFSK` + `SUBMODE=FT4` - so are FST4, Q65 and JS8,
+  PSK31 is `PSK` + `PSK31` - and WSJT-X sends exactly that. With no
+  `submode` in `FIELDS` the member was dropped on import and FT4 was
+  logged, pushed and shown as MFSK. Stored and exported as the pair,
+  because that is what LoTW and QRZ expect; shown as one name
+  (`logbook.shown_mode`) because that is what an operator reads, and
+  sent to WRL that way because WRL takes one name. `same_mode` is what
+  matching uses: equal as shown, or one side giving only the family -
+  the copies already pushed as bare MFSK are the same contacts, and a
+  strict comparison would pull every one back in as a duplicate.
 - **Dedupe is the whole game on pull.** `Logbook.find_match` is callsign +
   date + band + mode + start time within `DUPE_MINUTES` (30, which is what
   LoTW itself uses). `import_adif` merges onto a match instead of inserting,

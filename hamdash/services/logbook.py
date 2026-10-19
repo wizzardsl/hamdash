@@ -14,7 +14,11 @@ from datetime import datetime, timezone
 from ..bus import BUS
 from .bands import for_mhz as band_for
 
-FIELDS = ["call", "qso_date", "time_on", "time_off", "band", "mode", "freq",
+FIELDS = ["call", "qso_date", "time_on", "time_off", "band", "mode",
+          # ADIF names some modes by family and member: FT4 is MODE=MFSK,
+          # SUBMODE=FT4, and that is exactly what WSJT-X sends. Without
+          # this field the FT4 was dropped and the contact logged as MFSK.
+          "submode", "freq",
           "rst_sent", "rst_rcvd", "gridsquare", "name", "qth", "country",
           "comment", "tx_pwr", "my_callsign", "my_gridsquare",
           # Confirmation state, ADIF-standard names so it survives a round
@@ -289,7 +293,8 @@ class Logbook:
             by_band = {r[0] or "?": r[1] for r in db.execute(
                 "SELECT band, COUNT(*) FROM qso GROUP BY band ORDER BY 2 DESC")}
             by_mode = {r[0] or "?": r[1] for r in db.execute(
-                "SELECT mode, COUNT(*) FROM qso GROUP BY mode ORDER BY 2 DESC")}
+                "SELECT COALESCE(NULLIF(submode, ''), mode) AS m, COUNT(*) "
+                "FROM qso GROUP BY m ORDER BY 2 DESC")}
             today = db.execute("SELECT COUNT(*) FROM qso WHERE qso_date=?",
                                (datetime.now(timezone.utc).strftime("%Y%m%d"),)).fetchone()[0]
         return {"total": total, "unique_calls": uniq, "today": today,
@@ -435,6 +440,39 @@ def fill_blanks(qso: dict, info: dict, my_callsign: str = "") -> dict:
     return out
 
 
+def shown_mode(qso: dict) -> str:
+    """The mode as an operator names it: the submode where there is one.
+
+    ADIF's MFSK + FT4 is "FT4" to anybody reading a log, and to World
+    Radio League, which takes one mode name rather than ADIF's pair.
+    """
+    sub = str(qso.get("submode") or "").strip().upper()
+    return sub or str(qso.get("mode") or "").strip().upper()
+
+
+def same_mode(a: dict, b: dict) -> bool:
+    """Whether two records of a contact agree about its mode.
+
+    Equal as shown (FT4 typed, FT4 from WRL, MFSK + FT4 from WSJT-X), or
+    one side giving only the family the other's submode belongs to: a
+    copy pushed as bare MFSK - which every FT4 contact was until the
+    submode was kept - is still the same FT4 contact, not a new one.
+    `a` is the incoming record: one with no mode matches anything, and a
+    stored contact with no mode matches only that - as it always has.
+    """
+    ma = str(a.get("mode") or "").strip().upper()
+    mb = str(b.get("mode") or "").strip().upper()
+    if not ma:
+        return True
+    if not mb:
+        return False
+    if shown_mode(a) == shown_mode(b):
+        return True
+    sa = str(a.get("submode") or "").strip()
+    sb = str(b.get("submode") or "").strip()
+    return ma == mb and not (sa and sb)
+
+
 def qso_gap(qso: dict, row: dict, minutes: int = DUPE_MINUTES) -> int | None:
     """How many minutes apart two records of the same contact are, or None
     if they are not the same contact.
@@ -451,10 +489,9 @@ def qso_gap(qso: dict, row: dict, minutes: int = DUPE_MINUTES) -> int | None:
             or str(row.get("qso_date") or "").strip() != date):
         return None
     band = str(qso.get("band") or "").strip().lower()
-    mode = str(qso.get("mode") or "").strip().upper()
     if band and (row.get("band") or "").lower() != band:
         return None
-    if mode and (row.get("mode") or "").upper() != mode:
+    if not same_mode(qso, row):
         return None
     want = _minutes(qso.get("time_on"))
     if want is None:

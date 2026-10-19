@@ -4,6 +4,18 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Fixed
+- **FT4 contacts from WSJT-X were logged as MFSK.** ADIF has no FT4 mode:
+  it is `MODE=MFSK` with `SUBMODE=FT4`, which is what WSJT-X sends, and
+  the logbook had no submode field, so the FT4 was dropped. The submode
+  is kept now - for FST4, Q65, JS8, PSK31 and the rest of ADIF's
+  family-and-member modes too - written back out as ADIF, shown as the
+  mode, and sent to World Radio League as FT4. A copy already pushed as
+  bare MFSK is recognised as the same contact, so a pull does not bring
+  it back as a duplicate.
+
 ## [0.9.0]
 
 ### Fixed

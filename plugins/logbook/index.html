@@ -436,7 +436,7 @@ function listSheet(title, items) {
     const li = document.createElement('li');
     const when = document.createElement('span');
     when.className = 'when';
-    when.textContent = [whenOf(q), q.band, q.mode,
+    when.textContent = [whenOf(q), q.band, q.submode || q.mode,
                         q.freq ? `${Number(q.freq).toFixed(3)} MHz` : '',
                         q.rst_sent ? `${q.rst_sent}/${q.rst_rcvd}` : '']
       .filter(Boolean).join('  ');
@@ -712,7 +712,8 @@ const COLUMNS = [
   { key: 'band', label: 'Band', off: true,
     fill: (td, r) => { td.textContent = r.band || ''; } },
   { key: 'mode', label: 'Mode',
-    fill: (td, r) => { td.textContent = r.mode || ''; } },
+    // ADIF's MFSK + FT4 is FT4 to anybody reading a log.
+    fill: (td, r) => { td.textContent = r.submode || r.mode || ''; } },
   { key: 'grid', label: 'Grid', mono: true, off: true,
     fill: (td, r) => { td.textContent = r.gridsquare || ''; } },
   { key: 'dist', label: 'Distance', mono: true, num: true, fill: (td, r) => {

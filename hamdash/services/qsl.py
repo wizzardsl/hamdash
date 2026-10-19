@@ -37,6 +37,7 @@ from pathlib import Path
 import requests
 
 from .bands import BANDS, for_mhz as band_for
+from .logbook import shown_mode
 
 # QRZ requires an identifying User-Agent and names python-requests as the
 # kind it rate limits.
@@ -500,7 +501,9 @@ def as_contact(row: dict, my_callsign: str = "", program_id: str = "hamdash") ->
         "call": call,
         "timestamp": f"{date[:4]}-{date[4:6]}-{date[6:8]}"
                      f"T{tm[:2]}:{tm[2:4]}:{tm[4:6]}Z",
-        "mode": str(row.get("mode") or "SSB").strip().upper(),
+        # One name, not ADIF's pair: MFSK + FT4 is sent as FT4. Sending
+        # the family put an FT4 contact on WRL as "MFSK".
+        "mode": shown_mode(row) or "SSB",
     }
     if freq:
         out["freq"] = float(freq)
