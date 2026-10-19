@@ -86,7 +86,9 @@ class TestTheClusterSpot(unittest.TestCase):
         self.assertEqual(got["comment"], "FT8 -14 dB 1028 Hz")
 
     def test_no_named_mode_stays_empty_and_unmarked(self):
-        got = sources.dx([a_dx("up 2")])[0]
+        """Off FT8's and FT4's spots, so the frequency cannot supply one
+        either (5.357, the fixture's own, is 60 m FT8)."""
+        got = sources.dx([dict(a_dx("up 2"), frequency=24896.0)])[0]
         self.assertEqual((got["mode"], got["mode_from"]), ("", ""))
 
     def test_other_sources_are_never_marked(self):
@@ -96,6 +98,74 @@ class TestTheClusterSpot(unittest.TestCase):
                               "spotTime": "2026-10-10T23:40:00",
                               "comments": "FT8"}])[0]
         self.assertEqual((pota["mode"], pota["mode_from"]), ("CW", ""))
+
+
+class TestARequestFurtherBack(unittest.TestCase):
+    def test_a_band_between_the_request_and_the_mode(self):
+        """Off the live feed: H49A on 18.100, "PSE 18 SSB good time" - the
+        one spot of 500 where the frequency rule and the comment disagreed,
+        and it was the comment rule that was wrong."""
+        self.assertEqual(sources.mode_in_comment("PSE 18 SSB good time"), "")
+
+    def test_a_request_long_before_the_mode_does_not_reach_it(self):
+        self.assertEqual(
+            sources.mode_in_comment("pse QSL via bureau thanks, FT8"), "FT8")
+
+
+class TestModeByFrequency(unittest.TestCase):
+    """FT8 and FT4 by where they are - the last resort, marked as such."""
+
+    def test_the_watering_holes(self):
+        for khz, want in ((14074.0, "FT8"), (7074.0, "FT8"), (3573.0, "FT8"),
+                          (10136.0, "FT8"), (18100.0, "FT8"), (21074.0, "FT8"),
+                          (28074.0, "FT8"), (50313.0, "FT8"), (144174.0, "FT8"),
+                          (14080.0, "FT4"), (7047.5, "FT4"), (21140.0, "FT4")):
+            self.assertEqual(sources.mode_by_frequency(khz * 1000), want, khz)
+
+    def test_the_signal_sits_up_to_three_khz_above_the_dial(self):
+        self.assertEqual(sources.mode_by_frequency(14_076_900), "FT8")
+        self.assertEqual(sources.mode_by_frequency(14_077_100), "")
+        self.assertEqual(sources.mode_by_frequency(14_073_900), "")
+
+    def test_off_the_usual_spot_is_left_blank_not_misread(self):
+        """S9R ran FT8 on 10.133 and H49A on 18.095 - real, and outside."""
+        self.assertEqual(sources.mode_by_frequency(10_133_000), "")
+        self.assertEqual(sources.mode_by_frequency(18_095_500), "")
+
+    def test_cw_and_phone_segments_are_not_guessed(self):
+        for hz in (14_025_000, 7_030_000, 14_250_000, 3_790_000):
+            self.assertEqual(sources.mode_by_frequency(hz), "", hz)
+
+    def test_nothing_is_nothing(self):
+        for hz in (None, "", "abc", 0):
+            self.assertEqual(sources.mode_by_frequency(hz), "", hz)
+
+
+class TestWhichWins(unittest.TestCase):
+    def test_a_blank_cluster_spot_on_ft8_gets_it_from_the_frequency(self):
+        got = sources.dx([dict(a_dx(None), frequency=14074.0)])[0]
+        self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "frequency"))
+
+    def test_the_comment_beats_the_frequency(self):
+        got = sources.dx([dict(a_dx("SSB 59"), frequency=14074.0)])[0]
+        self.assertEqual((got["mode"], got["mode_from"]), ("SSB", "comment"))
+
+    def test_the_source_beats_both(self):
+        """POTA has a mode field; it is used, unmarked, wherever it is."""
+        got = sources.pota([{"activator": "W1AW", "frequency": "14074",
+                             "mode": "CW", "reference": "US-1",
+                             "spotTime": "2026-10-10T23:40:00"}])[0]
+        self.assertEqual((got["mode"], got["mode_from"]), ("CW", ""))
+
+    def test_a_source_that_gave_none_falls_back_like_the_cluster(self):
+        got = sources.pota([{"activator": "W1AW", "frequency": "14074",
+                             "mode": "", "reference": "US-1",
+                             "spotTime": "2026-10-10T23:40:00"}])[0]
+        self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "frequency"))
+
+    def test_the_request_falls_through_to_the_frequency(self):
+        got = sources.dx([dict(a_dx("PSE 18 SSB good time"), frequency=18100.0)])[0]
+        self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "frequency"))
 
 
 class TestTheTelnetFeeds(unittest.TestCase):
@@ -120,6 +190,12 @@ class TestTheTelnetFeeds(unittest.TestCase):
             kind="cluster")
         self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "comment"))
 
+    def test_a_cluster_line_on_ft8_with_no_comment_mode(self):
+        got = self.telnet.parse(
+            "DX de OK1ABC:    14074.0  JA1XYZ       tnx QSO                         2140Z",
+            kind="cluster")
+        self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "frequency"))
+
     def test_a_cluster_line_naming_no_mode_has_none(self):
         got = self.telnet.parse(
             "DX de IK0PHY:    24896.0  H49A         up                              2140Z",
@@ -132,6 +208,12 @@ class TestThePage(unittest.TestCase):
         self.assertRegex(PAGE, r"s\.mode_from \? ' guessed' : ''")
         self.assertRegex(PAGE, r"td\.guessed\s*\{[^}]*font-style:\s*italic")
         self.assertIn("From the spotter's comment", PAGE)
+
+    def test_each_kind_of_guess_says_which_it_is(self):
+        m = re.search(r"const GUESSED = \{(.*?)\};", PAGE, re.S)
+        self.assertIsNotNone(m)
+        self.assertRegex(m.group(1), r"comment:\s*\"From the spotter's comment")
+        self.assertRegex(m.group(1), r"frequency:\s*\"From the frequency")
 
     def test_a_comment_mode_is_not_sent_to_the_radio(self):
         """Clicking the frequency sets the mode first, then tunes. A mode

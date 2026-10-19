@@ -177,6 +177,12 @@ let data = { spots: [], sources: [], now: 0 };
 let cons = { on: [], soon: [], source: {} };
 const off = new Set();          // sources switched off on this tile
 let filters = { band: '', mode: '', q: '' };
+// Where a mode came from when the source itself did not say. Both are shown
+// italic and muted, filtered on, and never sent to the radio on a click.
+const GUESSED = {
+  comment: "From the spotter's comment - the cluster has no mode field",
+  frequency: "From the frequency - FT8/FT4's usual spot; the spot gave no mode",
+};
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -202,9 +208,10 @@ function visible() {
     if (off.has(s.kind)) return false;
     if (filters.band && s.band !== filters.band) return false;
     // A cluster spot carries no mode field. One whose comment names a mode
-    // outright has it (`mode_from: 'comment'`) and filters like any other;
-    // one that does not is kept, because hiding every unknown the moment a
-    // mode was chosen reads as the cluster being down.
+    // outright (`mode_from: 'comment'`), or that sits in FT8's or FT4's
+    // window (`'frequency'`), has one and filters like any other; one that
+    // has neither is kept, because hiding every unknown the moment a mode
+    // was chosen reads as the cluster being down.
     if (filters.mode && s.mode && s.mode !== filters.mode) return false;
     if (filters.mode && !s.mode && s.kind !== 'dx') return false;
     if (!q) return true;
@@ -282,9 +289,8 @@ function paintSpots() {
                      title="Tune the radio here">${(s.hz / 1e6).toFixed(3)}</button>`
           : `<span class="freq">${(s.hz / 1e6).toFixed(3)}</span>`) : ''}</td>
       <td class="mono dim">${esc(s.band)}</td>
-      <td class="mono${s.mode_from ? ' guessed' : ''}"${s.mode_from
-          ? ` title="From the spotter's comment - the cluster has no mode field"`
-          : ''}>${esc(s.mode)}</td>
+      <td class="mono${s.mode_from ? ' guessed' : ''}"${GUESSED[s.mode_from]
+          ? ` title="${GUESSED[s.mode_from]}"` : ''}>${esc(s.mode)}</td>
       <td>${HD.flag(s.iso, s.country)}${esc(s.ref ? `${s.ref} ` : '')}<span
             class="ref">${esc(where(s))}</span></td>
       <td class="mono dim">${esc(s.spotter)}</td>

@@ -1991,6 +1991,18 @@ the live service.
   the mode, unmarked, and now follows the same rule as DX Summit. A spot
   with no mode is still kept under a mode filter, or choosing a mode would
   empty the cluster and read as it being down.
+  **Then the frequency, for FT8 and FT4 only** (`mode_by_frequency`,
+  `mode_from: "frequency"`): the usual dial frequency plus 3 kHz of
+  audio, as a last resort in `_spot` and in the telnet parser, so it
+  applies to any source that gave no mode. It was measured before it was
+  written - 500 live cluster spots, and wherever a comment also named a
+  mode the two agreed 143 times in 144. The one disagreement was the
+  *comment* rule being wrong: "PSE 18 SSB good time" is a request with a
+  band in the middle, which is why `_ASK_REACH` looks a few words back
+  rather than one. CW and phone segments are deliberately not guessed; a
+  DXpedition on FT8 off the usual spot (S9R 10.133) stays blank, which is
+  the honest miss. On 80 m the two windows overlap by a kilohertz and FT8,
+  being commoner, wins.
 - **SOTA's spots endpoint moved and the old one lies in place.**
   `/api/spots/{n}/all` answers 200 with a single row whose every field says
   DEPRECATED; the live one is `api2.sota.org.uk/api/spots/{n}/all/all`, with

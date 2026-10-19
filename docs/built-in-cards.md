@@ -225,10 +225,20 @@ mis-click cannot move the rig.
 has no mode field, so when the spotter's comment names one outright — "FT8
 -14 dB", "CW 25 wpm", "LSB" — that becomes the mode, shown in *italics* with
 a tooltip saying where it came from, and the mode filter uses it. A comment
-naming two modes, or asking for one ("PSE SSB"), gives none, and a spot with
-no mode is kept whatever mode you filter on. Clicking the frequency of such a
-spot tunes but does not change the radio's mode: a comment is good enough to
-filter on, not to switch the rig.
+naming two modes, or asking for one ("PSE SSB"), gives none.
+
+**Failing that, FT8 and FT4 are known by where they are.** A spot with no
+mode from its source or its comment, sitting on FT8's or FT4's usual
+frequency (14.074, 7.074, 14.080 and so on, plus the 3 kHz above), shows
+that mode in italics with a tooltip saying it came from the frequency.
+Checked against 500 live cluster spots before it was added: wherever the
+comment also named a mode, the two agreed every time. Only those two modes -
+a CW or phone segment says far less about what is in it. A DXpedition
+working FT8 off the usual spot is left blank rather than misread.
+
+A spot with no mode is kept whatever mode you filter on. Clicking the
+frequency of a spot whose mode was worked out this way tunes but does not
+change the radio's mode: good enough to filter on, not to switch the rig.
 
 The **Contests** tab leads with what is on *now* and how long is left, because
 a contest that started yesterday is exactly the one that explains the band and

@@ -36,7 +36,7 @@ from collections import deque
 
 from hamdash.services.bands import for_hz as band_for
 
-from sources import mode_in_comment
+from sources import mode_by_frequency, mode_in_comment
 
 # RBN's own, and a cluster is whatever the operator points us at.
 RBN_HOST = "telnet.reversebeacon.net"
@@ -110,6 +110,10 @@ def parse(line: str, kind: str = "rbn", now: float | None = None) -> dict | None
         # same mark, as a cluster spot from DX Summit (`mode_in_comment`).
         mode = mode_in_comment(info)
         mode_from = "comment" if mode else ""
+    if not mode:
+        # Last resort, as for the polled sources: FT8 or FT4 by where it is.
+        mode = mode_by_frequency(hz)
+        mode_from = "frequency" if mode else ""
 
     snr = SNR.search(info)
     wpm = WPM.search(info)

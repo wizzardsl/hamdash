@@ -25,7 +25,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   comment, and the mode filter uses it. Two modes, or a request such as
   "PSE SSB", give none. Clicking such a spot's frequency tunes without
   changing the radio's mode. The telnet cluster follows the same rule
-  instead of taking the comment's first word unmarked.
+  instead of taking the comment's first word unmarked. A request is not a
+  report: "PSE SSB", or "PSE 18 SSB" with a band in between, gives none.
+- **Spots on FT8's or FT4's usual frequency show that mode** when neither
+  the source nor the comment gave one - marked as coming from the
+  frequency, filterable, and not sent to the radio. Checked against 500
+  live cluster spots first: where the comment also named a mode, the two
+  agreed every time. CW and phone segments are not guessed.
 
 ## [0.8.3]
 

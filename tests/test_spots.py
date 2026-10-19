@@ -160,7 +160,7 @@ class TestWhatIsKept(unittest.TestCase):
     def test_a_cluster_spot_has_no_mode_and_none_is_invented(self):
         """The network has no mode field, and this comment names none, so
         the mode stays empty rather than guessed. A comment that does name
-        one is `tests/test_spots_comment_mode.py`."""
+        one is `tests/test_spots_guessed_mode.py`."""
         got = sources.dx([DX_ROW])[0]
         self.assertEqual(got["mode"], "")
         self.assertEqual(got["comment"], "PAQP BER")
