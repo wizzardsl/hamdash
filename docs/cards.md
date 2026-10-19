@@ -296,6 +296,13 @@ def tuned(topic, payload):
 card.publish("my_card.tuned", {"hz": 14074000})
 ```
 
+A handler is called once per event. When the card starts it is also handed
+the latest event on each topic it subscribes to, so it begins from the
+current state (`radio.state` tells it where the radio is now). After that the
+stream reconnects about once a minute and resumes where it left off: nothing
+already delivered comes again, and nothing published during the reconnect is
+lost. The same holds for `HD.on` in a page.
+
 ---
 
 ## The browser side: HD

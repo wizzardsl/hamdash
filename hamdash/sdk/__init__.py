@@ -316,12 +316,21 @@ class Card:
         topics = ",".join(p for p, _ in self._subs)
         url = f"{self.host_url}/api/events?topics={topics}"
         backoff = 0.0
+        # How far this reader has got, sent back on every reconnect the way
+        # a browser's EventSource sends it. Without it each reconnect - one
+        # a minute - was a newcomer and was handed the last event on every
+        # topic again: `@card.on("log.qso_added")` ran for the same contact
+        # once a minute for as long as the card was up.
+        last_id = ""
         while True:
             if backoff:
                 threading.Event().wait(backoff)
+            headers = {"Accept": "text/event-stream"}
+            if last_id:
+                headers["Last-Event-ID"] = last_id
             try:
                 with requests.get(url, stream=True, timeout=(5, None),
-                                  headers={"Accept": "text/event-stream"}) as r:
+                                  headers=headers) as r:
                     if r.status_code == 503:
                         backoff = min(30.0, max(5.0, backoff * 2))
                         print(f"bus is full; retrying in {backoff:.0f}s")
@@ -329,6 +338,9 @@ class Card:
                     r.raise_for_status()
                     backoff = 0.0
                     for line in r.iter_lines(decode_unicode=True):
+                        if line and line.startswith("id: "):
+                            last_id = line[4:].strip()
+                            continue
                         if not line or not line.startswith("data: "):
                             continue
                         try:

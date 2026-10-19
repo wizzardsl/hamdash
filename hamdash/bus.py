@@ -102,12 +102,18 @@ class Bus:
         self._subs: set[queue.Queue] = set()
         self._history: list[dict] = []
         self.last: dict[str, dict] = {}
+        # Every event is numbered, and the number is the SSE `id`. Started
+        # from the clock rather than from 0 so that after a host restart a
+        # client's remembered id is older than anything held, and reads as
+        # "unknown - send current state" instead of as "nothing missed".
+        self._seq = int(time.time() * 1000)
 
     def publish(self, topic: str, payload: dict | None = None,
                 source: str = "host") -> dict:
-        evt = {"topic": topic, "payload": payload or {}, "source": source,
-               "ts": round(time.time(), 3)}
         with self._lock:
+            self._seq += 1
+            evt = {"topic": topic, "payload": payload or {}, "source": source,
+                   "ts": round(time.time(), 3), "id": self._seq}
             self.last[topic] = evt
             self._history.append(evt)
             del self._history[:-MAX_HISTORY]
@@ -140,8 +146,8 @@ class Bus:
     def full(self) -> bool:
         return len(self._subs) >= MAX_SUBSCRIBERS
 
-    def stream(self, topics: str = "*",
-               allow: list[str] | None = None) -> Iterator[str]:
+    def stream(self, topics: str = "*", allow: list[str] | None = None,
+               last_id: int | None = None) -> Iterator[str]:
         """SSE generator, deliberately short-lived.
 
         Ends itself after STREAM_SECONDS and lets the client reconnect. Two
@@ -149,6 +155,23 @@ class Bus:
         thread held by a client that vanished (closed laptop, killed card,
         reloaded page) ever comes back on a blocking server. The keepalive is
         frequent so a dead socket is noticed in seconds, not minutes.
+
+        **A reconnect is not a newcomer.** A new client is sent the last
+        event on every topic, so it starts from the current state. That was
+        also sent on every reconnect - once every STREAM_SECONDS, for ever -
+        and a state snapshot is only harmless for state: the last
+        `log.qso_added` arrived again every minute, which jumped the logbook
+        back to page one and reloaded the path map's contacts, and the rig
+        card printed the same contact hundreds of times an evening. So
+        `last_id` - the browser's own `Last-Event-ID`, or the SDK's - gets
+        exactly what came after it: nothing repeated, and anything published
+        while it was reconnecting delivered rather than lost. Only an id the
+        history cannot vouch for (too old, or from before a host restart)
+        falls back to the snapshot.
+
+        The keepalive carries the id this stream has read up to, so a client
+        that wants few topics still moves its `Last-Event-ID` along with the
+        bus and does not drift out of the history window while it waits.
 
         `allow` is the caller's declared `subscribes`, applied on top of what
         it asked for: None means undeclared, i.e. unrestricted. An empty list
@@ -165,29 +188,67 @@ class Bus:
         q: queue.Queue = queue.Queue(maxsize=QUEUE_DEPTH)
         with self._lock:
             self._subs.add(q)
-            snapshot = [e for e in self.last.values() if wanted(e["topic"])]
+            # Everything up to here is either in `backlog` or older than
+            # what the client needs; everything after arrives on `q`.
+            read_to = self._seq
+            if self._covers(last_id):
+                backlog = [e for e in self._history
+                           if e["id"] > last_id and wanted(e["topic"])]
+            else:
+                backlog = sorted((e for e in self.last.values()
+                                  if wanted(e["topic"])), key=lambda e: e["id"])
         ends_at = time.time() + STREAM_SECONDS
         try:
-            for evt in snapshot:
+            for evt in backlog:
                 yield _sse(evt)
+            yield _mark(read_to)
             while time.time() < ends_at:
                 try:
                     evt = q.get(timeout=KEEPALIVE_SECONDS)
                 except queue.Empty:
-                    yield ": keepalive\n\n"   # write fails fast on a dead socket
+                    # Also the keepalive: a write fails fast on a dead socket.
+                    yield _mark(read_to)
                     continue
+                read_to = evt["id"]
                 if wanted(evt["topic"]):
                     yield _sse(evt)
+            yield _mark(read_to)
             yield "event: reconnect\ndata: {}\n\n"
         finally:
             with self._lock:
                 self._subs.discard(q)
 
+    def _covers(self, last_id) -> bool:
+        """Whether history holds everything after `last_id` - the lock is
+        held. Not if it is None (a newcomer), from the future (a host that
+        restarted with a slow clock), or older than the oldest event kept
+        (a client away long enough for history to move past it)."""
+        if last_id is None or last_id > self._seq:
+            return False
+        if last_id == self._seq:
+            return True
+        return bool(self._history) and self._history[0]["id"] <= last_id + 1
+
+
+def parse_last_id(raw) -> int | None:
+    """`Last-Event-ID` as an int, or None for anything else - a header is
+    whatever the client sent, and a junk one must mean "newcomer", not 500."""
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
 
 def _sse(evt: dict) -> str:
     # No `event:` name on purpose: the UI listens with EventSource.onmessage,
     # which never fires for named events. Topic routing happens client side.
-    return f"data: {json.dumps(evt)}\n\n"
+    return f"id: {evt['id']}\ndata: {json.dumps(evt)}\n\n"
+
+
+def _mark(read_to: int) -> str:
+    # An `id` with no data: EventSource records it as the last event id
+    # without dispatching anything, which is the whole point.
+    return f"id: {read_to}\n\n"
 
 
 BUS = Bus()

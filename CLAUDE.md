@@ -116,7 +116,18 @@ blocking server. The board, each card page, and each card process each keep a
 stream. So: streams are capped at 55s and clients reconnect (that's the only
 way a thread held by a vanished client comes back), the pool is 64, the bus
 refuses past 24 concurrent streams with a 503, and `channel_timeout` sits just
-above the stream lifetime. Don't add blocking waits in request handlers —
+above the stream lifetime. **A reconnect resumes; it is not a newcomer.**
+Every event has an `id` (`Bus._seq`, started from the clock so ids survive
+a host restart as "older than anything held"), the browser's EventSource
+sends `Last-Event-ID` by itself and the SDK sends the same header, and a
+stream with one gets only what came after it. It used to open every stream,
+reconnects included, with the last event on every topic - right for a new
+page, wrong once a minute for ever: the last `log.qso_added` re-fired every
+55 s, the logbook jumped to page one, and the rig card printed one contact
+~150 times an evening. Keepalives are id-only frames carrying how far the
+stream has read, so a client wanting one rare topic does not drift out of
+`MAX_HISTORY` and come back as a newcomer. `tests/test_bus_resume.py`.
+Don't add blocking waits in request handlers —
 that's what turned this into a hang. The card proxy waits 2.5s for a starting
 card, then returns a self-refreshing "Starting…" page rather than sleeping in
 a thread.

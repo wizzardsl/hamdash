@@ -16,7 +16,7 @@ from flask import (Flask, Response, abort, jsonify, request,
                    send_from_directory, stream_with_context)
 
 from . import registry
-from .bus import BUS, MAX_SUBSCRIBERS
+from .bus import BUS, MAX_SUBSCRIBERS, parse_last_id
 from .config import (BUNDLED_STATIC, CREDENTIALS, SECRETS, Config,
                      tidy_credential)
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
@@ -242,8 +242,14 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                            subscribers=BUS.subscribers), 503
         topics = request.args.get("topics", "*")
         card, _ = _calling_card()
+        # EventSource sends Last-Event-ID on its own when it reconnects; the
+        # SDK sends the same header. With it the stream resumes after that
+        # event instead of replaying the last one on every topic again.
+        last_id = parse_last_id(request.headers.get("Last-Event-ID")
+                                or request.args.get("last_id"))
         gen = stream_with_context(
-            BUS.stream(topics, card.subscribe_filter() if card else None))
+            BUS.stream(topics, card.subscribe_filter() if card else None,
+                       last_id=last_id))
         # No Connection header: PEP 3333 forbids hop-by-hop headers from a
         # WSGI app and waitress asserts on it. The server keeps it alive anyway.
         return Response(gen, mimetype="text/event-stream", headers={

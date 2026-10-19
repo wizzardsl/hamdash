@@ -4,6 +4,19 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Fixed
+- **The last event on every topic was sent again once a minute.** An event
+  stream reconnects every 55 seconds by design, and each reconnect began
+  with the newest event on every topic, as a new page does - so the last
+  contact logged arrived again every minute. The logbook card jumped back
+  to page one, the path map reloaded its contacts, and the rig card printed
+  one contact some 150 times in an evening. Events now carry an id and a
+  reconnecting page or card resumes after the last one it had: nothing is
+  repeated, and anything published while it was reconnecting is delivered
+  rather than lost. A new page still starts from the current state.
+
 ## [0.8.3]
 
 ### Fixed
