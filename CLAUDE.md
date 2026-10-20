@@ -1189,8 +1189,8 @@ it. Reach for a new transport only if a measurement says this one failed.
   equal to no panner. Ears and volume live in `localStorage` per tile
   (`rx_audio.vol.<uid>`), like `hd.view` - a fact about this listener,
   not the board - and the old browser-wide `rx_audio.vol` seeds a tile
-  that has none. Every rig tile still drives the one selected radio:
-  two radios *heard* is not two radios *controlled*.
+  that has none. A rig tile with a Radio of its own plays that radio's
+  input: the page sends `rig`, and `_device_for` asks `host.radio(rig)`.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card
