@@ -1158,6 +1158,19 @@ it. Reach for a new transport only if a measurement says this one failed.
   because a `/api/pcm` sent before Stop arrived after it and re-opened
   the input. Stop awaits it now. The race was in the old card's page
   too; moving the code is what showed it.
+  **Left / Right / Stereo is the browser's job, not the engine's.** Every
+  tile's player is its own AudioContext and the browser mixes them, so
+  two rig tiles on two sound cards already play together; `route()` in
+  `listen.js` puts one in an ear. **Stereo bypasses the panner**: a
+  StereoPannerNode at 0 is equal-power, 3 dB down on a mono source, so
+  routing the ordinary case through one would have made it quieter.
+  Measured in Chromium's own engine with an offline render: left and
+  right are full level in one channel and exactly 0 in the other, stereo
+  equal to no panner. Ears and volume live in `localStorage` per tile
+  (`rx_audio.vol.<uid>`), like `hd.view` - a fact about this listener,
+  not the board - and the old browser-wide `rx_audio.vol` seeds a tile
+  that has none. Every rig tile still drives the one selected radio:
+  two radios *heard* is not two radios *controlled*.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

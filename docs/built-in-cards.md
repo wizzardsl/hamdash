@@ -57,7 +57,16 @@ Its settings are in the rig tile's settings:
 | **Listen: buffer** | How much audio to hold back against network jitter. 120 ms is comfortable on a LAN; raise it on patchy Wi-Fi if you hear dropouts. |
 
 Audio cannot start without a click - every browser requires it - so it
-waits on the **Listen** button. The readout beside it shows the delay,
+waits on the **Listen** button.
+
+**Two radios, one in each ear.** Every rig tile that is listening plays at
+once - the browser mixes them - so with two radios, each with its own sound
+card chosen as the tile's *Listen: audio input*, set one tile to **Left**
+and the other to **Right** beside the volume. **Stereo** is both ears, as
+before. The choice and the volume are kept per tile in this browser, so a
+desk with headphones and a phone with one speaker can each have their own.
+Every rig tile still tunes the one *selected* radio; listening to a second
+radio does not yet mean controlling it from the board. The readout beside it shows the delay,
 the dropout count and the bandwidth, which is what tells you whether a
 bigger buffer would help.
 

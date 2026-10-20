@@ -17,7 +17,42 @@
  */
 (function () {
   const ENGINE = 'rx_audio';
-  const VOL_KEY = 'rx_audio.vol';      // unchanged, so a saved level carries over
+  // Volume and ears are this person's, at this screen, for this tile: kept
+  // in the browser (like the volume always was), and per tile, because two
+  // rig tiles playing two radios want two levels - and one in each ear.
+  // The old browser-wide volume is read as the starting point, so a level
+  // set before this still comes across.
+  const OLD_VOL_KEY = 'rx_audio.vol';
+  const key = (what, uid) => `rx_audio.${what}.${uid || 'page'}`;
+
+  /* Where this tile's audio goes: both ears, or one.
+   *
+   * Two radios can be heard at once - every tile's player is mixed by the
+   * browser - but mixed in both ears they are hard to tell apart. One on
+   * the left and one on the right is how two receivers are listened to.
+   *
+   * 'stereo' does not go through a panner at all. A StereoPannerNode at
+   * its centre turns a mono source down by 3 dB (equal power), so routing
+   * the ordinary case through one would make it quieter than it was.
+   * Left and right are a panner at -1 and +1, which for a mono source is
+   * full level in that ear and nothing in the other.
+   */
+  const ROUTES = { stereo: 0, left: -1, right: 1 };
+
+  function route(ctx, from, choice, prev) {
+    try { from.disconnect(); } catch (e) { /* not connected yet */ }
+    if (prev) { try { prev.disconnect(); } catch (e) { /* gone */ } }
+    const pan = ROUTES[choice];
+    if (!pan || typeof ctx.createStereoPanner !== 'function') {
+      from.connect(ctx.destination);
+      return null;
+    }
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = pan;
+    from.connect(panner);
+    panner.connect(ctx.destination);
+    return panner;
+  }
 
   const CSS = `
   .listen { display: flex; flex-direction: column; gap: 6px; }
@@ -26,6 +61,9 @@
   .listen button.play { min-width: 76px; }
   .listen input[type=range] { flex: 1; min-width: 60px;
                               accent-color: var(--accent); }
+  .listen select { font: inherit; font-size: 12px; color: var(--ink);
+                   background: var(--bg); border: 1px solid var(--rule);
+                   border-radius: var(--radius); padding: 2px 4px; }
   /* The level meter: the one thing that says "audio is actually moving"
      before you have turned the volume up. */
   .listen .lmeter { height: 8px; border: 1px solid var(--rule);
@@ -54,6 +92,12 @@
     <input type="range" data-l="vol" min="0" max="100" value="70"
            aria-label="Volume">
     <span class="lnote" data-l="volnum">70</span>
+    <select data-l="ears" aria-label="Which ear"
+            title="Both ears, or one - for listening to two radios at once">
+      <option value="stereo">Stereo</option>
+      <option value="left">Left</option>
+      <option value="right">Right</option>
+    </select>
   </div>
   <div class="link" data-l="link" hidden>
     <span>delay <b data-l="lat">—</b></span>
@@ -114,7 +158,8 @@
       return q.toString();
     };
 
-    let ctx = null, gain = null;
+    let ctx = null, gain = null, panner = null;
+    const uid = (opts && opts.uid) || (window.HD && HD.tileUid) || '';
     let running = false, timer = null;
     // The audio request on its way, if any. Stop waits for it: a request
     // already sent when Stop is pressed can reach the engine *after* the
@@ -294,7 +339,7 @@
       ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
       if (!gain) {
         gain = ctx.createGain();
-        gain.connect(ctx.destination);
+        panner = route(ctx, gain, $('ears').value, null);
         setVolume();
       }
       await ctx.resume();
@@ -338,12 +383,18 @@
       // Perceived loudness is nearer the square of the slider than the
       // slider, so a linear control spends its top third doing nothing.
       if (gain) gain.gain.value = (v / 100) ** 2;
-      try { localStorage.setItem(VOL_KEY, v); } catch (e) { /* private */ }
+      try { localStorage.setItem(key('vol', uid), v); } catch (e) { /* private */ }
     }
 
     $('go').onclick = start;
     $('stop').onclick = () => stop();
     $('vol').oninput = setVolume;
+    // Applies at once, mid-listen: the point is to hear which radio moved.
+    $('ears').onchange = () => {
+      const choice = $('ears').value;
+      try { localStorage.setItem(key('ears', uid), choice); } catch (e) { /* private */ }
+      if (ctx && gain) panner = route(ctx, gain, choice, panner);
+    };
 
     /* Audio is heard, not seen, so being hidden is not a reason to stop.
      *
@@ -369,8 +420,11 @@
     window.addEventListener('pagehide', () => { if (running) stop(true); });
 
     try {
-      const v = localStorage.getItem(VOL_KEY);
+      const v = localStorage.getItem(key('vol', uid))
+        ?? localStorage.getItem(OLD_VOL_KEY);
       if (v !== null) $('vol').value = v;
+      const ears = localStorage.getItem(key('ears', uid));
+      if (ears in ROUTES) $('ears').value = ears;
     } catch (e) { /* private window */ }
     setVolume();
 
@@ -405,5 +459,5 @@
     return { start, stop, poll: () => poll(true), get running() { return running; } };
   }
 
-  window.HDListen = { mount, WHO };
+  window.HDListen = { mount, WHO, route, ROUTES, key };
 })();

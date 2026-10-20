@@ -15,6 +15,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   board on the first start, the input chosen in one moves to the rig tile,
   and it is no longer in the Cards menu.
 
+### Added
+- **Listen can play in one ear.** A Stereo / Left / Right choice beside
+  the volume, so two radios - two rig tiles, each listening to its own
+  sound card - can be heard one in each ear. Stereo is unchanged. The
+  choice and the volume are kept per tile, in this browser.
+
 ### Fixed
 - **Following the radio's input could open a microphone.** With no audio
   input set on the radio, "rig" fell through to the computer's default
