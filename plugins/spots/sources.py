@@ -94,7 +94,7 @@ def _spot(**kw) -> dict:
     """
     hz = int(kw.get("hz") or 0)
     row = {"kind": "", "call": "", "hz": hz, "band": band_for(hz), "mode": "",
-           "mode_from": "", "at": 0.0, "ref": "", "place": "", "where": "",
+           "mode_from": "", "sideband": "", "at": 0.0, "ref": "", "place": "", "where": "",
            "grid": "", "lat": None, "lon": None, "spotter": "", "comment": "",
            "url": ""}
     row.update({k: v for k, v in kw.items() if k in row})
@@ -179,14 +179,33 @@ def mode_in_comment(comment) -> str:
     mode counts: "CW or SSB" is a question, not an answer, and gets none;
     and a mode asked for ("PSE SSB") is not the mode being heard.
     """
+    found = {_COMMENT_FOLD.get(w, w) for w in _named(comment)}
+    return found.pop() if len(found) == 1 else ""
+
+
+def sideband_in_comment(comment) -> str:
+    """USB or LSB if the comment says which, else "".
+
+    Only for a comment whose mode is SSB and that names one sideband:
+    "LSB JN54kp" is a station on LSB, which beats the 10 MHz rule of
+    thumb the card otherwise tunes by. "USB or LSB" says neither.
+    """
+    if mode_in_comment(comment) != "SSB":
+        return ""
+    sides = {w for w in _named(comment) if w in ("USB", "LSB")}
+    return sides.pop() if len(sides) == 1 else ""
+
+
+def _named(comment) -> list[str]:
+    """Every mode word a comment reports, upper-cased, requests left out."""
     text = str(comment or "")
-    found = set()
+    out = []
     for m in _COMMENT_MODES.finditer(text):
         before = text[:m.start()].split()[-_ASK_REACH:]
         if any(w.upper().strip(".,:!") in _ASKING for w in before):
             continue
-        found.add(_COMMENT_FOLD.get(m.group(0).upper(), m.group(0).upper()))
-    return found.pop() if len(found) == 1 else ""
+        out.append(m.group(0).upper())
+    return out
 
 
 # --------------------------------------------------------------- POTA
@@ -269,6 +288,7 @@ def dx(raw=None, limit: int = 60) -> list[dict]:
             hz=_hz(r.get("frequency"), 1_000),          # kHz, as a float
             mode=mode,
             mode_from="comment" if mode else "",
+            sideband=sideband_in_comment(r.get("info")),
             at=_when(r.get("time")),
             place=r.get("dx_country") or "",
             lat=r.get("dx_latitude"), lon=r.get("dx_longitude"),

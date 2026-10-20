@@ -33,6 +33,7 @@ function lift(name) {
 }
 
 const radioMode = lift('radioMode');
+const tuneMode = lift('tuneMode');
 
 test('SSB below 10 MHz is LSB', () => {
   for (const hz of [1_843_000, 3_790_000, 7_185_000, 7_250_000, 9_999_000]) {
@@ -75,8 +76,30 @@ test('the click handler gives the radio radioMode, not the spot\'s mode', () => 
     else if (PAGE[i] === '}') depth -= 1;
   }
   const handler = PAGE.slice(at, i);
-  assert.match(handler, /radioMode\(b\.dataset\.mode,\s*hz\)/);
+  assert.match(handler, /radioMode\(b\.dataset\.mode,\s*hz,\s*b\.dataset\.sideband\)/);
   assert.doesNotMatch(handler, /HD\.radio\.mode\(b\.dataset\.mode\)/);
   // Mode still before frequency: the CW offset rule.
   assert.ok(handler.indexOf('HD.radio.mode(') < handler.indexOf('HD.radio.freq('));
+});
+
+test('a sideband the comment named beats the rule of thumb', () => {
+  assert.strictEqual(radioMode('SSB', 14_250_000, 'LSB'), 'LSB');
+  assert.strictEqual(radioMode('SSB', 7_185_000, 'usb'), 'USB');
+  assert.strictEqual(radioMode('SSB', 7_185_000, ''), 'LSB');
+  assert.strictEqual(radioMode('SSB', 7_185_000, 'nonsense'), 'LSB');
+  assert.strictEqual(radioMode('CW', 7_030_000, 'LSB'), 'CW');
+});
+
+test('which spots may change the radio\'s mode', () => {
+  // The source's own field: always.
+  assert.strictEqual(tuneMode({ mode: 'CW', mode_from: '' }), 'CW');
+  assert.strictEqual(tuneMode({ mode: 'SSB' }), 'SSB');
+  // Worked out from a comment: only SSB, where the frequency settles the
+  // sideband and nothing else is being decided.
+  assert.strictEqual(tuneMode({ mode: 'SSB', mode_from: 'comment' }), 'SSB');
+  assert.strictEqual(tuneMode({ mode: 'CW', mode_from: 'comment' }), '');
+  assert.strictEqual(tuneMode({ mode: 'FT8', mode_from: 'comment' }), '');
+  // From the frequency: never.
+  assert.strictEqual(tuneMode({ mode: 'FT8', mode_from: 'frequency' }), '');
+  assert.strictEqual(tuneMode({ mode: '', mode_from: '' }), '');
 });

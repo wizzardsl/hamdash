@@ -221,7 +221,8 @@ contact from there.
 carries one). It is the frequency rather than the whole row on purpose, so a
 mis-click cannot move the rig. A spot marked SSB sets the sideband by the
 usual convention: LSB below 10 MHz, USB from 10 MHz up, and USB on 60 m,
-where it is required. A spot that says USB or LSB itself is tuned as it says.
+where it is required. A spot that says USB or LSB itself is tuned as it says,
+and so is a cluster spot whose comment does ("LSB 59").
 
 **A cluster spot's mode comes from its comment, and says so.** The DX cluster
 has no mode field, so when the spotter's comment names one outright — "FT8
@@ -241,6 +242,8 @@ working FT8 off the usual spot is left blank rather than misread.
 A spot with no mode is kept whatever mode you filter on. Clicking the
 frequency of a spot whose mode was worked out this way tunes but does not
 change the radio's mode: good enough to filter on, not to switch the rig.
+SSB is the exception, because all that is left to decide is the sideband,
+which the frequency (or the comment) settles.
 
 The **Contests** tab leads with what is on *now* and how long is left, because
 a contest that started yesterday is exactly the one that explains the band and

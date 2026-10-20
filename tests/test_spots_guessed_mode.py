@@ -168,6 +168,29 @@ class TestWhichWins(unittest.TestCase):
         self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "frequency"))
 
 
+class TestSidebandInComment(unittest.TestCase):
+    def test_a_named_sideband_is_kept(self):
+        for info, want in (("LSB JN54kp -> KN13nq", "LSB"), ("tnx usb qso", "USB"),
+                           ("LSB, lsb 59", "LSB")):
+            self.assertEqual(sources.sideband_in_comment(info), want, info)
+
+    def test_no_sideband_or_both_is_none(self):
+        for info in ("SSB 59", "USB or LSB", "PSE LSB", "FT8 -10", "", None):
+            self.assertEqual(sources.sideband_in_comment(info), "", info)
+
+    def test_a_cluster_spot_carries_it(self):
+        got = sources.dx([dict(a_dx("LSB 59 tnx"), frequency=14250.0)])[0]
+        self.assertEqual((got["mode"], got["mode_from"], got["sideband"]),
+                         ("SSB", "comment", "LSB"))
+
+    def test_other_sources_carry_none(self):
+        got = sources.pota([{"activator": "W1IP", "frequency": "14274",
+                             "mode": "SSB", "reference": "US-1",
+                             "spotTime": "2026-10-10T23:40:00",
+                             "comments": "LSB"}])[0]
+        self.assertEqual(got["sideband"], "")
+
+
 class TestTheTelnetFeeds(unittest.TestCase):
     """The same two kinds of mode arrive over telnet, and must not be
     confused: RBN's is a skimmer's measurement, a cluster's is a person's
@@ -189,6 +212,12 @@ class TestTheTelnetFeeds(unittest.TestCase):
             "DX de F6JON:      5357.0  EA3CU        FT8 -14 dB 1028 Hz             2140Z",
             kind="cluster")
         self.assertEqual((got["mode"], got["mode_from"]), ("FT8", "comment"))
+
+    def test_a_cluster_line_keeps_its_sideband(self):
+        got = self.telnet.parse(
+            "DX de F6JON:      7185.0  EA3CU        LSB 59 tnx                     2140Z",
+            kind="cluster")
+        self.assertEqual((got["mode"], got["sideband"]), ("SSB", "LSB"))
 
     def test_a_cluster_line_on_ft8_with_no_comment_mode(self):
         got = self.telnet.parse(
@@ -215,12 +244,12 @@ class TestThePage(unittest.TestCase):
         self.assertRegex(m.group(1), r"comment:\s*\"From the spotter's comment")
         self.assertRegex(m.group(1), r"frequency:\s*\"From the frequency")
 
-    def test_a_comment_mode_is_not_sent_to_the_radio(self):
-        """Clicking the frequency sets the mode first, then tunes. A mode
-        read from a comment must not switch the rig."""
-        m = re.search(r'data-mode="\$\{([^}]*)\}"', PAGE, re.S)
-        self.assertIsNotNone(m, "the tune button's data-mode")
-        self.assertIn("mode_from", m.group(1))
+    def test_the_tune_button_asks_tunemode_what_it_may_send(self):
+        """Clicking the frequency sets the mode first, then tunes. Which
+        guessed modes may switch the rig - SSB from a comment, nothing
+        else - is `tuneMode`, tested in tests/js/spots-sideband.test.js."""
+        self.assertRegex(PAGE, r'data-mode="\$\{\s*esc\(tuneMode\(s\)\)\}"')
+        self.assertRegex(PAGE, r'data-sideband="\$\{esc\(s\.sideband')
 
     def test_the_filter_still_keeps_spots_with_no_mode(self):
         self.assertRegex(PAGE, r"if \(filters\.mode && !s\.mode && s\.kind !== 'dx'\)"

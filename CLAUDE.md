@@ -741,7 +741,12 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   page because that is the only place that knows the spot's frequency
   when the mode is set - mode goes first, so the rig still has the old
   frequency. `tests/js/spots-sideband.test.js` lifts the real function
-  out of the page.
+  out of the page. **SSB is the one guessed mode allowed to reach the
+  radio** (`tuneMode`): from a comment, the only thing left to decide is
+  the sideband, and a comment that names one (`sideband_in_comment`,
+  carried as `sideband` on the row) beats the 10 MHz rule. A CW or FT8
+  read from a comment, and anything from the frequency, still tunes
+  without touching the mode.
 ## Meters and VFOs
 
 - **A radio has one meter, so the power meter reads the S-meter while

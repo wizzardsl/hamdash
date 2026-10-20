@@ -11,7 +11,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   SOTA say "SSB"; a radio has LSB and USB and nothing called SSB, so the
   mode was refused - silently - and the radio tuned the spot in whatever
   mode it was in. The spots card now picks the sideband the usual way:
-  LSB below 10 MHz, USB from 10 MHz up, USB on 60 m.
+  LSB below 10 MHz, USB from 10 MHz up, USB on 60 m. That includes a
+  cluster spot whose SSB came from its comment, and a comment that names
+  the sideband ("LSB 59") is followed instead of the rule.
 
 ## [0.9.1]
 
