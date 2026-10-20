@@ -155,6 +155,8 @@
       const q = new URLSearchParams({ who: WHO });
       if (c.device) q.set('device', c.device);
       if (c.rate) q.set('rate', c.rate);
+      // 'rig' means the audio of *this tile's* radio, so say which.
+      if (c.radio && c.radio !== 'selected') q.set('rig', c.radio);
       return q.toString();
     };
 

@@ -4,7 +4,7 @@
   "kind": "python",
   "version": "0.2.0",
   "author": "HamDash",
-  "description": "Frequency, mode, tuning and PTT for the selected radio",
+  "description": "Frequency, mode, tuning and PTT for the selected radio, or for one radio of its own",
   "entry": "card.py",
   "view": "index.html",
   "w": 4,
@@ -16,12 +16,19 @@
   ],
   "subscribes": [
     "log.qso_added",
-    "radio.state"
+    "radio.state",
+    "radio.rig"
   ],
   "uses": [
     "rx_audio"
   ],
   "settings": {
+    "radio": {
+      "type": "radio",
+      "label": "Radio",
+      "default": "selected",
+      "help": "Which radio this tile controls. 'The selected radio' follows Settings -> Radio and moves when you change radios. Choosing one by name gives this tile that radio for good, so two rig tiles can drive two radios at once - and its Listen 'rig' input is that radio's audio."
+    },
     "device": {
       "type": "audio_in",
       "label": "Listen: audio input",

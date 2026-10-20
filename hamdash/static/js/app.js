@@ -320,6 +320,35 @@
         }
         input.value = want;             // the fetch must not move it
       }).catch(() => { /* the typed-in value still stands */ });
+    } else if (f.type === 'radio') {
+      /* One of the configured radios, or whichever is selected.
+       *
+       * Stored by id, shown by name - a name can be edited and an id
+       * cannot. A radio that has since been removed stays in the list,
+       * marked, rather than the sheet quietly pointing the tile at a
+       * different one.
+       */
+      input = document.createElement('select');
+      const add = (val, label) => {
+        const o = document.createElement('option');
+        o.value = String(val);
+        o.textContent = label;
+        input.appendChild(o);
+        return o;
+      };
+      add('selected', 'The selected radio');
+      const want = String(value || f.default || 'selected');
+      if (want !== 'selected') add(want, want);
+      input.value = want;
+      HD.get('/api/rigs').then((d) => {
+        const rigs = d.rigs || [];
+        [...input.options].forEach((o) => { if (o.value !== 'selected') o.remove(); });
+        rigs.forEach((r) => add(r.id, r.name || r.id));
+        if (want !== 'selected' && !rigs.some((r) => r.id === want)) {
+          add(want, `${want} — removed`);
+        }
+        input.value = want;
+      }).catch(() => { /* the stored value still stands */ });
     } else if (f.type === 'select') {
       input = document.createElement('select');
       (f.options || []).forEach((o) => {

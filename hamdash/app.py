@@ -689,17 +689,31 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         return jsonify(out)
 
     # ---------------- shared services ---------------------------------
+    def _radio(body=None):
+        """The radio a request means: `?rig=` or `"rig"` in the body, and
+        the selected one when neither says. Every card that never names a
+        radio goes on meaning the selected one, exactly as before."""
+        want = request.args.get("rig") or (body or {}).get("rig") or ""
+        return rig.link(str(want))
+
+    def _radio_unknown(exc):
+        want = request.args.get("rig") or ""
+        return {"ok": False, "rig_id": want, "error": str(exc)}
+
     @app.get("/api/radio/state")
     @guard("radio")
     def radio_state():
-        return jsonify(rig.state())
+        try:
+            return jsonify(_radio().state())
+        except rigsvc.RigError as exc:
+            return jsonify(_radio_unknown(exc))
 
     @app.post("/api/radio/freq")
     @guard("radio")
     def radio_freq():
-        hz = (request.get_json(silent=True) or {}).get("hz")
+        b = request.get_json(silent=True) or {}
         try:
-            return jsonify(rig.set_freq(int(hz)))
+            return jsonify(_radio(b).set_freq(int(b.get("hz"))))
         except (TypeError, ValueError):
             return jsonify(error="hz must be an integer"), 400
         except Exception as exc:
@@ -710,17 +724,17 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def radio_mode():
         b = request.get_json(silent=True) or {}
         try:
-            return jsonify(rig.set_mode(b.get("mode", "USB"),
-                                        int(b.get("width", 0))))
+            return jsonify(_radio(b).set_mode(b.get("mode", "USB"),
+                                              int(b.get("width", 0))))
         except Exception as exc:
             return jsonify(error=str(exc)), 502
 
     @app.post("/api/radio/ptt")
     @guard("radio")
     def radio_ptt():
-        on = bool((request.get_json(silent=True) or {}).get("on"))
+        b = request.get_json(silent=True) or {}
         try:
-            return jsonify(rig.set_ptt(on))
+            return jsonify(_radio(b).set_ptt(bool(b.get("on"))))
         except Exception as exc:
             return jsonify(error=str(exc)), 502
 
@@ -734,7 +748,10 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         them together would wake every card on the board twice a second.
         Whoever draws a meter polls for it.
         """
-        return jsonify(rig.meters())
+        try:
+            return jsonify(_radio().meters())
+        except rigsvc.RigError as exc:
+            return jsonify(_radio_unknown(exc))
 
     @app.post("/api/radio/vfo")
     @guard("radio")
@@ -742,17 +759,17 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         b = request.get_json(silent=True) or {}
         try:
             if b.get("swap"):
-                return jsonify(rig.swap_vfo())
-            return jsonify(rig.set_vfo(b.get("which", "A")))
+                return jsonify(_radio(b).swap_vfo())
+            return jsonify(_radio(b).set_vfo(b.get("which", "A")))
         except Exception as exc:
             return jsonify(error=str(exc)), 502
 
     @app.post("/api/radio/split")
     @guard("radio")
     def radio_split():
-        on = bool((request.get_json(silent=True) or {}).get("on"))
+        b = request.get_json(silent=True) or {}
         try:
-            return jsonify(rig.set_split(on))
+            return jsonify(_radio(b).set_split(bool(b.get("on"))))
         except Exception as exc:
             return jsonify(error=str(exc)), 502
 
@@ -770,6 +787,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             "bauds": rigsvc.BAUDS, "ports": rigsvc.serial_ports(),
             "rigctld": exe, "rigctld_path": c.get("rigctld_path", ""),
             "state": rig.state(),
+            # Which radios are open: the selected one, and any a rig tile
+            # is driving by name.
+            "open": rig.open_ids(),
             # Cached, so opening the sheet does not wait on PortAudio; the
             # Rescan button asks again.
             "audio": audiosvc.devices(),
@@ -789,7 +809,10 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             c["rigctld_path"] = str(body.get("rigctld_path") or "").strip()
         want = body.get("active")
         cfg.save()
-        # Re-open whichever is live: its settings may be what just changed.
+        # Close what was removed and reopen what was edited, leaving any
+        # other radio a tile is driving alone; then reopen the selected
+        # one, whose settings may be what just changed.
+        rig.reconcile()
         state = rig.select(want if want is not None else c.get("active", ""))
         BUS.publish("config.changed", _safe_config(), source="host")
         return jsonify({"ok": True, "rigs": c["rigs"],

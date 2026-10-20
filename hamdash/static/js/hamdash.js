@@ -204,6 +204,37 @@
     return data;
   }
 
+  /* The radio calls, for one radio or for the selected one.
+   *
+   * No id means the selected radio, exactly as every card has always
+   * meant it, so naming one is opt-in. The id rides as `?rig=` on a GET
+   * and as `rig` in a POST body, because the proxy forwards both.
+   */
+  function radioFor(rig) {
+    const id = rig && rig !== 'selected' ? String(rig) : '';
+    const q = (path) => (id ? `${path}?rig=${encodeURIComponent(id)}` : path);
+    const b = (body) => (id ? { ...body, rig: id } : body);
+    const calls = {
+      id,
+      state: () => HD.get(q('/api/radio/state')),
+      freq: (hz) => HD.post('/api/radio/freq', b({ hz })),
+      mode: (mode, width) => HD.post('/api/radio/mode', b({ mode, width: width || 0 })),
+      ptt: (on) => HD.post('/api/radio/ptt', b({ on: !!on })),
+      modes: () => HD.get('/api/radio/modes'),
+      // The needles. Their own call rather than part of the state, because
+      // a meter changes on every read and `radio.state` is published on
+      // change - whoever draws one polls for it.
+      meters: () => HD.get(q('/api/radio/meters')),
+      // Choosing a VFO and swapping the two are different operations: the
+      // first changes which is live, the second exchanges what they hold.
+      vfo: (which) => HD.post('/api/radio/vfo', b({ which })),
+      swapVfo: () => HD.post('/api/radio/vfo', b({ swap: true })),
+      split: (on) => HD.post('/api/radio/split', b({ on: !!on })),
+    };
+    if (!id) calls.for = radioFor;
+    return calls;
+  }
+
   const HD = {
     cardId: null,   // cards set this: HD.cardId = 'logbook'
 
@@ -311,23 +342,10 @@
         : path;
     },
 
-    // shared services, spelled out so cards read clearly
-    radio: {
-      state: () => HD.get('/api/radio/state'),
-      freq: (hz) => HD.post('/api/radio/freq', { hz }),
-      mode: (mode, width) => HD.post('/api/radio/mode', { mode, width: width || 0 }),
-      ptt: (on) => HD.post('/api/radio/ptt', { on: !!on }),
-      modes: () => HD.get('/api/radio/modes'),
-      // The needles. Their own call rather than part of the state, because
-      // a meter changes on every read and `radio.state` is published on
-      // change - whoever draws one polls for it.
-      meters: () => HD.get('/api/radio/meters'),
-      // Choosing a VFO and swapping the two are different operations: the
-      // first changes which is live, the second exchanges what they hold.
-      vfo: (which) => HD.post('/api/radio/vfo', { which }),
-      swapVfo: () => HD.post('/api/radio/vfo', { swap: true }),
-      split: (on) => HD.post('/api/radio/split', { on: !!on }),
-    },
+    // shared services, spelled out so cards read clearly.
+    // `HD.radio` is the selected radio; `HD.radio.for(id)` is the same
+    // calls bound to one radio by its id, for a tile that drives its own.
+    radio: radioFor(''),
     lookup: (call) => HD.get(`/api/lookup/${encodeURIComponent(call)}`),
 
     // One distance, in the operator's units, everywhere. Showing km and miles

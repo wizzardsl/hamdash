@@ -57,7 +57,7 @@ class TestTheMeterFollowsThePtt(unittest.TestCase):
 
         for keyed in (False, True):
             with self.subTest(keyed=keyed):
-                mgr = rigs.RigManager.__new__(rigs.RigManager)
+                mgr = rigs.RigLink(None, None)
                 mgr._error, mgr._backend = "", Rig(keyed)
                 got = mgr.meters()
                 self.assertEqual(mgr._backend.asked, [keyed])

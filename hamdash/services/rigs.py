@@ -1259,21 +1259,53 @@ def clean_rig(raw: dict) -> dict:
     return out
 
 
-# ----------------------------------------------------------------- manager
-class RigManager:
-    """The configured rigs, and whichever one is live.
+# ----------------------------------------------------------------- one radio
+LINK_IDLE = 120.0
+"""How long a radio no tile has asked about stays open.
 
-    One backend is open at a time. Two programs cannot share a serial port and
-    neither can two of ours, so selecting a rig closes the one before it.
+Nothing tells the host that a tile was deleted or retuned to another radio,
+so a radio only a tile was driving is closed once nobody has asked about it
+for this long - the audio cards' reaper, for a serial port.
+"""
+
+
+def resource(rig: dict | None):
+    """What a radio holds that nothing else may hold at the same time.
+
+    Two programs cannot share a serial port and neither can two of ours:
+    one at a time was the only thing that used to enforce it, so opening
+    several needs saying out loud.
+    """
+    rig = rig or {}
+    kind = rig.get("backend")
+    if kind == "hamlib" and rig.get("port"):
+        return ("serial", str(rig["port"]).strip().lower())
+    if kind == "omnirig":
+        return ("omnirig", int(rig.get("slot") or 1))
+    if kind in ("flrig", "rigctld"):
+        return (kind, str(rig.get("host") or "").lower(),
+                int(rig.get("port") or 0))
+    return None
+
+
+class RigLink:
+    """One radio: its backend, its PTT watchdog and its own polling thread.
+
+    Its own thread because a slow backend - an OmniRig call can take fifteen
+    seconds - must not hold up another radio's watchdog.
     """
 
-    def __init__(self, cfg) -> None:
-        self.cfg = cfg
+    def __init__(self, hub, rig: dict | None) -> None:
+        self.hub = hub
+        self.id = (rig or {}).get("id", "")
+        self._rig = dict(rig) if rig else None
         self._lock = threading.Lock()
         self._backend: Backend | None = None
-        self._active = ""
         self._error = ""
+        self._opened = False
         self._stop = threading.Event()
+        self._thread = None
+        self.wanted = 0.0           # when a tile last asked for it by name
         # When we keyed, when somebody last said they still wanted it, and
         # why it was last taken off the air. Zero means the rig is not
         # transmitting on our account - see PTT_HOLD.
@@ -1285,55 +1317,39 @@ class RigManager:
         self._ptt_confirmed = False
         self._ptt_drop = ""
         self._ptt_drop_at = 0.0
-        self.select(self.conf().get("active", ""), announce=False)
 
-    # --- configuration ---------------------------------------------------
-    def conf(self) -> dict:
-        return self.cfg.data.setdefault("radio", {})
+    def entry(self) -> dict | None:
+        """The radio's entry as configured now, so an edited sound card
+        shows up without reopening the CAT."""
+        if not self.id:
+            return None
+        return (self.hub.find(self.id) if self.hub else None) or self._rig
 
-    def rigs(self) -> list[dict]:
-        return self.conf().setdefault("rigs", [])
-
-    def find(self, rig_id: str) -> dict | None:
-        return next((r for r in self.rigs() if r.get("id") == rig_id), None)
-
-    def active(self) -> dict | None:
-        return self.find(self._active)
-
-    # --- the live rig ----------------------------------------------------
-    def select(self, rig_id: str, announce: bool = True) -> dict:
+    def open(self, error: str = "") -> None:
         with self._lock:
-            if self._backend:
-                self._backend.close()
-                self._backend = None
-            self._error = ""
-            rig = self.find(rig_id) or (self.rigs()[0] if self.rigs() else None)
-            self._active = (rig or {}).get("id", "")
-            if rig:
+            if self._opened:
+                return
+            self._opened = True
+            self._error = error
+            if self._rig and not error:
                 try:
-                    self._backend = make_backend(rig)
+                    self._backend = make_backend(self._rig)
                 except RigError as exc:
                     self._error = str(exc)
                 except Exception as exc:            # noqa: BLE001 - reported
                     self._error = str(exc)
-            self.conf()["active"] = self._active
-        try:
-            self.cfg.save()
-        except Exception:                           # noqa: BLE001
-            pass
-        st = self.state()
-        if announce:
-            BUS.publish("radio.state", st, source="radio")
-        return st
+
+    def keyed(self) -> bool:
+        return bool(self._ptt_since)
 
     def state(self) -> dict:
-        rig = self.active()
+        rig = self.entry()
         # The sound devices ride along with the state rather than being
         # looked up from config by whoever wants them: a decoder card asks
         # one question - what is the radio doing - and the answer has to
         # include which sound card is its audio, or it would have to track
         # the active rig itself and could disagree about it.
-        base = {"rig_id": self._active, "rig": (rig or {}).get("name", ""),
+        base = {"rig_id": self.id, "rig": (rig or {}).get("name", ""),
                 "backend": (rig or {}).get("backend", ""),
                 "audio_in": (rig or {}).get("audio_in", ""),
                 "audio_out": (rig or {}).get("audio_out", ""),
@@ -1381,9 +1397,10 @@ class RigManager:
         return out
 
     def _do(self, fn, *a):
-        if self._error or not self._backend:
+        backend = self._backend             # once - see state()
+        if self._error or not backend:
             raise RigError(self._error or "no radio selected")
-        fn(self._backend, *a)
+        fn(backend, *a)
         return self.state()
 
     def set_freq(self, hz: int) -> dict:
@@ -1407,14 +1424,15 @@ class RigManager:
         Which ones are read follows the radio's own PTT rather than what
         hamdash last did, because something else may be keying it.
         """
-        if self._error or not self._backend:
+        backend = self._backend
+        if self._error or not backend:
             return {"ok": False, "error": self._error or "no radio selected"}
-        st = self._backend.state()
+        st = backend.state()
         if not st.get("ok"):
             return {"ok": False,
                     "error": st.get("error", "the radio is not answering")}
         tx = bool(st.get("ptt"))
-        got = self._backend.meters(tx)
+        got = backend.meters(tx)
         return {"ok": "error" not in got, "tx": tx, **got}
 
     def set_ptt(self, on: bool) -> dict:
@@ -1439,7 +1457,7 @@ class RigManager:
 
     def ptt_limits(self) -> tuple[float, float]:
         """The hold and the ceiling, from config, with 0 meaning no ceiling."""
-        conf = self.conf()
+        conf = self.hub.conf() if self.hub else {}
         try:
             ceiling = float(conf.get("ptt_timeout", PTT_TIMEOUT))
         except (TypeError, ValueError):
@@ -1482,7 +1500,7 @@ class RigManager:
             why = f"transmission reached the {ceiling:.0f}s limit"
         if not why:
             return st
-        print(f"unkeying: {why}")
+        print(f"unkeying {self.label()}: {why}")
         self._ptt_since = self._ptt_seen = 0.0
         self._ptt_drop, self._ptt_drop_at = why, now
         try:
@@ -1490,14 +1508,20 @@ class RigManager:
         except Exception as exc:                        # noqa: BLE001
             # Worth shouting about: the radio may still be transmitting.
             self._ptt_drop = f"{why}, and unkeying it failed: {exc}"
-            print(f"UNKEY FAILED: {exc}")
+            print(f"UNKEY FAILED on {self.label()}: {exc}")
         return {**self.state(), "ptt_dropped": self._ptt_drop}
+
+    def label(self) -> str:
+        return (self.entry() or {}).get("name") or self.id or "the radio"
 
     def backend(self) -> Backend | None:
         return self._backend
 
     # --- polling ---------------------------------------------------------
     def start_polling(self, hz: float = 2.0) -> None:
+        if self._thread:
+            return
+
         def loop():
             last = None
             while not self._stop.wait(1.0 / hz):
@@ -1521,44 +1545,284 @@ class RigManager:
                     LOG.exception("rig poll failed: %s", exc)
                     continue
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
-                       st.get("ok"), st.get("rig_id"),
+                       st.get("ok"), st.get("rig_id"), st.get("rig"),
                        st.get("audio_in"), st.get("audio_out"),
                        st.get("vfo"), st.get("freq_a"), st.get("freq_b"),
                        st.get("split"))
                 if key != last:
                     last = key
-                    BUS.publish("radio.state", st, source="radio")
-        threading.Thread(target=loop, daemon=True).start()
+                    self.publish(st)
+        self._thread = threading.Thread(target=loop, daemon=True,
+                                        name=f"rig-{self.id or 'none'}")
+        self._thread.start()
+
+    def publish(self, st: dict) -> None:
+        # Every radio says what it is doing on `radio.rig`; the selected
+        # one also says it on `radio.state`, which is what every card that
+        # does not care which radio has always followed.
+        BUS.publish("radio.rig", st, source="radio")
+        if self.hub and self.hub.selected_id() == self.id:
+            BUS.publish("radio.state", st, source="radio")
 
     def stop(self) -> None:
         self._stop.set()
         # Closing the app while it is transmitting must not leave the
         # transmitter on. The watchdog cannot help here - it is going away
         # with everything else - so this is the last thing that can.
-        if self._ptt_since and self._backend:
+        backend = self._backend
+        if self._ptt_since and backend:
             try:
-                self._backend.set_ptt(False)
-                print("unkeying: hamdash is shutting down")
+                backend.set_ptt(False)
+                print(f"unkeying {self.label()}: it is being closed")
             except Exception as exc:                    # noqa: BLE001
-                print(f"UNKEY ON SHUTDOWN FAILED: {exc}")
+                print(f"UNKEY ON CLOSE FAILED for {self.label()}: {exc}")
         self._ptt_since = self._ptt_seen = 0.0
         with self._lock:
             if self._backend:
-                self._backend.close()
+                try:
+                    self._backend.close()
+                except Exception as exc:                # noqa: BLE001
+                    LOG.warning("closing %s: %s", self.label(), exc)
                 self._backend = None
+
+
+# ----------------------------------------------------------------- manager
+class RigManager:
+    """The configured rigs, which one is selected, and which are open.
+
+    The *selected* radio is what every card means when it does not name
+    one - `/api/radio/*` with no id, `radio.state`, the logbook's follow.
+    A rig tile may name another, and then that radio is open too, with its
+    own watchdog; see `link()`.
+    """
+
+    def __init__(self, cfg) -> None:
+        self.cfg = cfg
+        self._lock = threading.RLock()
+        self._links: dict[str, RigLink] = {}
+        self._active = ""
+        self._hz = 0.0
+        self._stop = threading.Event()
+        self.select(self.conf().get("active", ""), announce=False)
+
+    # --- configuration ---------------------------------------------------
+    def conf(self) -> dict:
+        return self.cfg.data.setdefault("radio", {})
+
+    def rigs(self) -> list[dict]:
+        return self.conf().setdefault("rigs", [])
+
+    def find(self, rig_id: str) -> dict | None:
+        return next((r for r in self.rigs() if r.get("id") == rig_id), None)
+
+    def active(self) -> dict | None:
+        return self.find(self._active)
+
+    def selected_id(self) -> str:
+        return self._active
+
+    def open_ids(self) -> list[str]:
+        with self._lock:
+            return [i for i in self._links if i]
+
+    # --- the radios ------------------------------------------------------
+    def _owner(self, rig: dict, but: str):
+        """The open radio already holding what `rig` needs, if any."""
+        want = resource(rig)
+        if want is None:
+            return None
+        for lid, other in self._links.items():
+            if lid != but and resource(other.entry()) == want:
+                return other
+        return None
+
+    def _make(self, rig: dict | None) -> RigLink:
+        """A link, registered and opened. Called with the lock held, so two
+        requests for one radio cannot each open it (invariant 3b)."""
+        link = RigLink(self, rig)
+        clash = self._owner(rig, link.id) if rig else None
+        self._links[link.id] = link
+        link.open(error=(f"{clash.label()} is already using "
+                         f"{_what(resource(rig))} - two programs cannot "
+                         f"share it, and neither can two of ours"
+                         if clash else ""))
+        if self._hz:
+            link.start_polling(self._hz)
+        return link
+
+    def _drop(self, rig_id: str) -> None:
+        link = self._links.pop(rig_id, None)
+        if link:
+            link.stop()
+
+    def link(self, rig_id: str | None = "") -> RigLink:
+        """The radio a request means: by id, or the selected one.
+
+        Opened on first use. Asking by id is what keeps a radio that is not
+        the selected one open; see LINK_IDLE.
+        """
+        rig_id = str(rig_id or "")
+        with self._lock:
+            if not rig_id or rig_id in ("selected", self._active):
+                link = self._links.get(self._active)
+                if link is None:
+                    link = self._make(self.active())
+                if rig_id:
+                    link.wanted = time.time()
+                return link
+            rig = self.find(rig_id)
+            if rig is None:
+                raise RigError(f"no radio {rig_id} - was it removed in "
+                               f"Settings -> Radio?")
+            link = self._links.get(rig_id)
+            # One that could not open because another radio held its port
+            # tries again once that one has gone.
+            if link and link._error and not link.keyed() \
+                    and self._owner(rig, rig_id) is None \
+                    and "already using" in link._error:
+                self._drop(rig_id)
+                link = None
+            if link is None:
+                link = self._make(rig)
+            link.wanted = time.time()
+            return link
+
+    def select(self, rig_id: str, announce: bool = True) -> dict:
+        with self._lock:
+            old = self._active
+            rig = self.find(rig_id) or (self.rigs()[0] if self.rigs() else None)
+            new = (rig or {}).get("id", "")
+            # Selecting reopens: it is how the operator retries a radio
+            # that would not open, and its settings may be what changed.
+            # Never one that is on the air, though - that is the watchdog's.
+            cur = self._links.get(new)
+            if cur is not None and not cur.keyed():
+                self._drop(new)
+            self._active = new
+            # The one before it closes, as it always did - unless a tile is
+            # driving it, or hamdash has it keyed.
+            prev = self._links.get(old)
+            if old != new and prev is not None and not prev.keyed() \
+                    and time.time() - prev.wanted > LINK_IDLE:
+                self._drop(old)
+            if "" in self._links and new:
+                self._drop("")
+            self.conf()["active"] = self._active
+            link = self._links.get(new) or self._make(rig)
+        try:
+            self.cfg.save()
+        except Exception:                           # noqa: BLE001
+            pass
+        st = link.state()
+        if announce:
+            link.publish(st)
+        return st
+
+    def reconcile(self) -> None:
+        """After the radio list is saved: close what was removed, reopen
+        what was edited, and leave every other open radio alone."""
+        with self._lock:
+            for lid, link in list(self._links.items()):
+                if not lid:
+                    continue
+                now = self.find(lid)
+                if now is None or now != link._rig:
+                    if link.keyed():
+                        continue            # the watchdog's, not ours
+                    self._drop(lid)
+
+    def reap(self, now: float | None = None) -> list[str]:
+        """Close radios nobody has asked about. Never the selected one, and
+        never one hamdash has on the air."""
+        now = time.time() if now is None else now
+        gone = []
+        with self._lock:
+            for lid, link in list(self._links.items()):
+                if lid == self._active or link.keyed():
+                    continue
+                if now - link.wanted > LINK_IDLE:
+                    self._drop(lid)
+                    gone.append(lid)
+        for lid in gone:
+            print(f"radio {lid}: closed, no tile has asked for it in "
+                  f"{LINK_IDLE:.0f}s")
+        return gone
+
+    # --- the selected radio, for everything that does not name one -------
+    def state(self) -> dict:
+        return self.link().state()
+
+    def set_freq(self, hz: int) -> dict:
+        return self.link().set_freq(hz)
+
+    def set_mode(self, mode: str, width: int = 0) -> dict:
+        return self.link().set_mode(mode, width)
+
+    def set_vfo(self, which: str) -> dict:
+        return self.link().set_vfo(which)
+
+    def set_split(self, on: bool) -> dict:
+        return self.link().set_split(on)
+
+    def swap_vfo(self) -> dict:
+        return self.link().swap_vfo()
+
+    def meters(self) -> dict:
+        return self.link().meters()
+
+    def set_ptt(self, on: bool) -> dict:
+        return self.link().set_ptt(on)
+
+    def backend(self) -> Backend | None:
+        return self.link().backend()
+
+    # --- polling ---------------------------------------------------------
+    def start_polling(self, hz: float = 2.0) -> None:
+        with self._lock:
+            self._hz = hz
+            for link in self._links.values():
+                link.start_polling(hz)
+
+        def reaper():
+            while not self._stop.wait(10.0):
+                try:
+                    self.reap()
+                except Exception as exc:                # noqa: BLE001
+                    LOG.exception("rig reaper failed: %s", exc)
+        threading.Thread(target=reaper, daemon=True, name="rig-reaper").start()
+
+    def stop(self) -> None:
+        """Close every radio. Each unkeys whatever hamdash keyed on it, and
+        one that fails to does not stop the rest being asked."""
+        self._stop.set()
+        with self._lock:
+            links = list(self._links.values())
+            self._links.clear()
+        for link in links:
+            try:
+                link.stop()
+            except Exception as exc:                    # noqa: BLE001
+                print(f"closing {link.label()} failed: {exc}")
 
     # --- trying one without selecting it ---------------------------------
     def test(self, rig: dict) -> dict:
         """Open a rig, ask it one question, close it again.
 
         Separate from `select` so the operator can check a new entry without
-        taking the radio they are using away from them - except where the
-        hardware says otherwise, which is what the note is for.
+        taking the radio they are using away from them. A radio that is
+        already open is asked through what is open - a second rigctld on
+        the same serial port would fail, and say so misleadingly.
         """
-        same = rig.get("id") and rig.get("id") == self._active
-        if same and self._backend:
-            st = self.state()
+        with self._lock:
+            open_ = self._links.get(rig.get("id") or "\0")
+            clash = None if open_ else self._owner(rig, rig.get("id") or "")
+        if open_ is not None and open_.backend():
+            st = open_.state()
             return {**st, "message": _say(st)}
+        if clash is not None:
+            return {"ok": False,
+                    "error": f"{clash.label()} is already using "
+                             f"{_what(resource(rig))}"}
         backend = None
         try:
             backend = make_backend(rig)
@@ -1573,6 +1837,16 @@ class RigManager:
         finally:
             if backend:
                 backend.close()
+
+
+def _what(res) -> str:
+    if not res:
+        return "it"
+    if res[0] == "serial":
+        return res[1].upper()
+    if res[0] == "omnirig":
+        return f"OmniRig slot {res[1]}"
+    return f"{res[0]} at {res[1]}:{res[2]}"
 
 
 def _say(st: dict) -> str:

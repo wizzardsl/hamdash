@@ -16,12 +16,25 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
+- **A rig tile can control a radio of its own.** Rig control has a Radio
+  setting: "the selected radio", as before, or any radio by name. Two rig
+  tiles set to two radios tune, change mode, read meters and transmit on
+  both at once, each with its own watchdog, and Listen's "rig" input
+  follows that tile's radio. Everything else - logbook, spots, decoder,
+  spectrum - still follows the selected radio. Two entries that share a
+  serial port, OmniRig slot or flrig/rigctld address cannot be open
+  together; the second names the radio that has it. For card authors:
+  `HD.radio.for(id)`, `card.host.radio(rig)`, the `radio` settings type and
+  the `radio.rig` topic.
 - **Listen can play in one ear.** A Stereo / Left / Right choice beside
   the volume, so two radios - two rig tiles, each listening to its own
   sound card - can be heard one in each ear. Stereo is unchanged. The
   choice and the volume are kept per tile, in this browser.
 
 ### Fixed
+- **Selecting another radio while transmitting** closed the radio without
+  unkeying it. The radio on the air now stays open until the watchdog or
+  you take it off.
 - **Following the radio's input could open a microphone.** With no audio
   input set on the radio, "rig" fell through to the computer's default
   input. It now says the radio has none set and opens nothing.

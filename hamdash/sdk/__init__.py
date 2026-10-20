@@ -69,11 +69,17 @@ class HostClient:
         return r.json() if r.content else {}
 
     # conveniences for the shared services
-    def radio(self):
+    def radio(self, rig: str = ""):
+        """What a radio is doing: the selected one, or `rig` by its id."""
+        if rig and rig != "selected":
+            return self.get("/api/radio/state", rig=rig)
         return self.get("/api/radio/state")
 
-    def set_freq(self, hz: int):
-        return self.post("/api/radio/freq", {"hz": int(hz)})
+    def set_freq(self, hz: int, rig: str = ""):
+        body = {"hz": int(hz)}
+        if rig and rig != "selected":
+            body["rig"] = rig
+        return self.post("/api/radio/freq", body)
 
     def lookup(self, call: str):
         return self.get(f"/api/lookup/{call}")

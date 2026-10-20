@@ -305,7 +305,10 @@ def _device_for(conf: dict) -> str:
     if want != "rig":
         return want
     try:
-        got = str((card.host.radio() or {}).get("audio_in") or "").strip()
+        # The tile's own radio when the rig card names one, so two rig
+        # tiles on two radios each hear their own.
+        st = card.host.radio(conf.get("radio", "")) or {}
+        got = str(st.get("audio_in") or "").strip()
     except Exception:                                   # noqa: BLE001
         got = ""
     return got or NO_RIG_INPUT
@@ -326,6 +329,9 @@ def _conf() -> dict:
     conf = {} if device else dict(card.settings() or {})
     if device:
         conf["device"] = device
+    rig = (request.args.get("rig") or "").strip()
+    if rig:
+        conf["radio"] = rig
     rate = request.args.get("rate")
     if rate:
         try:

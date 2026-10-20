@@ -44,7 +44,9 @@ def a_manager(ptt_timeout=120):
     (home / "layout.json").write_text("[]", encoding="utf-8")
     cfg = Config(home)
     rigs.ensure_rigs(cfg)
-    man = rigs.RigManager(cfg)
+    # The watchdog belongs to one radio, so it is driven on that radio's
+    # link.
+    man = rigs.RigManager(cfg).link()
     man._backend = Recording()
     man._error = ""
     return man, home

@@ -75,10 +75,12 @@ class Card:
             # were each asking the operator to type part of a device
             # name from memory. Anything the manifest puts in `options`
             # is offered first (`rig`, `mock`), then the real inputs.
+            # `radio` is the same idea for the configured radios:
+            # "selected" first, then each radio by name, stored by id.
             # One line on purpose: tests/test_card_docs.py reads this
             # tuple to check every type is documented, and its regex
             # cannot span lines.
-            if kind not in ("string", "number", "bool", "select", "secret", "audio_in"):
+            if kind not in ("string", "number", "bool", "select", "secret", "audio_in", "radio"):
                 kind = "string"
             out.append({
                 "name": name,

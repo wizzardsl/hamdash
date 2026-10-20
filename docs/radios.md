@@ -101,6 +101,24 @@ The **Hamlib** radio list comes from `rigctl -l`, so it is whatever your
 Hamlib supports rather than a copy here that would go stale. Without Hamlib
 installed the tab says so and takes a model number instead.
 
+### More than one radio at a time
+
+The radio marked *selected* is the one the whole board follows: the
+logbook's frequency and mode, the spots card's tune, the decoder and the
+spectrum. A **Rig control** tile follows it too, unless you give the tile a
+radio of its own - its settings have a **Radio** choice. Two rig tiles set
+to two radios drive both at once: each tunes, changes mode, reads its
+meters and keys its own radio, and its Listen "rig" input is that radio's
+sound card. Put one in each ear with Listen's Left / Right.
+
+- A radio a tile names is opened beside the selected one and closed again
+  two minutes after no tile is asking for it - never while hamdash has it
+  on the air.
+- Two entries that reach the radio the same way - one COM port, one
+  OmniRig slot, one flrig or rigctld address - cannot both be open. The
+  second says which radio already has it, and opens once that one closes.
+- Every radio keeps its own transmit watchdog, below.
+
 ## The transmitter
 
 hamdash can key your radio, so it also takes the transmission off the air

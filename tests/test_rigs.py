@@ -376,8 +376,9 @@ class TestNothingMayEndThePollingThread(unittest.TestCase):
             calls.append(1)
             raise RuntimeError("the serial port went away")
 
-        with mock.patch.object(man, "state", side_effect=boom):
-            man.start_polling(hz=50.0)
+        link = man.link()
+        with mock.patch.object(link, "state", side_effect=boom):
+            link.start_polling(hz=50.0)
             end = time.time() + 2.0
             while len(calls) < 5 and time.time() < end:
                 time.sleep(0.01)

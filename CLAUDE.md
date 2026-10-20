@@ -724,6 +724,26 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   off the air was the one that would not. It follows `radio.state`, which
   also means another program keying the rig moves the button. Anything else
   that offers a transmit control has to do the same.
+- **One radio, one `RigLink`; `RigManager` is the hub over them.** A rig
+  tile may name its radio (`radio` setting, `HD.radio.for(id)`, `?rig=` /
+  body `rig` on `/api/radio/*`); no id means the selected radio, so every
+  card that never names one is untouched. Each link has its own backend,
+  PTT fields, watchdog and **polling thread** - an OmniRig call can take
+  15 s and must not delay another radio's watchdog. The selected link
+  publishes `radio.state` *and* `radio.rig`, the rest only `radio.rig`,
+  which no `radio.state` subscription matches. Three things that used to
+  be implied by "one backend at a time" now have to be said: **one owner
+  per port** (`resource()`: COM port, OmniRig slot, flrig/rigctld
+  address - the second open is refused naming the first, and `test()`
+  asks an open link rather than spawning a second rigctld on its COM
+  port); **a radio nobody asks for is reaped** after `LINK_IDLE`, never
+  the selected one and **never one hamdash has keyed** - closing it would
+  leave nothing watching the transmission; and **selecting away closes
+  the previous radio only if no tile named it recently and it is not on
+  the air** (it used to close a keyed radio without unkeying). The rig
+  page's PTT keep-alive is bound to the radio that is on the air, not
+  to whatever `radio` is later: a ping to a radio that is not
+  transmitting *keys it*. `tests/test_rig_links.py`.
 - **Mode before frequency, always.** A radio applies its CW offset when it
   *enters* CW, so setting the frequency first and the mode second leaves the
   dial that offset away from where you aimed - 700 Hz on an FT-890, which is

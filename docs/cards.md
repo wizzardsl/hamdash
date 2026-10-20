@@ -132,7 +132,7 @@ UI, and the operator gets one that looks like every other card's.
 }
 ```
 
-Types: `string`, `number`, `bool`, `select`, `secret`, `audio_in`.
+Types: `string`, `number`, `bool`, `select`, `secret`, `audio_in`, `radio`.
 
 **`audio_in` is a `select` the host fills in.** A card cannot know what sound
 cards the machine has, so listing them is the host's job: whatever you put in
@@ -142,6 +142,13 @@ because PortAudio indices shuffle whenever something is plugged in or a
 Bluetooth headset wakes. A stored device that has since disappeared stays in
 the list marked *not found now* rather than the sheet quietly selecting
 something else.
+
+**`radio` is one of the operator's radios.** The sheet offers *The selected
+radio* (stored as `selected`) and then every radio in Settings → Radio by
+name; the value you get back is the radio's id, because a name can be
+edited. Pass it to `HD.radio.for(id)` or `card.host.radio(id)` - both treat
+`selected` as "the selected one", so the default needs no special case. A
+radio that has since been removed stays in the list marked *removed*.
 
 **Settings belong to a tile, not to a card.** Two tiles of your card are two
 sets of settings, and they travel with the tile — docking it into a stack or
@@ -246,8 +253,8 @@ Routes are mounted under `/api` for you, and the host proxies
 
 | call | what it gives you |
 |---|---|
-| `card.host.radio()` | the live rig: frequency, mode, band, PTT, VFOs, split |
-| `card.host.set_freq(hz)` | tune it |
+| `card.host.radio(rig="")` | the selected radio - or the one whose id is `rig`: frequency, mode, band, PTT, VFOs, split, its sound cards |
+| `card.host.set_freq(hz, rig="")` | tune it |
 | `card.host.lookup(call)` | callsign lookup, through the host's cache |
 | `card.host.log_qso(qso)` | add a contact |
 | `card.host.station()` | the operator: callsign, grid, name |
@@ -318,7 +325,7 @@ Load it and the rest follows — theme, events, settings, units:
 |---|---|
 | **your card** | `HD.card('my_card', '/api/state')`, `HD.cardRaw(id, path)`, `HD.cardPath(path)`, `HD.cardId`, `HD.tileUid` |
 | **settings** | `HD.settings()`, `HD.saveSettings(v)`, `HD.onSettings(fn)` |
-| **radio** | `HD.radio.state() .freq(hz) .mode(m, w) .ptt(on) .modes() .meters() .vfo(a) .swapVfo() .split(on)` |
+| **radio** | `HD.radio.state() .freq(hz) .mode(m, w) .ptt(on) .modes() .meters() .vfo(a) .swapVfo() .split(on)` - the selected radio; `HD.radio.for(id)` is the same calls for one radio by id |
 | **log** | `HD.log.recent(n) .add(qso) .remove(id) .stats()` |
 | **lookup** | `HD.lookup(call)` |
 | **station** | `HD.station()` |
@@ -361,6 +368,10 @@ One publish/subscribe channel for the whole board.
 - Two things reach you whatever your `subscribes` says:
   `card.settings_changed` and `config.changed`. The SDK uses the first.
 - The topic for the radio is **`radio.state`**, not `rig.state`.
+- `radio.state` is the *selected* radio. Every open radio - the selected one
+  and any a tile is driving by id - also publishes **`radio.rig`**, with the
+  same payload; filter it on `rig_id`. Listening for `radio.state` alone
+  never brings you `radio.rig`.
 
 Worth listening for: `radio.state`, `lookup.result` (what the board is
 looking at now), `log.qso_added`, `config.changed`.

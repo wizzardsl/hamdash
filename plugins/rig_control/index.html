@@ -13,6 +13,7 @@
   .band.off-band { color: var(--muted); font-family: inherit; }
   .state { color: var(--muted); font-size: 12px; }
   .state.tx { color: var(--alert); }
+  .which { color: var(--accent); font-size: 12px; }
   .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
   input.freq { width: 9em; font-family: var(--mono); }
   select, input { font: inherit; color: var(--ink); background: var(--bg);
@@ -90,6 +91,7 @@
   <span class="dial" id="dial">--.------</span>
   <span class="band" id="band"></span>
   <span class="state" id="state"></span>
+  <span class="which" id="which" hidden></span>
   <span class="tuner">
     <button id="down" title="Down one step (or the down arrow key)" aria-label="Tune down one step">&#9660;</button>
     <button id="up" title="Up one step (or the up arrow key)" aria-label="Tune up one step">&#9650;</button>
@@ -145,6 +147,9 @@ const STEPS = [
   [25000, '25 kHz'], [100000, '100 kHz'], [1000000, '1 MHz'],
 ];
 let conf = {};
+// The radio this tile controls: the selected one unless its Radio setting
+// names one. Everything below goes through this, never HD.radio directly.
+let radio = HD.radio;
 let live = null;              // the last state the rig gave us
 let stepping = false;         // one request at a time while a key is held
 let transmitting = false;     // what the *radio* last said, not this page
@@ -164,9 +169,12 @@ function setPtt(on) {
   // takes the rig off the air a few seconds after these stop - which is
   // what happens when the tile is closed, the card crashes or the browser
   // goes away, and is the only thing that would.
+  // Bound to the radio that is on the air, not to whatever `radio` is
+  // later: a ping to a radio that is *not* transmitting keys it.
   clearInterval(holding);
+  const held = radio;
   holding = on ? setInterval(() => {
-    HD.radio.ptt(true).catch(() => { /* the host's watchdog has it */ });
+    held.ptt(true).catch(() => { /* the host's watchdog has it */ });
   }, 2000) : null;
   // The meter changes meaning when the radio does - signal one way, power
   // the other - and is watched harder during a transmission.
@@ -276,7 +284,7 @@ function startMetering() {
     // loaded, so it would otherwise keep asking for ever.
     if (busy || HD.hidden) return;
     busy = true;
-    try { paintMeter(await HD.radio.meters()); }
+    try { paintMeter(await radio.meters()); }
     catch { /* the state line already says when the rig is unreachable */ }
     finally { busy = false; }
   };
@@ -322,7 +330,7 @@ async function nudge(dir) {
   const want = Math.max(0, (live.freq || 0) + dir * stepHz());
   stepping = true;
   try {
-    paint(await HD.radio.freq(want));
+    paint(await radio.freq(want));
   } catch (e) {
     fail(e);
   } finally {
@@ -332,6 +340,7 @@ async function nudge(dir) {
 
 function paint(s) {
   live = s;
+  paintWhich(s);
   $('#up').disabled = $('#down').disabled = !s.ok;
   if (!s.ok) {
     $('#err').textContent = s.error || 'rig unavailable';
@@ -368,8 +377,32 @@ function paint(s) {
   }
 }
 
+// Point the tile at the radio its settings name. Changing it while this
+// tile has a radio on the air unkeys that one first: the keep-alive is
+// about to stop, and saying so beats leaving it to the watchdog.
+async function bind() {
+  const want = HD.radio.for(conf.radio || 'selected');
+  if (want.id === radio.id) return false;
+  if (transmitting && holding) {
+    try { await radio.ptt(false); } catch { /* the watchdog has it */ }
+  }
+  clearInterval(holding); holding = null; transmitting = false;
+  radio = want;
+  return true;
+}
+
+// Which radio, said in the tile only when it is not simply the selected
+// one - a tile that names its radio should say which, or two rig tiles
+// on two radios look identical.
+function paintWhich(s) {
+  const w = $('#which');
+  w.hidden = !radio.id;
+  w.textContent = radio.id ? (s.rig || radio.id) : '';
+}
+
 async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  await bind();
   // The radio's receive audio. Read through `conf` on every request, so a
   // change of input in this tile's settings applies at the next poll.
   HDListen.mount($('#listen'), { conf: () => conf });
@@ -382,9 +415,13 @@ async function boot() {
     conf = { ...conf, step_hz: Number($('#step').value) };
     try { await HD.saveSettings(conf); } catch { /* still applies now */ }
   };
-  HD.onSettings((v) => {
+  HD.onSettings(async (v) => {
     conf = v || {};
     if (conf.step_hz) $('#step').value = String(conf.step_hz);
+    if (await bind()) {
+      try { paint(await radio.state()); } catch (e) { fail(e); }
+      if (metering) startMetering();
+    }
   });
 
   $('#up').onclick = () => nudge(1);
@@ -399,7 +436,7 @@ async function boot() {
 
   const modes = await HD.radio.modes();
   $('#mode').innerHTML = modes.map(m => `<option>${m}</option>`).join('');
-  $('#mode').onchange = (e) => HD.radio.mode(e.target.value).then(paint).catch(fail);
+  $('#mode').onchange = (e) => radio.mode(e.target.value).then(paint).catch(fail);
 
   $('#tune').onclick = () => {
     const hz = parseFreq($('#freq-in').value);
@@ -408,14 +445,14 @@ async function boot() {
         'Enter a frequency: 14.074, 14074 or 14074000 all mean the same thing';
       return;
     }
-    HD.radio.freq(hz).then(paint).catch(fail);
+    radio.freq(hz).then(paint).catch(fail);
   };
   $('#freq-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#tune').click(); });
 
   $('#ptt').onclick = () => {
     // Asked for the opposite of what the radio is doing, not of what this
     // page last did.
-    HD.radio.ptt(!transmitting).then(paint).catch(fail);
+    radio.ptt(!transmitting).then(paint).catch(fail);
   };
 
   const { memories } = await HD.card('rig_control', '/api/memories');
@@ -429,23 +466,26 @@ async function boot() {
         // Mode before frequency: a radio applies its CW offset on entering
         // CW, so the other order leaves the dial that offset away from
         // where the memory said.
-        await HD.radio.mode(m.mode);
-        paint(await HD.radio.freq(m.hz));
+        await radio.mode(m.mode);
+        paint(await radio.freq(m.hz));
       } catch (e) { fail(e); }
     };
     $('#mem').appendChild(b);
   });
 
-  $('#vfo-a').onclick = () => HD.radio.vfo('A').then(paint).catch(fail);
-  $('#vfo-b').onclick = () => HD.radio.vfo('B').then(paint).catch(fail);
-  $('#swap').onclick = () => HD.radio.swapVfo().then(paint).catch(fail);
+  $('#vfo-a').onclick = () => radio.vfo('A').then(paint).catch(fail);
+  $('#vfo-b').onclick = () => radio.vfo('B').then(paint).catch(fail);
+  $('#swap').onclick = () => radio.swapVfo().then(paint).catch(fail);
   // Asked for the opposite of what the radio says, not of what this page
   // last drew - the same rule the Transmit button is built on.
   $('#split').onclick = () =>
-    HD.radio.split(!(live && live.split)).then(paint).catch(fail);
+    radio.split(!(live && live.split)).then(paint).catch(fail);
 
-  paint(await HD.radio.state());
-  HD.on('radio.state', paint);
+  paint(await radio.state());
+  // The selected radio says what it is doing on `radio.state`; every open
+  // radio says it on `radio.rig` too. A tile follows exactly one of them.
+  HD.on('radio.state', (s) => { if (!radio.id) paint(s); });
+  HD.on('radio.rig', (s) => { if (radio.id && s.rig_id === radio.id) paint(s); });
   startMetering();
   // A hidden tab keeps running, so it is told. Without this a stacked rig
   // tile polls the radio for ever from behind another card.
