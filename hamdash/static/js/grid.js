@@ -316,6 +316,18 @@
       this._paintStatus(t, node);
     }
 
+    /* A card's name changed - its radio was renamed in Settings. Only the
+       tab strip is repainted: rebuilding the tile would reload the card. */
+    retitle(cardUid, title) {
+      const t = this.stackOf(cardUid);
+      const c = this.get(cardUid);
+      if (!t || !c || c.title === title) return;
+      c.title = title;
+      const node = this._nodes.get(t.uid);
+      if (node) this._paintTabs(t, node);
+      this.onChange(this.tiles);
+    }
+
     /* Only show the gear on cards that actually declare settings. */
     setConfigurable(cardUid, yes) {
       const t = this.stackOf(cardUid);

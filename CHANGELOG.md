@@ -16,11 +16,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
-- **A rig tile can control a radio of its own.** Rig control has a Radio
-  setting: "the selected radio", as before, or any radio by name. Two rig
-  tiles set to two radios tune, change mode, read meters and transmit on
-  both at once, each with its own watchdog, and Listen's "rig" input
-  follows that tile's radio. Everything else - logbook, spots, decoder,
+- **Every radio can have a rig tile of its own.** Each radio in Settings →
+  Radio is listed under Rig control in the Cards menu, and has an "Own tile
+  on the board" switch in Settings; both add or remove the same tile. It is
+  named after the radio and controls only that one - tune, mode, meters
+  and transmit, with its own watchdog - while the plain Rig control tile
+  keeps following the selected radio. Listen's "rig" input follows the
+  tile's radio. Renaming a radio renames its tile; removing one removes it.
+  Any rig tile can also be re-pointed with its Radio setting. Everything else - logbook, spots, decoder,
   spectrum - still follows the selected radio. Two entries that share a
   serial port, OmniRig slot or flrig/rigctld address cannot be open
   together; the second names the radio that has it. For card authors:

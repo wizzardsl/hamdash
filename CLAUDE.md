@@ -744,6 +744,18 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   page's PTT keep-alive is bound to the radio that is on the air, not
   to whatever `radio` is later: a ping to a radio that is not
   transmitting *keys it*. `tests/test_rig_links.py`.
+  **A radio's own tile is a `rig_control` entry with `settings.radio`,
+  nothing more**, and `static/js/rigtiles.js` is the one place that says
+  which tile is whose - the Cards menu row and the Settings switch both
+  call `toggleRadio`, so they cannot disagree. The plain Rig control row
+  counts only *unbound* tiles, or unticking it would take every radio's
+  tile too. **A tile born with settings is saved before it is mounted**
+  (`addBorn`): the card reads its settings from the host, the board's
+  save is debounced 300 ms, and the page came up on the defaults -
+  driving the selected radio under a title naming another - until
+  reloaded. `tidy` acts only on a non-empty radio list: an empty one is a
+  page that has not read it yet, not "every radio was removed".
+  `tests/js/rigtiles.test.js`.
 - **Mode before frequency, always.** A radio applies its CW offset when it
   *enters* CW, so setting the frequency first and the mode second leaves the
   dial that offset away from where you aimed - 700 Hz on an FT-890, which is

@@ -206,6 +206,15 @@
       this.onChange(this.tiles);
     }
 
+    /* A card's name changed. The bar is repainted; nothing is remounted. */
+    retitle(cardUid, title) {
+      const c = this.get(cardUid);
+      if (!c || c.title === title) return;
+      c.title = title;
+      this._paintNav(order(this.tiles));
+      this.onChange(this.tiles);
+    }
+
     /* The board calls this a tile; here it is just which card is up. */
     show(cardUid) {
       const entry = this.get(cardUid);

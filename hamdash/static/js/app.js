@@ -491,8 +491,70 @@
   // row shows the count - each carries its own settings and they go with it.
   const menuEl = () => $('#cards-menu');
 
+  // A rig tile bound to a radio of its own is that radio's, listed under
+  // it - so the plain Rig control row counts and removes only the tiles
+  // that follow the selected radio.
+  const RT = window.HDRigTiles;
+  const radios = () => ((config && config.radio && config.radio.rigs) || []);
+
   function tilesOf(cardId) {
+    if (cardId === RT.CARD) return RT.forRadio(shell.cards, '');
     return shell.cards.filter((c) => c.card === cardId);
+  }
+
+  /* One row of the Cards menu: a tick, a name, a line under it, a count. */
+  function menuButton({ name, sub, mine, disabled, onclick, indent }) {
+    const b = document.createElement('button');
+    b.className = 'menu-item' + (indent ? ' menu-sub' : '');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemcheckbox');
+    b.setAttribute('aria-checked', String(mine.length > 0));
+    // The name has to be explicit: the visible label is wrapped in spans
+    // alongside a decorative tick, and the computed name came out empty -
+    // a screen reader announced six unnamed checkboxes.
+    b.setAttribute('aria-label', mine.length > 1
+      ? `${name} (${mine.length} tiles)` : name);
+    if (disabled) b.disabled = true;
+
+    const tick = document.createElement('span');
+    tick.className = 'menu-tick';
+    tick.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.className = 'menu-text';
+    text.textContent = name;
+    const small = document.createElement('small');
+    small.textContent = sub;
+    text.appendChild(small);
+
+    b.append(tick, text);
+    if (mine.length > 1) {
+      const n = document.createElement('span');
+      n.className = 'menu-count';
+      n.textContent = `\u00d7${mine.length}`;
+      b.appendChild(n);
+    }
+    b.onclick = onclick;
+    return b;
+  }
+
+  /* Each radio in Settings -> Radio, as a rig tile of its own. Listed
+     under Rig control because that is what it is, and only once the
+     radios are known. */
+  function radioRows(ul, c) {
+    if (c.id !== RT.CARD || c.error) return;
+    radios().forEach((rig) => {
+      const li = document.createElement('li');
+      const sel = rig.id === (config.radio || {}).active;
+      li.appendChild(menuButton({
+        name: rig.name || 'Radio',
+        sub: `Its own rig tile${sel ? ' \u00b7 the selected radio' : ''}`,
+        mine: RT.forRadio(shell.cards, rig.id),
+        indent: true,
+        onclick: () => toggleRadio(rig),
+      }));
+      ul.appendChild(li);
+    });
   }
 
   function renderCardsMenu() {
@@ -502,38 +564,14 @@
     offered().forEach((c) => {
       const mine = tilesOf(c.id);
       const li = document.createElement('li');
-      const b = document.createElement('button');
-      b.className = 'menu-item';
-      b.type = 'button';
-      b.setAttribute('role', 'menuitemcheckbox');
-      b.setAttribute('aria-checked', String(mine.length > 0));
-      // The name has to be explicit: the visible label is wrapped in spans
-      // alongside a decorative tick, and the computed name came out empty -
-      // a screen reader announced six unnamed checkboxes.
-      b.setAttribute('aria-label', mine.length > 1
-        ? `${c.name} (${mine.length} tiles)` : c.name);
-      if (c.error) b.disabled = true;
-
-      const tick = document.createElement('span');
-      tick.className = 'menu-tick';
-      tick.setAttribute('aria-hidden', 'true');
-
-      const text = document.createElement('span');
-      text.className = 'menu-text';
-      text.textContent = c.name;
-      const sub = document.createElement('small');
-      sub.textContent = c.error ? c.error : (c.description || c.kind);
-      text.appendChild(sub);
-
-      b.append(tick, text);
-      if (mine.length > 1) {
-        const n = document.createElement('span');
-        n.className = 'menu-count';
-        n.textContent = `×${mine.length}`;
-        b.appendChild(n);
-      }
-      b.onclick = () => toggleCard(c);
-      li.appendChild(b);
+      li.appendChild(menuButton({
+        name: c.name,
+        sub: c.error ? c.error
+          : (c.id === RT.CARD && radios().length
+            ? 'Follows the selected radio' : (c.description || c.kind)),
+        mine, disabled: !!c.error,
+        onclick: () => toggleCard(c),
+      }));
       // Only cards the board itself wrote from a URL. A card somebody
       // wrote is their code, and a menu is not where that gets deleted -
       // the host refuses it too, so this is the signpost rather than the
@@ -552,15 +590,47 @@
         li.appendChild(del);
       }
       ul.appendChild(li);
+      radioRows(ul, c);
     });
   }
 
   function toggleCard(c) {
-    const mine = tilesOf(c.id);
+    toggleTiles(c.name, tilesOf(c.id), { card: c.id, title: c.name, w: c.w,
+      h: c.h, min_w: c.min_w, min_h: c.min_h, url: c.url });
+  }
+
+  /* A radio's own rig tile, on or off - from the Cards menu or from the
+     radio's row in Settings, which are the same switch. */
+  function toggleRadio(rig) {
+    const c = cards.find((x) => x.id === RT.CARD);
+    if (!c) return;
+    toggleTiles(rig.name || 'Radio', RT.forRadio(shell.cards, rig.id),
+                RT.def(rig, c)).then(syncRigTileBoxes);
+  }
+
+  /* Add a tile that is born with settings - a radio's own rig tile.
+
+     They have to reach the host before the card loads: the card reads its
+     settings from there, and the board's own save waits 300 ms - so the
+     page came up on the defaults, controlling the selected radio while its
+     title named another, until something reloaded it. Saved first, under
+     the uid the tile will have, then mounted. */
+  async function addBorn(def) {
+    if (def.settings && Object.keys(def.settings).length) {
+      const t = HDLayout.asStack(def);
+      def = { ...def, uid: t.cards[0].uid };
+      try {
+        await HD.put('/api/layout',
+                     { tiles: HDLayout.forSave([...shell.tiles, t]) });
+      } catch (e) { toast(e.message); return; }
+    }
+    shell.add(def);
+  }
+
+  async function toggleTiles(name, mine, def) {
     if (!mine.length) {
-      shell.add({ card: c.id, title: c.name, w: c.w, h: c.h,
-                  min_w: c.min_w, min_h: c.min_h, url: c.url });
-      toast(`${c.name} added`);
+      await addBorn(def);
+      toast(`${name} added`);
     } else {
       // Undo rather than a confirm dialog. A card can have several copies,
       // each carries its own settings, and one of them may be the third tab
@@ -570,7 +640,7 @@
       // window.open.
       const before = JSON.parse(JSON.stringify(shell.tiles));
       mine.forEach((entry) => shell.remove(entry.uid));
-      toast(`${c.name} removed${mine.length > 1 ? ` (${mine.length} tiles)` : ''}`,
+      toast(`${name} removed${mine.length > 1 ? ` (${mine.length} tiles)` : ''}`,
             { label: 'Undo',
               fn: () => {
                 // Every card is remounted, so the board reloads - the price
@@ -578,10 +648,25 @@
                 shell.setTiles(before);
                 saveLayout(shell.tiles);
                 renderCardsMenu();
-                toast(`${c.name} restored`);
+                syncRigTileBoxes();
+                toast(`${name} restored`);
               } });
     }
     renderCardsMenu();
+  }
+
+  /* When the radio list changes - here or in another browser - a tile
+     bound to a radio that was removed goes with it, and one whose radio
+     was renamed takes the new name. */
+  function tidyRigTiles() {
+    const { drop, retitle } = RT.tidy(shell.cards, radios());
+    retitle.forEach(([uid, title]) => shell.retitle(uid, title));
+    drop.forEach((uid) => shell.remove(uid));
+    if (drop.length) {
+      toast(drop.length > 1 ? `${drop.length} rig tiles went with their radios`
+                            : 'The removed radio\u2019s tile went with it');
+    }
+    if (drop.length || retitle.length) renderCardsMenu();
   }
 
   /* Deleting a card the board made from a URL.
@@ -943,6 +1028,15 @@
   const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /* Keep the Settings switches true to the board after a change made
+     from the Cards menu, or an Undo. */
+  function syncRigTileBoxes() {
+    document.querySelectorAll('#rig-list .rig-tile').forEach((box) => {
+      box.checked = !!box.dataset.rig
+        && RT.forRadio(shell.cards, box.dataset.rig).length > 0;
+    });
+  }
+
   function renderRigs() {
     const box = $('#rig-list');
     box.innerHTML = '';
@@ -1013,6 +1107,8 @@
         <button class="btn btn-quiet rig-use" type="button"${live ? ' disabled' : ''}>Use this one</button>
         <button class="btn btn-quiet rig-omni" type="button"${rig.backend === 'omnirig' ? '' : ' hidden'}>OmniRig settings\u2026</button>
         <button class="btn btn-quiet rig-del" type="button">Remove</button>
+        <label class="rig-own" title="A Rig control tile that always controls this radio, whichever is selected">
+          <input type="checkbox" class="rig-tile"> Own tile on the board</label>
       </div>
       <div class="said"></div>`;
 
@@ -1096,6 +1192,15 @@
                  : (r.error || ''), r.ok ? 'good' : 'warn');
       } catch (err) { say(err.message, 'warn'); }
     };
+
+    // The same switch as this radio's row in the Cards menu. It acts at
+    // once, like the menu does, rather than waiting for Save: it changes
+    // the board, not the radio.
+    const own = sel('rig-tile');
+    own.dataset.rig = rig.id || '';
+    own.checked = !!rig.id && RT.forRadio(shell.cards, rig.id).length > 0;
+    own.disabled = !rig.id || !cards.some((c) => c.id === RT.CARD);
+    own.onchange = () => toggleRadio({ ...rig, name: sel('rig-name').value || rig.name });
 
     sel('rig-del').onclick = async () => {
       rigEnv.rigs.splice(i, 1);
@@ -1558,7 +1663,12 @@
 
   // ---- bus wiring -----------------------------------------------------
   HD.on('card.status', (p) => shell.status(p.id, p.status));
-  HD.on('config.changed', (p) => { config = p; paintStation(); });
+  HD.on('config.changed', (p) => {
+    config = p;
+    paintStation();
+    tidyRigTiles();
+    renderCardsMenu();
+  });
 
   // ---- boot -----------------------------------------------------------
   try {
@@ -1616,6 +1726,7 @@
 
   shell.setTiles(layout.tiles || []);
   cards.forEach((c) => shell.warn(c.id, c.warnings));
+  tidyRigTiles();
   renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';
 

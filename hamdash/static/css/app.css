@@ -304,6 +304,8 @@ html, body {
 .rig .grid select, .rig .grid input { max-width: 100%; }
 .rig .grid[hidden], .rig .row-btns[hidden] { display: none; }
 .rig .row-btns { margin-top: 8px; }
+.rig .rig-own { display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto; font-size: 12px; color: var(--muted); }
 .rig .btn { font-size: 12px; padding: 3px 9px; }
 .rig .live { color: var(--accent); font-size: 11px; white-space: nowrap; }
 .rig .said { font-size: 11px; color: var(--muted); margin-top: 6px; }
@@ -438,6 +440,8 @@ html, body {
 }
 .menu-item:hover:not([disabled]), .menu-item:focus-visible { background: var(--panel-2); }
 .menu-item[disabled] { cursor: default; opacity: .65; }
+/* A radio's own rig tile, listed under Rig control. */
+.menu-item.menu-sub { padding-left: 26px; }
 /* A real box, so the state is legible without relying on colour alone. */
 .menu-tick {
   flex: none; width: 15px; height: 15px; border-radius: 2px;
