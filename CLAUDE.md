@@ -732,6 +732,16 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   freq-then-mode put a 7.037000 CW spot on 7.037700, mode-then-freq lands on
   7.037000. The spots card's tune and the rig card's memory buttons both
   order it that way.
+- **"SSB" is not a mode any radio has.** POTA and SOTA spot as SSB, and
+  flrig answers `has no mode like 'SSB'` - which the spots card's tune
+  swallowed, so the radio took the frequency in whatever sideband it was
+  already in (measured on the FT-900: 14.274 tuned in LSB). `radioMode`
+  in `plugins/spots/index.html` turns SSB into LSB below 10 MHz and USB
+  above, with 60 m (5.25-5.45) USB as regulated. It is decided in the
+  page because that is the only place that knows the spot's frequency
+  when the mode is set - mode goes first, so the rig still has the old
+  frequency. `tests/js/spots-sideband.test.js` lifts the real function
+  out of the page.
 ## Meters and VFOs
 
 - **A radio has one meter, so the power meter reads the S-meter while

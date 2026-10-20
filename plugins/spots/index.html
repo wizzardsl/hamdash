@@ -448,6 +448,20 @@ $('#refresh').onclick = async (e) => {
   e.target.disabled = false;
 };
 
+// The mode to give the radio for a spot. A spot says "SSB"; a radio has
+// LSB and USB and nothing called SSB, so sending it failed quietly and the
+// radio stayed in whatever mode it was in. The convention picks the
+// sideband: LSB below 10 MHz, USB from 10 MHz up - except 60 m, which is
+// channelised and USB by regulation though it sits at 5.3 MHz. A spot that
+// already says USB or LSB is left as it says.
+function radioMode(mode, hz) {
+  const m = String(mode || '').toUpperCase();
+  if (m !== 'SSB') return m;
+  const mhz = Number(hz) / 1e6;
+  if (mhz >= 5.25 && mhz <= 5.45) return 'USB';
+  return mhz < 10 ? 'LSB' : 'USB';
+}
+
 // Tuning is deliberately the frequency itself rather than the whole row: a
 // row-wide click would put the radio somewhere else on a mis-click.
 $('#pane').addEventListener('click', async (e) => {
@@ -460,7 +474,8 @@ $('#pane').addEventListener('click', async (e) => {
     // the width of that offset away from the station - 700 Hz on an FT-890,
     // which is a different signal, and reads as the spot being wrong rather
     // than as hamdash tuning wrong.
-    if (b.dataset.mode) await HD.radio.mode(b.dataset.mode).catch(() => {});
+    const mode = radioMode(b.dataset.mode, hz);
+    if (mode) await HD.radio.mode(mode).catch(() => {});
     await HD.radio.freq(hz);
     $('#err').textContent = '';
   } catch (err) { $('#err').textContent = err.message; }

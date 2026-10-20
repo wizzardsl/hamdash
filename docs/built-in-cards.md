@@ -219,7 +219,9 @@ contact from there.
 
 **Clicking a frequency tunes the radio** (and sets the mode when the spot
 carries one). It is the frequency rather than the whole row on purpose, so a
-mis-click cannot move the rig.
+mis-click cannot move the rig. A spot marked SSB sets the sideband by the
+usual convention: LSB below 10 MHz, USB from 10 MHz up, and USB on 60 m,
+where it is required. A spot that says USB or LSB itself is tuned as it says.
 
 **A cluster spot's mode comes from its comment, and says so.** The DX cluster
 has no mode field, so when the spotter's comment names one outright — "FT8

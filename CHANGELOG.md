@@ -4,6 +4,15 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Fixed
+- **Clicking an SSB spot left the radio in the wrong sideband.** POTA and
+  SOTA say "SSB"; a radio has LSB and USB and nothing called SSB, so the
+  mode was refused - silently - and the radio tuned the spot in whatever
+  mode it was in. The spots card now picks the sideband the usual way:
+  LSB below 10 MHz, USB from 10 MHz up, USB on 60 m.
+
 ## [0.9.1]
 
 ### Fixed
