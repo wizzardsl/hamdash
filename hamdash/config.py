@@ -215,6 +215,55 @@ def normalise_tile(raw) -> dict | None:
     return out
 
 
+# What a retired Listen tile chose, and the rig card now asks for.
+LISTEN_SETTINGS = ("device", "rate", "buffer_ms")
+
+
+def listen_moves_to_rig(tiles) -> list[dict]:
+    """Carry a Listen tile's input, quality and buffer to the rig tiles.
+
+    Listening moved into the rig card and the Listen card was retired, so
+    its tiles are taken off the board - and with them whatever input the
+    operator had picked, which would then quietly become the default.
+    Copied from the first Listen tile found, into each rig tile that has
+    not chosen its own; nothing a rig tile already set is overwritten.
+    """
+    tiles = normalise_layout(tiles)
+    entries = [e for t in tiles for e in t["cards"]]
+    listen = next((e for e in entries if e.get("card") == "rx_audio"), None)
+    if not listen:
+        return tiles
+    chosen = {k: v for k, v in (listen.get("settings") or {}).items()
+              if k in LISTEN_SETTINGS}
+    for e in entries:
+        if e.get("card") == "rig_control" and chosen:
+            mine = dict(e.get("settings") or {})
+            for k, v in chosen.items():
+                mine.setdefault(k, v)
+            e["settings"] = mine
+    return tiles
+
+
+def without_cards(tiles, card_ids) -> list[dict]:
+    """The board with every entry of these cards taken off it.
+
+    For a card that has been retired - `hidden` in its manifest - so a
+    layout that still holds one does not keep a tile for something the
+    board no longer offers. A stack keeps its other cards; one left empty
+    goes, and `normalise_layout` re-points `active` if it was the one
+    removed. Deliberately *not* part of normalising: that runs in the
+    board as well as here (invariant 5a), and the board does not know
+    which cards are retired.
+    """
+    drop = set(card_ids or ())
+    kept = []
+    for tile in normalise_layout(tiles):
+        tile["cards"] = [e for e in tile["cards"] if e.get("card") not in drop]
+        if tile["cards"]:
+            kept.append(tile)
+    return normalise_layout(kept)
+
+
 def normalise_layout(tiles) -> list[dict]:
     """The whole board, in the stack shape, with every uid distinct.
 

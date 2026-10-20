@@ -77,6 +77,12 @@
                  display: flex; gap: 8px; }
   .meter .read b { color: var(--ink); font-family: var(--mono);
                    font-weight: 600; }
+
+  /* Listening to this radio. Its own strip at the foot of the card: the
+     audio is this radio's, so the controls sit with its dial rather than
+     in a tile of their own. The player is /static/js/listen.js. */
+  .listen-wrap { margin-top: 12px; padding-top: 8px;
+                 border-top: 1px solid var(--rule); }
 </style>
 </head>
 <body>
@@ -120,7 +126,10 @@
 <div class="mem" id="mem"></div>
 <p class="err" id="err"></p>
 
+<div class="listen-wrap" id="listen" aria-label="Listen to this radio"></div>
+
 <script src="/static/js/hamdash.js"></script>
+<script src="/static/js/listen.js"></script>
 <script>
 HD.cardId = 'rig_control';
 const $ = (s) => document.querySelector(s);
@@ -361,6 +370,9 @@ function paint(s) {
 
 async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  // The radio's receive audio. Read through `conf` on every request, so a
+  // change of input in this tile's settings applies at the next poll.
+  HDListen.mount($('#listen'), { conf: () => conf });
   $('#step').innerHTML = STEPS.map(([hz, label]) =>
     `<option value="${hz}">${label}</option>`).join('');
   $('#step').value = String(Number(conf.step_hz) || 1000);

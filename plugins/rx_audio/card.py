@@ -85,6 +85,15 @@ class Tap:
         if self.device == "mock":
             self._run_mock()
             return
+        if self.device == NO_RIG_INPUT:
+            # Not the system default. That used to be where 'rig' ended up
+            # for a radio with no audio input set, and the system default
+            # input is usually a microphone - which is why this card had
+            # to default to a test tone rather than to the radio.
+            return self._fail(
+                "This radio has no audio input set.",
+                "Set it in Settings -> Radio, or choose an input in this "
+                "tile's settings.")
         try:
             import sounddevice as sd
         except Exception as exc:                        # noqa: BLE001
@@ -278,20 +287,52 @@ def _resolve_device(sd, wanted: str):
     raise RuntimeError(f"no input device whose name contains {wanted!r}")
 
 
+# What 'rig' resolves to when the radio has no audio input set. Never ""
+# - that is the system default input, which is somebody's microphone.
+NO_RIG_INPUT = "<no radio input>"
+
+
 def _device_for(conf: dict) -> str:
     """'rig' follows the active radio's own audio input.
 
     That setting already exists per rig and already rides on radio.state,
     so this needs no second answer to "which sound card is the radio's" -
-    and changing radios moves the audio with it.
+    and changing radios moves the audio with it. A radio with none set
+    resolves to NO_RIG_INPUT, which refuses, rather than to "", which
+    would quietly open the system default input.
     """
     want = str(conf.get("device", "mock")).strip()
     if want != "rig":
         return want
     try:
-        return str((card.host.radio() or {}).get("audio_in") or "")
+        got = str((card.host.radio() or {}).get("audio_in") or "").strip()
     except Exception:                                   # noqa: BLE001
-        return ""
+        got = ""
+    return got or NO_RIG_INPUT
+
+
+def _conf() -> dict:
+    """This request's settings: the tile's, with the caller's overrides.
+
+    The rig card plays the radio's audio through this card, and a card
+    may read only its own tiles' settings - the host answers anybody
+    else with 403 - so the rig card's page says which input and quality
+    its own tile chose, as `device` and `rate` on the request.
+    """
+    device = (request.args.get("device") or "").strip()
+    # Not asked of the host when the page has said: the rig card's tile is
+    # not this card's, the host answers 403, and the log said so as if it
+    # were a fault.
+    conf = {} if device else dict(card.settings() or {})
+    if device:
+        conf["device"] = device
+    rate = request.args.get("rate")
+    if rate:
+        try:
+            conf["rate"] = int(rate)
+        except ValueError:
+            pass
+    return conf
 
 
 def _key_for(conf: dict) -> tuple[str, int]:
@@ -391,11 +432,21 @@ def _reap_idle() -> None:
 @card.get("/info")
 def info():
     """What the input is doing - without starting it. See `look`."""
-    conf = card.settings()
+    conf = _conf()
     t = look(conf)
     if t is not None:
         return t.info()
     device, rate = _device_for(conf), _key_for(conf)[1]
+    if device == NO_RIG_INPUT:
+        # Said before Listen is pressed, not after: there is nothing to
+        # press it for.
+        return {"status": "error", "device": "",
+                "error": "This radio has no audio input set.",
+                "hint": "Set it in Settings -> Radio, or choose an input in "
+                        "this tile's settings.",
+                "rate": rate, "in_rate": 0, "block_n": 0,
+                "block_ms": BLOCK_MS, "seq": 0, "first_seq": 0,
+                "overflows": 0, "peak": 0.0, "now": time.time()}
     return {"status": "idle", "device": device, "error": "", "hint": "",
             "rate": rate, "in_rate": 0, "block_n": 0, "block_ms": BLOCK_MS,
             "seq": 0, "first_seq": 0, "overflows": 0, "peak": 0.0,
@@ -410,7 +461,7 @@ def pcm():
     base64 would spend 32 kB saying it. What the caller needs to place it
     in time rides in headers.
     """
-    t = tap_for(card.settings(), who())
+    t = tap_for(_conf(), who())
     try:
         seq = int(request.args.get("since", "0"))
     except ValueError:

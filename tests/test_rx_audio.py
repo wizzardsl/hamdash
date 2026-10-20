@@ -13,6 +13,9 @@ import unittest
 from pathlib import Path
 
 CARD = Path(__file__).resolve().parent.parent / "plugins" / "rx_audio"
+# The player, which moved out of this card's page into one shared script
+# mounted at the foot of the rig card.
+LISTEN = CARD.parent.parent / "hamdash" / "static" / "js" / "listen.js"
 
 # numpy belongs to this card, not to the host, and CI installs only what
 # the host needs - the same reason `test_cw.py` guards its import. Only
@@ -262,7 +265,7 @@ class TestItSaysWhyThereIsNoSound(unittest.TestCase):
     """
 
     def setUp(self):
-        self.page = (CARD / "index.html").read_text(encoding="utf-8")
+        self.page = LISTEN.read_text(encoding="utf-8")
 
     def test_the_status_is_repainted_while_playing(self):
         self.assertIn("sayWhy()", self.page,
@@ -312,7 +315,7 @@ class TestBeingHiddenIsNotAReasonToStop(unittest.TestCase):
     """
 
     def setUp(self):
-        self.page = (CARD / "index.html").read_text(encoding="utf-8")
+        self.page = LISTEN.read_text(encoding="utf-8")
 
     def test_it_does_not_stop_itself_when_hidden(self):
         # Matched against the handler alone rather than the whole page,
@@ -331,7 +334,7 @@ class TestBeingHiddenIsNotAReasonToStop(unittest.TestCase):
                          r"pagehide[^\n]*\n?[^\n]*stop\(true\)")
 
     def test_stop_is_still_what_hands_the_device_back(self):
-        self.assertIn("$('#stop').onclick", self.page)
+        self.assertIn("$('stop').onclick", self.page)
         self.assertRegex(self.page, r"/api/stop\?who=\$\{WHO\}")
 
 

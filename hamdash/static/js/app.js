@@ -403,10 +403,17 @@
   };
 
   // ---- palette --------------------------------------------------------
+  // The cards a person can add. A `hidden` one is retired - still
+  // installed because another card uses it (receive audio, which plays
+  // from the rig card now) - and its tiles have been taken off the board.
+  // Everything else still looks cards up in the full list, so a tile is
+  // never left without its card's name or status.
+  const offered = () => cards.filter((c) => !c.hidden);
+
   function renderPalette() {
     const ul = $('#palette-list');
     ul.innerHTML = '';
-    cards.forEach((c) => {
+    offered().forEach((c) => {
       const li = document.createElement('li');
       li.innerHTML = `
         <span class="cl-kind"></span>
@@ -463,7 +470,7 @@
     const ul = $('#cards-menu-list');
     if (!ul) return;
     ul.innerHTML = '';
-    cards.forEach((c) => {
+    offered().forEach((c) => {
       const mine = tilesOf(c.id);
       const li = document.createElement('li');
       const b = document.createElement('button');

@@ -227,7 +227,7 @@ from your phone and it is simply there.
 
 The bar holds four cards and a **More**, which lists the rest. Which four
 follows what you reach for away from the desk: the logbook first, then spots,
-then rig control and receive audio, then whatever else is on your board in
+then rig control (which carries Listen), then whatever else is on your board in
 board order. Every card that is on the board is reachable, including ones
 stacked behind a tab — there are no tabs here, so each gets its own place.
 

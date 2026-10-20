@@ -18,7 +18,7 @@ from flask import (Flask, Response, abort, jsonify, request,
 from . import registry
 from .bus import BUS, MAX_SUBSCRIBERS, parse_last_id
 from .config import (BUNDLED_STATIC, CREDENTIALS, SECRETS, Config,
-                     tidy_credential)
+                     listen_moves_to_rig, tidy_credential, without_cards)
 from .proc import Supervisor, free_port  # noqa: F401  (re-exported for run.py)
 from .services import dxcc
 from .services import grid as gridlib
@@ -97,6 +97,34 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     cards = registry.discover(cfg.plugin_dirs)
     sup = Supervisor(host_url, home=str(cfg.home))
+
+    def _retired() -> set[str]:
+        """Cards still installed but no longer offered (`hidden`)."""
+        return {c.id for c in cards.values() if c.hidden}
+
+    def _needed() -> set[str]:
+        """Cards that must keep a process: those with a tile, and anything
+        they `use`. The rig card plays audio through `rx_audio`, which has
+        no tiles of its own - reaping by tiles alone stopped the engine on
+        the next layout save, mid-listen."""
+        need = set(cfg.active_card_ids())
+        todo = list(need)
+        while todo:
+            c = cards.get(todo.pop())
+            for used in (c.uses if c else []):
+                if used not in need:
+                    need.add(used)
+                    todo.append(used)
+        return need
+
+    # A retired card's tiles come off the board once, here, rather than
+    # sitting there as tiles for something the Cards menu no longer has.
+    _before = cfg.load_layout()
+    _after = without_cards(listen_moves_to_rig(_before), _retired())
+    if _after != _before:
+        cfg.save_layout(_after)
+        LOG.info("layout: removed tiles of retired cards %s",
+                 ", ".join(sorted(_retired())))
     rigsvc.ensure_rigs(cfg)
     rig = rigsvc.RigManager(cfg)
     rig.start_polling(hz=2)
@@ -468,10 +496,13 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.put("/api/layout")
     def put_layout():
         body = request.get_json(silent=True) or {}
-        cfg.save_layout(body.get("tiles", []))
+        # A board page opened before a card was retired still holds its
+        # tile, and would save it straight back.
+        cfg.save_layout(without_cards(body.get("tiles", []), _retired()))
         # A card with no tiles left has nothing to serve: stop its process
-        # instead of leaking one per removed card until restart.
-        stopped = sup.reap(cfg.active_card_ids())
+        # instead of leaking one per removed card until restart. A card
+        # another one `uses` is still needed (`_needed`).
+        stopped = sup.reap(_needed())
         if stopped:
             BUS.publish("card.reaped", {"cards": stopped}, source="host")
         return jsonify(ok=True, stopped=stopped)

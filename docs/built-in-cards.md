@@ -37,32 +37,39 @@ Two things about it are worth knowing if you write something similar:
 It needs `numpy` and `sounddevice`, both in `requirements.txt` and both in the
 frozen build.
 
-## Receive audio
+## Listening to the radio
 
-Plays the radio's receive audio in the tile. On the same machine that is
-a convenience; on another machine on your network it is the thing that
-makes the board usable from the sofa, since the rig control card already
-works from anywhere the board is reachable.
+**Listen** sits at the foot of the **Rig control** card and plays the radio's
+receive audio in the browser. On the same machine that is a convenience; on
+another machine on your network it is the thing that makes the board usable
+from the sofa, since the rest of the rig card already works from anywhere the
+board is reachable. It was a card of its own, *Receive audio*; the audio is a
+particular radio's, so it moved beside that radio's dial. A board that still
+had a Receive audio tile loses it on the first start of this version, and the
+input chosen in it moves to the rig tile.
+
+Its settings are in the rig tile's settings:
 
 | setting | |
 |---|---|
-| **Audio input** | `rig` follows the audio input set on the active radio, which is usually what you want. `mock` is a test tone, so the card works with no radio attached. Otherwise part of an input's name. |
-| **Quality** | Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s and 12000 leaves headroom at 192. |
-| **Buffer** | How much audio to hold back against network jitter. 120 ms is comfortable on a LAN; raise it on patchy Wi-Fi if you hear dropouts. |
+| **Listen: audio input** | `rig` - the default - plays the audio input set on the selected radio in Settings → Radio, and moves with it when you change radios. If that radio has none set, it says so rather than opening this computer's default input, which is usually a microphone. `mock` is a test tone. The rest are this machine's own inputs, for when the radio's is not the one you want. |
+| **Listen: quality** | Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s and 12000 leaves headroom at 192. |
+| **Listen: buffer** | How much audio to hold back against network jitter. 120 ms is comfortable on a LAN; raise it on patchy Wi-Fi if you hear dropouts. |
 
-Audio cannot start without a click - every browser requires it - so the
-tile waits on a **Listen** button. The readout beside it shows the delay,
+Audio cannot start without a click - every browser requires it - so it
+waits on the **Listen** button. The readout beside it shows the delay,
 the dropout count and the bandwidth, which is what tells you whether a
 bigger buffer would help.
 
 **Stop really does let go of the sound card**, immediately, because the
-usual reason to press it is to give the input to another program. The
-card also lets go when its tab is hidden, and after 20 seconds if a tile
-disappears without saying so.
+usual reason to press it is to give the input to another program. It goes
+on playing when the rig tile is behind another tab or you switch cards on
+a phone - listening while looking at something else is the point - and it
+lets go after 20 seconds if the page disappears without saying so.
 
 One input can only be open once. If a spectrum or decoder tile is already
-using the radio's audio, this card will say so and name the likely
-culprit rather than just failing.
+using the radio's audio, Listen will say so and name the likely culprit
+rather than just failing.
 
 ### Listening from another machine
 

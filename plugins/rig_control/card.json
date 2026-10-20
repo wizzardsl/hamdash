@@ -17,5 +17,38 @@
   "subscribes": [
     "log.qso_added",
     "radio.state"
-  ]
+  ],
+  "uses": [
+    "rx_audio"
+  ],
+  "settings": {
+    "device": {
+      "type": "audio_in",
+      "label": "Listen: audio input",
+      "options": [
+        "rig",
+        "mock"
+      ],
+      "default": "rig",
+      "help": "'rig' plays the audio input set on the selected radio in Settings -> Radio, and moves with it when you change radios. If that radio has none set, the card says so rather than opening this machine's default input, which is usually a microphone. 'mock' is a test tone. The rest are this machine's own inputs, if the radio's guess is wrong."
+    },
+    "rate": {
+      "type": "select",
+      "label": "Listen: quality",
+      "options": [
+        "8000",
+        "12000",
+        "16000",
+        "24000"
+      ],
+      "default": "12000",
+      "help": "Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s; 12000 leaves headroom and costs 192. Higher is only worth it on a wired network."
+    },
+    "buffer_ms": {
+      "type": "number",
+      "label": "Listen: buffer (ms)",
+      "default": 120,
+      "help": "How much audio to hold before playing, to ride out network jitter. Lower is more responsive; raise it if you hear dropouts. 120 ms is comfortable on a LAN, 300+ on patchy Wi-Fi."
+    }
+  }
 }

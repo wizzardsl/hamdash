@@ -46,6 +46,14 @@ class Card:
     publishes: list[str] = field(default_factory=list)
     subscribes: list[str] = field(default_factory=list)
     settings: dict = field(default_factory=dict)
+    # Other cards this one needs running while its tiles are on the board.
+    # The rig card plays receive audio through `rx_audio`, which has no
+    # tiles of its own any more - without this, the next layout save would
+    # reap the audio engine out from under a rig tile that is listening.
+    uses: list[str] = field(default_factory=list)
+    # Retired: kept installed because another card uses it, but not
+    # offered in the Cards menu, and its tiles are taken off the board.
+    hidden: bool = False
     error: str | None = None
     # Things wrong with the manifest that don't stop the card running.
     warnings: list[str] = field(default_factory=list)
@@ -148,6 +156,8 @@ def _read(d: Path) -> Card | None:
         if hasattr(card, key):
             setattr(card, key, val)
 
+    card.uses = _strings(card.uses)
+    card.hidden = card.hidden is True
     card.check_namespace()
 
     if card.kind not in KINDS:

@@ -4,6 +4,25 @@ Notable changes per release. Format follows [Keep a Changelog](https://keepachan
 versions follow [SemVer](https://semver.org/). The version of record is
 `hamdash/__init__.py:__version__`, which is logged at startup.
 
+## [Unreleased]
+
+### Changed
+- **Listening moved into the Rig control card.** The radio's receive audio
+  is that radio's, so Listen, the volume and the status line now sit at the
+  foot of the rig card, and the input, quality and buffer are in the rig
+  tile's settings. The input defaults to the selected radio's own. The
+  separate Receive audio card is retired: its tiles are removed from the
+  board on the first start, the input chosen in one moves to the rig tile,
+  and it is no longer in the Cards menu.
+
+### Fixed
+- **Following the radio's input could open a microphone.** With no audio
+  input set on the radio, "rig" fell through to the computer's default
+  input. It now says the radio has none set and opens nothing.
+- **Stop could hand the sound card back for only a moment.** An audio
+  request already on its way when Stop was pressed could arrive after it,
+  open the input again and hold it for 20 seconds. Stop now waits for it.
+
 ## [0.10.0]
 
 ### Added

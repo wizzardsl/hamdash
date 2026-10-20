@@ -1130,6 +1130,34 @@ it. Reach for a new transport only if a measurement says this one failed.
   against the live pid list, identified by curling each one's
   `/_health`. They are harmless but they are indistinguishable from a
   real holder while you are hunting one - check for them first.
+- **Listening lives in the rig card; `rx_audio` is only the engine.**
+  The audio is one radio's, so the controls moved to the foot of
+  `rig_control` and the Receive audio card was retired. Three things
+  make that work and each cost something to find:
+  **A card reads only its own tiles' settings** - the host answers 403
+  - so the engine cannot see what the rig tile chose. The player
+  (`hamdash/static/js/listen.js`, the one copy, mounted with
+  `HDListen.mount(el, {conf})`) sends `device` and `rate` on every
+  request, and `_conf()` does not ask the host at all when it has them.
+  **Reaping goes by tiles**, and the engine has none: the first layout
+  save would have stopped it mid-listen. `uses: ["rx_audio"]` in the rig
+  manifest, and `_needed()` in `app.py` keeps what live tiles use.
+  **Retiring is `hidden: true`**, which keeps the card installed (another
+  uses it) but out of the Cards menu (`offered()` in `app.js`), and
+  `without_cards` takes its tiles off at startup and on every save - not
+  inside `normalise_layout`, which the board runs too and which does not
+  know what is retired (invariant 5a). `listen_moves_to_rig` carries the
+  old tile's input across first, or a Windows station's chosen device
+  would quietly become the default.
+  **'rig' with no input set was a microphone.** It resolved to "", the
+  system default input - the reason the old card defaulted to a test
+  tone. It resolves to `NO_RIG_INPUT` now, which refuses with what to
+  set, so the rig card can default to the radio.
+  **Stop raced an in-flight request**, found live on the FT-900's USB
+  interface: `last listener left`, then a second close 20 s later,
+  because a `/api/pcm` sent before Stop arrived after it and re-opened
+  the input. Stop awaits it now. The race was in the old card's page
+  too; moving the code is what showed it.
 - **Remote means unauthenticated.** Nothing in the host checks who is
   asking, so binding the board to the LAN (`--host`) gives anyone who can
   route to it the transmitter, the logbook and the config. This card

@@ -25,7 +25,10 @@ from pathlib import Path
 PLUGINS = Path(__file__).resolve().parent.parent / "plugins"
 CARD = PLUGINS / "rx_audio"
 SRC = (CARD / "card.py").read_text(encoding="utf-8")
-PAGE = (CARD / "index.html").read_text(encoding="utf-8")
+# The player moved out of the retired Listen card's own page into one
+# shared script, mounted at the foot of the rig card.
+LISTEN = (PLUGINS.parent / "hamdash" / "static" / "js" / "listen.js")
+PAGE = LISTEN.read_text(encoding="utf-8")
 
 #: Both cards hold a sound card and both let a tile stop listening, so
 #: both have to tell pages apart. `spectrum` has no Stop route - only the
@@ -45,7 +48,7 @@ class TestTheWantIsPerListener(unittest.TestCase):
     def test_the_routes_ask_who_not_which_tile(self):
         # The tile uid is still right for *settings* - that is what it is
         # for - but it cannot say who is listening.
-        self.assertIn("tap_for(card.settings(), who())", SRC)
+        self.assertIn("tap_for(_conf(), who())", SRC)
         self.assertIn("release(who())", SRC)
         self.assertNotIn("tap_for(card.settings(), card.tile_uid())", SRC,
                          "the want is keyed on the tile again, so one "
@@ -70,8 +73,10 @@ class TestTheWantIsPerListener(unittest.TestCase):
 
 class TestThePageIdentifiesItself(unittest.TestCase):
     def test_it_sends_who_when_asking_for_audio(self):
-        self.assertIn("who=${WHO}", PAGE)
-        self.assertRegex(PAGE, r"/api/pcm\?since=\$\{lastSeq\}&who=\$\{WHO\}")
+        # `params()` carries who, plus the device and rate the rig tile
+        # chose - the engine cannot read another card's tile settings.
+        self.assertIn("new URLSearchParams({ who: WHO })", PAGE)
+        self.assertRegex(PAGE, r"/api/pcm\?since=\$\{lastSeq\}&\$\{params\(\)\}")
 
     def test_it_sends_who_when_stopping(self):
         self.assertRegex(PAGE, r"/api/stop\?who=\$\{WHO\}")
@@ -157,9 +162,11 @@ class TestBothAudioCardsTellPagesApart(unittest.TestCase):
 
     def cards(self):
         for name in HOLDS_AN_INPUT:
+            page = (PAGE if name == "rx_audio" else
+                    (PLUGINS / name / "index.html").read_text(encoding="utf-8"))
             yield (name,
                    (PLUGINS / name / "card.py").read_text(encoding="utf-8"),
-                   (PLUGINS / name / "index.html").read_text(encoding="utf-8"))
+                   page)
 
     def test_no_card_keys_its_want_on_the_tile(self):
         for name, src, _page in self.cards():
@@ -199,7 +206,7 @@ class TestBothAudioCardsTellPagesApart(unittest.TestCase):
                 self.assertNotIn("randomUUID()", page,
                                  "secure-context only - on a plain-HTTP LAN "
                                  "board every page would share the fallback")
-                self.assertIn("who=${WHO}", page)
+                self.assertRegex(page, r"who=\$\{WHO\}|who: WHO")
 
 
 if __name__ == "__main__":
