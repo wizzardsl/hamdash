@@ -2125,6 +2125,20 @@ the live service.
 - **A quiet feed and a dead one look identical** until something is written
   to the socket. `QUIET_DEATH` (7 min) calls it: at five spots a second,
   seven minutes of nothing is a dropped TCP session, not a quiet band.
+- **Several cluster nodes, in the box that held one.** `cluster_host`
+  is parsed by `telnet.cluster_hosts` - commas, semicolons or new lines,
+  `host` or `host:port`, `MAX_CLUSTERS` (5) because each is a login on a
+  public server - so every existing single-host tile reads unchanged and
+  no setting was renamed. It is the answer to "let users add a spot
+  source by URL": the `DX de` line is the one format that really is
+  shared (DXSpider, AR-Cluster, CC-Cluster, RBN, HamAlert), where a
+  generic JSON box would have to guess units and time zones - the three
+  polled sources already disagree on both. The cluster is one network,
+  so `merge_cluster` keeps one row per (call, spotter, 100 Hz, minute),
+  for `cluster` rows only - RBN's repeats are separate skimmers and mean
+  something. Tried live against VE7CC and NC7J: both connected; in 75 s
+  they sent different spots, so the merge is proven by tests, not by
+  that run.
 - **`show_rbn` alone used to turn all three polled sources back on.**
   "Everything off means everything on" was a fair reading of an empty choice
   until there were live feeds to want instead. `_wanted()` only falls back

@@ -84,6 +84,65 @@ RETRY_MAX = 300.0
 QUIET_DEATH = 420.0
 
 
+# How many cluster nodes one tile may log in to. Each is a login on somebody
+# else's public server, so a pasted list must not become fifty connections.
+MAX_CLUSTERS = 5
+
+
+def cluster_hosts(raw, default_port: int = 23) -> list[tuple[str, int]]:
+    """The tile's cluster nodes, as (host, port), in the order given.
+
+    One box, so an existing single host still reads as itself: entries are
+    separated by commas, semicolons or new lines, each `host` or
+    `host:port`, and a bare host takes the tile's port setting. A repeat
+    is dropped; past MAX_CLUSTERS the rest are ignored.
+    """
+    try:
+        default_port = int(default_port or 23)
+    except (TypeError, ValueError):
+        default_port = 23
+    out: list[tuple[str, int]] = []
+    for entry in re.split(r"[,;\n\s]+", str(raw or "")):
+        entry = entry.strip()
+        if not entry:
+            continue
+        host, sep, port = entry.rpartition(":") if ":" in entry else (entry, "", "")
+        try:
+            port_n = int(port) if sep else default_port
+        except ValueError:
+            continue                       # "host:abc" is a typo, not a port
+        if not host or not (0 < port_n < 65536):
+            continue
+        key = (host.lower(), port_n)
+        if key not in out:
+            out.append(key)
+        if len(out) >= MAX_CLUSTERS:
+            break
+    return out
+
+
+def merge_cluster(rows: list[dict]) -> list[dict]:
+    """One row per spot when several cluster nodes send it.
+
+    The DX cluster is a network: a spot entered on one node reaches the
+    others, so two ordinary nodes deliver mostly the same lines. The same
+    call, from the same spotter, on the same frequency to the 100 Hz, in
+    the same minute, is one spot; the first row is kept. Only `cluster`
+    rows are merged - RBN and the polled sources are left exactly as
+    they are.
+    """
+    seen, out = set(), []
+    for r in rows:
+        if r.get("kind") == "cluster":
+            key = (r.get("call"), round((r.get("hz") or 0) / 100),
+                   r.get("spotter"), int((r.get("at") or 0) // 60))
+            if key in seen:
+                continue
+            seen.add(key)
+        out.append(r)
+    return out
+
+
 def parse(line: str, kind: str = "rbn", now: float | None = None) -> dict | None:
     """One `DX de` line as a spot, or None if it is not one.
 
@@ -307,7 +366,11 @@ class SpotStream:
         return out
 
     def status_line(self) -> dict:
+        # `label` names the node, so with several the one that is down is
+        # the one the status line points at.
         return {"name": self.kind, "status": self.status,
+                "label": (f"{self.kind} {self.host}" if self.kind == "cluster"
+                          else self.kind),
                 "error": self.error, "held": len(self.spots),
                 "ok": self.status == "running" or bool(self.spots),
                 "age_s": round(time.time() - self.last_line)

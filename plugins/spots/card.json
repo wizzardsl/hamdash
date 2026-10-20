@@ -88,20 +88,21 @@
     },
     "cluster_host": {
       "type": "string",
-      "label": "Cluster host",
+      "label": "Cluster hosts",
       "default": "",
-      "help": "e.g. dxc.ve7cc.net"
+      "help": "One or more nodes, separated by commas - host or host:port, up to 5. e.g. dxc.ve7cc.net, dxc.nc7j.com:7373"
     },
     "cluster_port": {
       "type": "number",
       "label": "Cluster port",
-      "default": 23
+      "default": 23,
+      "help": "Used for any host above given without :port."
     },
     "cluster_commands": {
       "type": "string",
       "label": "Commands to send after login",
       "default": "",
-      "help": "One per line, or separated by semicolons. Every cluster has its own - VE7CC prints them when you connect, e.g. 'set/ft8' or 'set/skimmer'."
+      "help": "One per line, or separated by semicolons. Every cluster has its own - VE7CC prints them when you connect, e.g. 'set/ft8' or 'set/skimmer'. Sent to every host listed."
     }
   }
 }

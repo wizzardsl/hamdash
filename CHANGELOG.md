@@ -6,6 +6,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **The spots card can follow several DX cluster nodes.** *Cluster hosts*
+  takes a comma-separated list - `host` or `host:port`, up to five - in
+  the box that held one, so an existing tile is unchanged. Any node that
+  speaks the usual `DX de` line works, a HamAlert feed included. The same
+  spot from two nodes is shown once, and the status line names each node.
+
 ### Fixed
 - **Clicking an SSB spot left the radio in the wrong sideband.** POTA and
   SOTA say "SSB"; a radio has LSB and USB and nothing called SSB, so the

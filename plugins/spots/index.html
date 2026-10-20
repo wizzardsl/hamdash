@@ -360,8 +360,8 @@ function paintContests() {
 function paintStatus() {
   const bits = (data.sources || [])
     .filter((s) => !off.has(s.name))
-    .map((s) => s.ok ? `${s.name} ${ago(s.age_s)}`
-                     : `${s.name} — ${String(s.error).slice(0, 40)}`);
+    .map((s) => s.ok ? `${s.label || s.name} ${ago(s.age_s)}`
+                     : `${s.label || s.name} — ${String(s.error).slice(0, 40)}`);
   // What the live feeds are narrowed to. On RBN this is the whole point,
   // so it is said rather than left for the operator to remember.
   if (data.watching) bits.unshift(`watching ${data.watching}`);

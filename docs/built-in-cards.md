@@ -278,6 +278,16 @@ CC-Cluster node — `dxc.ve7cc.net` and the like. Every node has its own
 commands (`set/ft8`, `set/skimmer`); they go in **Commands to send after
 login**, one per line.
 
+**Cluster hosts** takes more than one node, separated by commas —
+`dxc.ve7cc.net, dxc.nc7j.com:7373` — each `host` or `host:port`, up to five;
+a host with no port uses **Cluster port**. Any node that speaks the usual
+`DX de` spot line works, which includes a [HamAlert](https://hamalert.org/)
+telnet feed of the spots you choose. The cluster is one network, so two
+ordinary nodes send mostly the same spots: the same call from the same
+spotter, on the same frequency in the same minute, is shown once. The status
+line names each node, so the one that is down is the one it points at, and
+the login commands go to every node.
+
 Both of these log in with the callsign from Settings → Station, and the card
 refuses to connect without one rather than inventing or omitting it — these
 are accounts on somebody else's public network. Nothing is ever sent except

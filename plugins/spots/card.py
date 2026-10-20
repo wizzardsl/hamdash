@@ -184,15 +184,16 @@ def stream_for(conf: dict):
                 else telnet.RBN_CW_PORT)
         want.append(("rbn", telnet.RBN_HOST, port, call, ()))
     if conf.get("show_cluster"):
-        host = str(conf.get("cluster_host") or "").strip()
-        if host:
-            # Every cluster has its own commands - VE7CC prints a page of
-            # them on connect - so they are the operator's to give, one per
-            # line or separated by semicolons.
-            raw = str(conf.get("cluster_commands") or "").replace(";", "\n")
-            cmds = [c.strip() for c in raw.splitlines() if c.strip()]
-            want.append(("cluster", host,
-                         int(conf.get("cluster_port") or 23), call, cmds))
+        # Every cluster has its own commands - VE7CC prints a page of them
+        # on connect - so they are the operator's to give, one per line or
+        # separated by semicolons, and they go to every node listed.
+        raw = str(conf.get("cluster_commands") or "").replace(";", "\n")
+        cmds = [c.strip() for c in raw.splitlines() if c.strip()]
+        # One or several nodes, in the one box an existing tile already
+        # has its single host in (`telnet.cluster_hosts`).
+        for host, port in telnet.cluster_hosts(conf.get("cluster_host"),
+                                               conf.get("cluster_port") or 23):
+            want.append(("cluster", host, port, call, cmds))
 
     out = []
     now = time.time()
@@ -257,7 +258,8 @@ def spots():
     # this process, so it orders them against each other as well.
     rows.sort(key=lambda r: (r.get("at") or 0, r.get("arrived") or 0),
               reverse=True)
-    rows = rows[:400]
+    # Two cluster nodes deliver mostly the same spots - it is one network.
+    rows = telnet.merge_cluster(rows)[:400]
 
     # The flag comes from the *callsign*, never from whatever a source calls
     # the country - they spell them differently and some send none at all.
