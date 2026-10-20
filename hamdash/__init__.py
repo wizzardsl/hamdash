@@ -1,2 +1,2 @@
 """hamdash - a card-based ham radio dashboard with a plugin architecture."""
-__version__ = "0.9.1"
+__version__ = "0.10.0"
