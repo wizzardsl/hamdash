@@ -1246,7 +1246,11 @@ it. Reach for a new transport only if a measurement says this one failed.
   **'rig' with no input set was a microphone.** It resolved to "", the
   system default input - the reason the old card defaulted to a test
   tone. It resolves to `NO_RIG_INPUT` now, which refuses with what to
-  set, so the rig card can default to the radio.
+  set, so the rig card can default to the radio. **The simulated radio is
+  the one exception**: no input set means `mock`, so Listen on the
+  simulator plays something. Decided on `radio.state`'s `mock: true`, and
+  only when no input is set - the simulator given a real input uses it,
+  and a real radio never gets the tone, which would sound like the radio.
   **Stop raced an in-flight request**, found live on the FT-900's USB
   interface: `last listener left`, then a second close 20 s later,
   because a `/api/pcm` sent before Stop arrived after it and re-opened

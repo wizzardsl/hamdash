@@ -73,6 +73,29 @@ class TestFollowingTheRadioIsSafe(unittest.TestCase):
             self.assertNotEqual(got, "", repr(none))
             self.assertEqual(got, self.m.NO_RIG_INPUT)
 
+    def test_a_simulated_radio_with_none_set_plays_the_test_tone(self):
+        """Listen on the simulator should do something, and with no sound
+        card chosen the simulated audio is the honest thing to play."""
+        for none in ("", None):
+            with mock.patch.object(self.m.card.host, "radio",
+                                   return_value={"audio_in": none, "mock": True}):
+                self.assertEqual(self.m._device_for({"device": "rig"}), "mock")
+
+    def test_a_simulated_radio_given_an_input_still_uses_it(self):
+        with mock.patch.object(self.m.card.host, "radio",
+                               return_value={"audio_in": "USB Audio Device",
+                                             "mock": True}):
+            self.assertEqual(self.m._device_for({"device": "rig"}),
+                             "USB Audio Device")
+
+    def test_a_real_radio_with_none_set_still_refuses(self):
+        """The test tone is the simulator's. A real radio playing it would
+        sound like the radio, and it is not."""
+        with mock.patch.object(self.m.card.host, "radio",
+                               return_value={"audio_in": "", "mock": False}):
+            self.assertEqual(self.m._device_for({"device": "rig"}),
+                             self.m.NO_RIG_INPUT)
+
     def test_the_host_not_answering_is_not_the_system_default_either(self):
         with mock.patch.object(self.m.card.host, "radio",
                                side_effect=RuntimeError("host down")):

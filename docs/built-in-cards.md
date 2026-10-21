@@ -77,7 +77,7 @@ Its settings are in the rig tile's settings:
 
 | setting | |
 |---|---|
-| **Listen: audio input** | `rig` - the default - plays the audio input set on the selected radio in Settings → Radio, and moves with it when you change radios. If that radio has none set, it says so rather than opening this computer's default input, which is usually a microphone. `mock` is a test tone. The rest are this machine's own inputs, for when the radio's is not the one you want. |
+| **Listen: audio input** | `rig` - the default - plays the audio input set on the selected radio in Settings → Radio, and moves with it when you change radios. If that radio has none set, it says so rather than opening this computer's default input, which is usually a microphone - except the simulated radio, which plays its test tone. `mock` is a test tone. The rest are this machine's own inputs, for when the radio's is not the one you want. |
 | **Listen: quality** | Samples per second sent to the browser. A receiver's audio is about 3 kHz wide, so 8000 carries all of it at 128 kbit/s and 12000 leaves headroom at 192. |
 | **Listen: buffer** | How much audio to hold back against network jitter. 120 ms is comfortable on a LAN; raise it on patchy Wi-Fi if you hear dropouts. |
 

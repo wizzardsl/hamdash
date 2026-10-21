@@ -7,6 +7,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Changed
+- **Listen on the simulated radio plays a test tone** when it has no audio
+  input set, rather than saying there is none. Give the simulated radio an
+  input and Listen plays that, as before; a real radio with none set still
+  says so.
 - **Card names are in title case**: Rig Control, Path to Station, Web
   Page, Hello Card. Tiles already on the board take the new names.
 - **Listening moved into the Rig Control card.** The radio's receive audio

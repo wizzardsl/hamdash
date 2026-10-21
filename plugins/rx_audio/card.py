@@ -304,6 +304,7 @@ def _device_for(conf: dict) -> str:
     want = str(conf.get("device", "mock")).strip()
     if want != "rig":
         return want
+    st = {}
     try:
         # The tile's own radio when the rig card names one, so two rig
         # tiles on two radios each hear their own.
@@ -311,6 +312,12 @@ def _device_for(conf: dict) -> str:
         got = str(st.get("audio_in") or "").strip()
     except Exception:                                   # noqa: BLE001
         got = ""
+    # A simulated radio with no input set plays the simulated audio - the
+    # test tone - so pressing Listen on it does something. Only then: a
+    # simulated radio given a real input still uses it, and a real radio
+    # with none set still refuses, rather than opening a microphone.
+    if not got and st.get("mock") is True:
+        return "mock"
     return got or NO_RIG_INPUT
 
 
