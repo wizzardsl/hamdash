@@ -87,9 +87,14 @@ dragged out and dropped exactly where you want it on the board.
 
 Drag a tile **onto another tile's tab strip** — the header row where its tab
 names sit — and it docks as a **tab**: one box, a strip of names across the
-header, one card showing at a time. The strip lights up as you cross it. Drag
-a tab off the strip and it comes back out as its own tile. Dropping a stack
-onto another joins them.
+header, one card showing at a time. The strip lights up as you cross it.
+Dropping a stack onto another joins them.
+
+**Drag a tab along the strip** to put the tabs in a different order; it
+slides between the others and stays in the stack. **Pull a tab down off
+the strip** - or past either end of the tile - and it comes back out as a
+tile of its own, which you can carry straight on to wherever it goes.
+**Escape** puts a tab you are moving back where it was.
 
 Only the strip docks. Drop anywhere else on a tile and the card simply moves,
 because on a full board every spot is over *something*, and making all of it a

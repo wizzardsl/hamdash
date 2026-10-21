@@ -187,6 +187,34 @@
     return { tiles: tiles.concat([made]), changed: true, made, from };
   }
 
+  /* Move a tab along its own stack: `to` is its place among the others.
+     Nothing leaves the stack and the card on show stays on show, so this
+     is the one tab drag that is not a dock or an undock. `changed: false`
+     for a drag that ends where it began. */
+  function reorder(tiles, cardUid, to) {
+    const stack = stackOf(tiles, cardUid);
+    if (!stack) return { tiles, changed: false };
+    const from = stack.cards.findIndex((c) => c.uid === cardUid);
+    const cards = stack.cards.slice();
+    const [card] = cards.splice(from, 1);
+    const at = clamp(Number(to) || 0, 0, cards.length);
+    if (at === from) return { tiles, changed: false };
+    cards.splice(at, 0, card);
+    stack.cards = cards;
+    return { tiles, changed: true };
+  }
+
+  /* Where a tab dragged along a strip lands, from the pointer and every
+     tab's left edge and width as they were when the drag began. The index
+     is among the *other* tabs, which is what `reorder` wants. */
+  function tabSlot(boxes, x, from) {
+    let at = boxes.length;
+    for (let i = 0; i < boxes.length; i += 1) {
+      if (x < boxes[i].left + boxes[i].width / 2) { at = i; break; }
+    }
+    return at > from ? at - 1 : at;
+  }
+
   /* ---- geometry -------------------------------------------------------- */
 
   const overlap = (a, b) => a.uid !== b.uid
@@ -265,6 +293,6 @@
   }));
 
   return { asStack, normalise, cardOf, stackOf, allCards, removeCard, dock,
-    undock, overlap, resolve, compact, nextRow, forSave, clamp, uid,
+    undock, reorder, tabSlot, overlap, resolve, compact, nextRow, forSave, clamp, uid,
     ENTRY_KEYS, STACK_KEYS };
 }));

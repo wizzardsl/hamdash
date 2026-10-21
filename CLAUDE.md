@@ -1645,8 +1645,16 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   here left the easier button as the unrecoverable one. Both snapshot the
   whole board and put it back, which is the only way "where it was"
   survives for a card that was the third tab of a stack.
-- **A tab is torn off, not dragged**: a tab has to travel `TEAR_OFF` pixels
-  before it leaves its stack, or every click on one would undock it.
+- **Along the strip a tab is reordered; off it, it is torn off.** Tearing
+  off used to be the only thing a tab drag did - 14 px down *or 28
+  sideways* - so ordering tabs meant taking each out and docking it back.
+  Sideways inside the tile is `L.reorder` now; `TEAR_OFF` down, or past
+  either end of the tile, still undocks, including from the middle of a
+  reorder, and then carries straight on into a normal move. The slot comes
+  from the tabs' boxes as they were when the drag began (`L.tabSlot`), not
+  as they shuffle under the pointer. A reorder is not a dock: nothing
+  leaves the stack and the card on show stays on show, so nothing is
+  remounted. `tests/js/tabs.test.js` drives the real `_dragTab`.
 - Pan and zoom change the viewBox only. Rebuilding 56 coastline paths per
   wheel notch is the difference between a map and a slideshow.
 - **Longitudes are unwrapped, never split at the antimeridian.** Splitting a

@@ -18,6 +18,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
+- **Tabs can be put in order.** Drag a tab along its stack's strip and it
+  slides between the others. Pulling it down off the strip, or past the
+  end of the tile, still takes it out into a tile of its own; before, any
+  sideways drag did that too.
 - **Memory buttons on the Rig Control card you can edit.** **+ Memory**
   saves the current frequency and mode under a name you choose.
   Right-click a memory (or long-press on a touch screen) to rename it,

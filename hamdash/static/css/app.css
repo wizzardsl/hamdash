@@ -172,6 +172,8 @@ html, body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tile-tabs .tab-dot { display: none; }
+/* A tab being moved along its strip. */
+.tile-tabs .tab.reordering { opacity: .6; outline: 1px dashed var(--accent); }
 .tile-tabs .tab-x { display: none; }
 /* Only a stack has anything to switch between. */
 .tile.stacked .tile-tabs { gap: 1px; }

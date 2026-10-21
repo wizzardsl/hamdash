@@ -716,18 +716,23 @@
     /* Drag a tab: sideways to reorder is not worth the code, so this is
        only "pull it out", which needs a deliberate distance before it
        starts or every click on a tab would undock it. */
+    /* A tab dragged along its strip changes its place in the stack; pulled
+       off the strip - down, or past either end of the tile - it tears off
+       into a tile of its own and carries straight on as a normal move.
+       Tearing off used to be the only thing a tab drag did, so lining the
+       tabs up in an order meant taking each out and docking it back. */
     _dragTab(e, t, node, cardUid) {
       if (e.button !== 0 || t.cards.length < 2) return;
       const startX = e.clientX;
       const startY = e.clientY;
-      let pulled = false;
+      const strip = node.querySelector('.tile-tabs');
+      const tab = e.target.closest('.tab');
+      const from = t.cards.findIndex((c) => c.uid === cardUid);
+      let mode = null;                  // null until it moves: 'order' or 'off'
+      let boxes = null;
+      let to = from;
 
-      const move = (ev) => {
-        if (pulled) return;
-        if (Math.abs(ev.clientY - startY) < TEAR_OFF
-            && Math.abs(ev.clientX - startX) < TEAR_OFF * 2) return;
-        pulled = true;
-        done();
+      const tearOff = (ev) => {
         const r = this.el.getBoundingClientRect();
         const made = this.undock(cardUid, {
           x: clamp(Math.floor((ev.clientX - r.left - this.gap)
@@ -741,14 +746,56 @@
         const fresh = made && this._nodes.get(made.uid);
         if (fresh) this._drag(ev, made, fresh, 'move');
       };
+      const putBack = () => {
+        if (tab) tab.classList.remove('reordering');
+        if (mode === 'order') this._paintTabs(t, node);
+      };
+      const move = (ev) => {
+        const dy = Math.abs(ev.clientY - startY);
+        const box = node.getBoundingClientRect();
+        const beyond = ev.clientX < box.left - TEAR_OFF || ev.clientX > box.right + TEAR_OFF;
+        if (dy >= TEAR_OFF || beyond) {
+          putBack();
+          mode = 'off';
+          done();
+          tearOff(ev);
+          return;
+        }
+        if (!mode) {
+          if (Math.abs(ev.clientX - startX) < 6 || !tab) return;
+          mode = 'order';
+          boxes = [...strip.querySelectorAll('.tab')].map((x) => x.getBoundingClientRect());
+          tab.classList.add('reordering');
+        }
+        to = L.tabSlot(boxes, ev.clientX, from);
+        const others = [...strip.querySelectorAll('.tab')].filter((x) => x !== tab);
+        strip.insertBefore(tab, others[to] || null);
+      };
+      const up = () => {
+        done();
+        if (mode !== 'order') return;
+        if (tab) tab.classList.remove('reordering');
+        const got = L.reorder(this.tiles, cardUid, to);
+        this._paintTabs(t, node);
+        if (got.changed) this.onChange(this.tiles);
+      };
+      const key = (ev) => {
+        if (ev.key !== 'Escape' || mode !== 'order') return;
+        putBack();
+        mode = 'off';
+        done();
+      };
       const done = () => {
         window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', done);
-        window.removeEventListener('pointercancel', done);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', cancel);
+        window.removeEventListener('keydown', key);
       };
+      const cancel = () => { putBack(); done(); };
       window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', done);
-      window.addEventListener('pointercancel', done);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', cancel);
+      window.addEventListener('keydown', key);
     }
 
     /* Drop a card from the palette straight onto a spot on the board. */
