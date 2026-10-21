@@ -1,6 +1,6 @@
 {
   "id": "rx_audio",
-  "name": "Receive audio",
+  "name": "Receive Audio",
   "kind": "python",
   "version": "0.1.0",
   "author": "HamDash",

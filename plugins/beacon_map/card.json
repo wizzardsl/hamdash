@@ -1,6 +1,6 @@
 {
   "id": "beacon_map",
-  "name": "Path to station",
+  "name": "Path to Station",
   "kind": "python",
   "version": "0.1.0",
   "author": "HamDash",

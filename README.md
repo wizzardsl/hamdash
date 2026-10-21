@@ -71,7 +71,7 @@ Twelve cards ship with it, and a tile can hold any of them:
 - **PSK Reporter** — who is receiving whom, on a map.
 - **Satellites** — which amateur satellites are up, when the next pass is,
   and where they are going.
-- **Path to station** — great-circle path, greyline, aurora and space weather,
+- **Path to Station** — great-circle path, greyline, aurora and space weather,
   and **Band to here (MUF)**: what frequency will reach each place on the map,
   from the ionosondes that have actually sounded in the last two hours.
 - **Beacon map** — bearing and distance to the station you are looking at.
@@ -80,7 +80,7 @@ Twelve cards ship with it, and a tile can hold any of them:
   Morse from 6 to 45 WPM.
 - **Web embed** — any page in a tile. **Cards → New from URL…** makes a named
   card out of one without your writing anything, and deletes it again.
-- **Hello card** — the example, in about thirty lines.
+- **Hello Card** — the example, in about thirty lines.
 
 Everything is usable with no radio attached: the rig is in mock mode until
 you tell it otherwise.

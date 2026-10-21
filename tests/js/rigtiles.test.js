@@ -147,3 +147,29 @@ test('renaming a tile repaints it without reloading the card', () => {
     assert.doesNotMatch(fn, /setTiles|_mount|_remount/, `${f} reloads the card`);
   }
 });
+
+test('a tile follows its card when only the case of the name changed', () => {
+  // Titles are saved with the tile, so the move to title case would never
+  // reach a board that already had the cards. A title that differs in its
+  // letters is left alone: that is not this rename.
+  const app = read('hamdash', 'static', 'js', 'app.js');
+  const at = app.indexOf('  function followCardNames() {');
+  assert.ok(at > 0, 'followCardNames is gone');
+  const fn = app.slice(at, app.indexOf('\n  }\n', at));
+  assert.match(fn, /toLowerCase\(\) === String\(c\.name\)\.toLowerCase\(\)/);
+  assert.match(fn, /shell\.retitle\(e\.uid, c\.name\)/);
+  assert.match(app, /followCardNames\(\);\s*tidyRigTiles\(\);/);
+  // Every card's name is in title case: each word capitalised but the
+  // small joining ones, and anything in brackets.
+  const small = new Set(['to', 'of', 'and', 'the', 'a', 'in', 'on', 'for']);
+  const dirs = fs.readdirSync(path.join(ROOT, 'plugins'));
+  dirs.forEach((d) => {
+    const f = path.join(ROOT, 'plugins', d, 'card.json');
+    if (!fs.existsSync(f)) return;
+    const name = JSON.parse(fs.readFileSync(f, 'utf8')).name.replace(/\(.*\)/, '');
+    name.split(/\s+/).filter(Boolean).forEach((w, i) => {
+      if (i > 0 && small.has(w)) return;
+      assert.match(w, /^[A-Z0-9]/, `${d}: "${name.trim()}" is not in title case`);
+    });
+  });
+});

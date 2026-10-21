@@ -7,13 +7,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Changed
-- **Rig control is now Rig Control**, matching the other card names.
-  Tiles already on the board take the new name.
+- **Card names are in title case**: Rig Control, Path to Station, Web
+  Page, Hello Card. Tiles already on the board take the new names.
 - **Listening moved into the Rig Control card.** The radio's receive audio
   is that radio's, so Listen, the volume and the status line now sit at the
   foot of the rig card, and the input, quality and buffer are in the rig
   tile's settings. The input defaults to the selected radio's own. The
-  separate Receive audio card is retired: its tiles are removed from the
+  separate Receive Audio card is retired: its tiles are removed from the
   board on the first start, the input chosen in one moves to the rig tile,
   and it is no longer in the Cards menu.
 

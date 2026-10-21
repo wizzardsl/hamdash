@@ -1263,7 +1263,7 @@ def clean_rig(raw: dict) -> dict:
 LINK_IDLE = 120.0
 """How long a radio no tile has asked about stays open.
 
-Nothing tells the host that a tile was deleted or retuned to another radio,
+Nothing tells the host that a tile was deleted or pointed at another radio,
 so a radio only a tile was driving is closed once nobody has asked about it
 for this long - the audio cards' reaper, for a serial port.
 """

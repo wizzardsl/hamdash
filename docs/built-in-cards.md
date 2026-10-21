@@ -43,9 +43,9 @@ frozen build.
 receive audio in the browser. On the same machine that is a convenience; on
 another machine on your network it is the thing that makes the board usable
 from the sofa, since the rest of the rig card already works from anywhere the
-board is reachable. It was a card of its own, *Receive audio*; the audio is a
+board is reachable. It was a card of its own, *Receive Audio*; the audio is a
 particular radio's, so it moved beside that radio's dial. A board that still
-had a Receive audio tile loses it on the first start of this version, and the
+had a Receive Audio tile loses it on the first start of this version, and the
 input chosen in it moves to the rig tile.
 
 Its settings are in the rig tile's settings:

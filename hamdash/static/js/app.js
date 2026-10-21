@@ -674,6 +674,20 @@
   /* When the radio list changes - here or in another browser - a tile
      bound to a radio that was removed goes with it, and one whose radio
      was renamed takes the new name. */
+  /* A tile keeps the title it was given, so a card renamed since - the
+     names went to title case - would go on showing the old one on every
+     board that had it. Only a change of case is followed: a title that
+     differs in its letters is somebody else's name for it. */
+  function followCardNames() {
+    shell.cards.forEach((e) => {
+      const c = cards.find((x) => x.id === e.card);
+      if (c && e.title && e.title !== c.name
+          && e.title.toLowerCase() === String(c.name).toLowerCase()) {
+        shell.retitle(e.uid, c.name);
+      }
+    });
+  }
+
   function tidyRigTiles() {
     const card = cards.find((x) => x.id === RT.CARD);
     const { drop, retitle } = RT.tidy(shell.cards, radios(), card && card.name);
@@ -1744,6 +1758,7 @@
 
   shell.setTiles(layout.tiles || []);
   cards.forEach((c) => shell.warn(c.id, c.warnings));
+  followCardNames();
   tidyRigTiles();
   renderCardsMenu();
   $('#empty').style.display = (layout.tiles || []).length ? 'none' : '';
