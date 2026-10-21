@@ -92,14 +92,17 @@ test('no radio list yet means nothing is removed', () => {
   }
 });
 
-test('the Cards menu and Settings flip the same switch', () => {
+test("a radio's tile is switched in the Cards menu, and only there", () => {
   const app = read('hamdash', 'static', 'js', 'app.js');
-  // The menu lists each radio under Rig Control...
+  // The menu lists each radio under Rig Control.
   assert.match(app, /radioRows\(ul, c\)/);
   assert.match(app, /onclick: \(\) => toggleRadio\(rig\)/);
-  // ...and the radio's row in Settings calls the same function.
-  assert.match(app, /class="rig-tile"/);
-  assert.match(app, /own\.onchange = \(\) => toggleRadio\(/);
+  // Settings -> Radio had a second switch for the same tile; one place to
+  // add and remove tiles, for this card as for every other. It points at
+  // the menu instead.
+  assert.doesNotMatch(app, /rig-tile|Own tile on the board/);
+  assert.match(read('hamdash', 'static', 'index.html'),
+    /listed under <b>Rig Control<\/b> in\s+the Cards menu/);
   // Rig Control is a heading over the radios, not a switch: it shows
   // whether any radio has a tile, and pressing it does nothing.
   const head = app.slice(app.indexOf('menuButton(heading ? {'));
@@ -107,9 +110,7 @@ test('the Cards menu and Settings flip the same switch', () => {
   assert.match(headDef, /head: true/);
   assert.match(headDef, /RT\.all\(shell\.cards\)/);
   assert.doesNotMatch(headDef, /onclick/, 'the heading is still a switch');
-  // Both switches count what the menu counts.
   assert.match(app, /mine: RT\.ofRadio\(shell\.cards, rig\.id, selectedRadio\(\)\)/);
-  assert.match(app, /own\.checked = !!rig\.id\s*&& RT\.ofRadio\(/);
   // The board loads the module before the shell that uses it.
   const page = read('hamdash', 'static', 'index.html');
   assert.ok(page.indexOf('rigtiles.js') > 0

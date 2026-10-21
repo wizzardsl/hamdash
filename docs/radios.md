@@ -110,8 +110,7 @@ spectrum.
 Every radio can have a **rig tile of its own**. In the **Cards** menu,
 **Rig Control** is a heading with your radios listed under it: tick a
 radio to give it a tile, untick it to take the tile away. The heading
-itself is ticked when any radio has one. **Own tile on the board**
-beside each radio in Settings → Radio is the same switch. A rig tile
+itself is ticked when any radio has one. A rig tile
 from before this - one that follows whichever radio is selected - counts
 as the selected radio's tile, so ticking that radio never adds a second. That tile is named after the radio and controls only it,
 whichever radio is selected: it tunes, changes mode, reads the meters and

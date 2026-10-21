@@ -619,14 +619,15 @@
       h: c.h, min_w: c.min_w, min_h: c.min_h, url: c.url });
   }
 
-  /* A radio's own rig tile, on or off - from the Cards menu or from the
-     radio's row in Settings, which are the same switch. */
+  /* A radio's own rig tile, on or off, from its row in the Cards menu -
+     the one place tiles are added and removed, for this card as for every
+     other. */
   function toggleRadio(rig) {
     const c = cards.find((x) => x.id === RT.CARD);
     if (!c) return;
     toggleTiles(rig.name || 'Radio',
                 RT.ofRadio(shell.cards, rig.id, selectedRadio()),
-                RT.def(rig, c)).then(syncRigTileBoxes);
+                RT.def(rig, c));
   }
 
   /* Add a tile that is born with settings - a radio's own rig tile.
@@ -669,7 +670,6 @@
                 shell.setTiles(before);
                 saveLayout(shell.tiles);
                 renderCardsMenu();
-                syncRigTileBoxes();
                 toast(`${name} restored`);
               } });
     }
@@ -1064,15 +1064,6 @@
   const esc = (v) => String(v ?? '').replace(/[&<>"]/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* Keep the Settings switches true to the board after a change made
-     from the Cards menu, or an Undo. */
-  function syncRigTileBoxes() {
-    document.querySelectorAll('#rig-list .rig-tile').forEach((box) => {
-      box.checked = !!box.dataset.rig
-        && RT.ofRadio(shell.cards, box.dataset.rig, selectedRadio()).length > 0;
-    });
-  }
-
   function renderRigs() {
     const box = $('#rig-list');
     box.innerHTML = '';
@@ -1143,8 +1134,6 @@
         <button class="btn btn-quiet rig-use" type="button"${live ? ' disabled' : ''}>Use this one</button>
         <button class="btn btn-quiet rig-omni" type="button"${rig.backend === 'omnirig' ? '' : ' hidden'}>OmniRig settings\u2026</button>
         <button class="btn btn-quiet rig-del" type="button">Remove</button>
-        <label class="rig-own" title="A Rig Control tile that always controls this radio, whichever is selected">
-          <input type="checkbox" class="rig-tile"> Own tile on the board</label>
       </div>
       <div class="said"></div>`;
 
@@ -1228,16 +1217,6 @@
                  : (r.error || ''), r.ok ? 'good' : 'warn');
       } catch (err) { say(err.message, 'warn'); }
     };
-
-    // The same switch as this radio's row in the Cards menu. It acts at
-    // once, like the menu does, rather than waiting for Save: it changes
-    // the board, not the radio.
-    const own = sel('rig-tile');
-    own.dataset.rig = rig.id || '';
-    own.checked = !!rig.id
-      && RT.ofRadio(shell.cards, rig.id, selectedRadio()).length > 0;
-    own.disabled = !rig.id || !cards.some((c) => c.id === RT.CARD);
-    own.onchange = () => toggleRadio({ ...rig, name: sel('rig-name').value || rig.name });
 
     sel('rig-del').onclick = async () => {
       rigEnv.rigs.splice(i, 1);

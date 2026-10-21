@@ -46,9 +46,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - **Every radio can have a rig tile of its own.** In the Cards menu, Rig
   control is now a heading with each radio in Settings → Radio listed
   under it; ticking a radio gives it a tile, and the heading shows whether
-  any has one. Each radio also has an "Own tile on the board" switch in
-  Settings; both add or remove the same tile, and an existing rig tile
-  counts as the selected radio's, so there is never a second. It is
+  any has one. An existing rig tile counts as the selected radio's, so
+  ticking that radio never adds a second. It is
   named after the radio and controls only that one - tune, mode, meters
   and transmit, with its own watchdog - while the plain Rig Control tile
   keeps following the selected radio. Listen's "rig" input follows the
