@@ -59,7 +59,7 @@ rigctld -m 1035 -r /dev/ttyUSB0 -s 38400    # -m 1 is the Hamlib dummy rig
 
 Twelve cards ship with it, and a tile can hold any of them:
 
-- **Rig control** — the dial, mode, both VFOs, split, a meter that shows
+- **Rig Control** — the dial, mode, both VFOs, split, a meter that shows
   signal while receiving and power while transmitting, and **Listen**: the
   radio's receive audio in the browser, so the board is usable from another
   machine on your network.

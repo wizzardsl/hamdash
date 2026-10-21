@@ -1,4 +1,4 @@
-"""Rig control card.
+"""Rig Control card.
 
 Thin card: the host owns the rigctld connection, so this backend mostly
 exists to show the pattern (own API route + bus subscription). The UI talks

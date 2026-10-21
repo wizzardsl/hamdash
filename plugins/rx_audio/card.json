@@ -4,7 +4,7 @@
   "kind": "python",
   "version": "0.1.0",
   "author": "HamDash",
-  "description": "The receive-audio engine the Rig control card plays through. Retired as a card of its own: Listen is at the foot of the rig card now.",
+  "description": "The receive-audio engine the Rig Control card plays through. Retired as a card of its own: Listen is at the foot of the rig card now.",
   "hidden": true,
   "entry": "card.py",
   "view": "index.html",

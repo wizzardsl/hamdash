@@ -108,7 +108,7 @@ logbook's frequency and mode, the spots card's tune, the decoder and the
 spectrum.
 
 Every radio can have a **rig tile of its own**. In the **Cards** menu,
-**Rig control** is a heading with your radios listed under it: tick a
+**Rig Control** is a heading with your radios listed under it: tick a
 radio to give it a tile, untick it to take the tile away. The heading
 itself is ticked when any radio has one. **Own tile on the board**
 beside each radio in Settings → Radio is the same switch. A rig tile

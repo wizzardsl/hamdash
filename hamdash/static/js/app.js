@@ -492,7 +492,7 @@
   const menuEl = () => $('#cards-menu');
 
   // A rig tile bound to a radio of its own is that radio's, listed under
-  // it - so the plain Rig control row counts and removes only the tiles
+  // it - so the plain Rig Control row counts and removes only the tiles
   // that follow the selected radio.
   const RT = window.HDRigTiles;
   const radios = () => ((config && config.radio && config.radio.rigs) || []);
@@ -547,7 +547,7 @@
   }
 
   /* Each radio in Settings -> Radio, as a rig tile of its own. Listed
-     under Rig control because that is what it is, and only once the
+     under Rig Control because that is what it is, and only once the
      radios are known. */
   function radioRows(ul, c) {
     if (c.id !== RT.CARD || c.error) return;
@@ -556,7 +556,7 @@
       const sel = rig.id === selectedRadio();
       li.appendChild(menuButton({
         name: rig.name || 'Radio',
-        sub: sel ? 'The selected radio' : 'Rig control for this radio',
+        sub: sel ? 'The selected radio' : 'Rig Control for this radio',
         mine: RT.ofRadio(shell.cards, rig.id, selectedRadio()),
         indent: true,
         onclick: () => toggleRadio(rig),
@@ -572,7 +572,7 @@
     offered().forEach((c) => {
       const mine = tilesOf(c.id);
       const li = document.createElement('li');
-      // Rig control is one tile per radio, so it is a heading over the
+      // Rig Control is one tile per radio, so it is a heading over the
       // radios rather than a switch of its own - a switch here and one per
       // radio below meant two ways to put a tile on the same radio.
       const heading = c.id === RT.CARD && !c.error && radios().length > 0;
@@ -675,7 +675,8 @@
      bound to a radio that was removed goes with it, and one whose radio
      was renamed takes the new name. */
   function tidyRigTiles() {
-    const { drop, retitle } = RT.tidy(shell.cards, radios());
+    const card = cards.find((x) => x.id === RT.CARD);
+    const { drop, retitle } = RT.tidy(shell.cards, radios(), card && card.name);
     retitle.forEach(([uid, title]) => shell.retitle(uid, title));
     drop.forEach((uid) => shell.remove(uid));
     if (drop.length) {
@@ -1123,7 +1124,7 @@
         <button class="btn btn-quiet rig-use" type="button"${live ? ' disabled' : ''}>Use this one</button>
         <button class="btn btn-quiet rig-omni" type="button"${rig.backend === 'omnirig' ? '' : ' hidden'}>OmniRig settings\u2026</button>
         <button class="btn btn-quiet rig-del" type="button">Remove</button>
-        <label class="rig-own" title="A Rig control tile that always controls this radio, whichever is selected">
+        <label class="rig-own" title="A Rig Control tile that always controls this radio, whichever is selected">
           <input type="checkbox" class="rig-tile"> Own tile on the board</label>
       </div>
       <div class="said"></div>`;

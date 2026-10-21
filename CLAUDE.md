@@ -747,7 +747,7 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   **A radio's own tile is a `rig_control` entry with `settings.radio`,
   nothing more**, and `static/js/rigtiles.js` is the one place that says
   which tile is whose - the Cards menu row and the Settings switch both
-  call `toggleRadio`, so they cannot disagree. **Rig control in the
+  call `toggleRadio`, so they cannot disagree. **Rig Control in the
   menu is a heading, not a switch** (`head: true`, a `div`): a switch
   there plus one per radio was two ways onto one radio, and the operator
   got a plain tile and an FT-900 tile showing the same rig. For the same

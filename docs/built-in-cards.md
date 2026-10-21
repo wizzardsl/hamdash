@@ -39,7 +39,7 @@ frozen build.
 
 ## Listening to the radio
 
-**Listen** sits at the foot of the **Rig control** card and plays the radio's
+**Listen** sits at the foot of the **Rig Control** card and plays the radio's
 receive audio in the browser. On the same machine that is a convenience; on
 another machine on your network it is the thing that makes the board usable
 from the sofa, since the rest of the rig card already works from anywhere the

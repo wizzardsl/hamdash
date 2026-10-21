@@ -1,6 +1,6 @@
 /* rigtiles.js - which rig tile belongs to which radio.
  *
- * A Rig control tile follows the selected radio unless its `radio`
+ * A Rig Control tile follows the selected radio unless its `radio`
  * setting names one. A radio added in Settings -> Radio gets a tile of its
  * own by ticking it - in the Cards menu or beside the radio in Settings -
  * and both of those ask this file the same questions, so they cannot
@@ -43,7 +43,7 @@
   }
 
   /* What to add for a radio's own tile. Its title is the radio's name,
-     because two rig tiles both called "Rig control" are two tiles nobody
+     because two rig tiles both called "Rig Control" are two tiles nobody
      can tell apart. */
   function def(rig, manifest) {
     const m = manifest || {};
@@ -58,8 +58,16 @@
      Only when there is a list to go by. An empty or missing one is not
      "every radio was removed" - it is a page that has not read the list
      yet, and acting on it would take every radio's tile off the board. */
-  function tidy(cards, rigs) {
+  function tidy(cards, rigs, plainName) {
     const out = { drop: [], retitle: [] };
+    // A tile keeps the title it was given, so a card renamed since - Rig
+    // control became Rig Control - would go on showing the old name on
+    // every board that already had one.
+    if (plainName) {
+      forRadio(cards, '').forEach((c) => {
+        if (c.title !== plainName) out.retitle.push([c.uid, plainName]);
+      });
+    }
     if (!Array.isArray(rigs) || !rigs.length) return out;
     const byId = new Map(rigs.map((r) => [String(r.id), r]));
     (cards || []).forEach((c) => {

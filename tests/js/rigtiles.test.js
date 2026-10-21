@@ -2,7 +2,7 @@
  *
  *   node --test 'tests/js/*.test.js'
  *
- * Each radio in Settings -> Radio can have a Rig control tile of its own,
+ * Each radio in Settings -> Radio can have a Rig Control tile of its own,
  * switched on from the Cards menu or beside the radio in Settings. Both
  * ask `rigtiles.js` the same questions; these pin the answers, and that
  * the two switches really are the same one.
@@ -22,8 +22,8 @@ const RT = win.HDRigTiles;
 const rig = (uid, radio, title) => ({ uid, card: 'rig_control', title,
   settings: radio === undefined ? {} : { radio } });
 const BOARD = [
-  rig('plain', undefined, 'Rig control'),
-  rig('sel', 'selected', 'Rig control'),
+  rig('plain', undefined, 'Rig Control'),
+  rig('sel', 'selected', 'Rig Control'),
   rig('ft', 'r900', 'FT-900'),
   { uid: 'log', card: 'logbook', settings: { radio: 'r900' } },
 ];
@@ -76,6 +76,14 @@ test('the tiles that follow the selected radio are never tidied away', () => {
   assert.deepStrictEqual(got, { drop: [], retitle: [] });
 });
 
+test('a plain rig tile takes the card\'s current name', () => {
+  // Titles are saved with the tile, so the rename to Rig Control would
+  // otherwise never reach a board that already had one.
+  const old = [rig('p', undefined, 'Rig control'), rig('q', undefined, 'Rig Control')];
+  assert.deepStrictEqual(RT.tidy(old, [], 'Rig Control').retitle, [['p', 'Rig Control']]);
+  assert.deepStrictEqual(RT.tidy(old, []).retitle, [], 'no name, no change');
+});
+
 test('no radio list yet means nothing is removed', () => {
   // A page that has not read the list must not read it as "every radio
   // was removed" and clear the board of rig tiles.
@@ -86,13 +94,13 @@ test('no radio list yet means nothing is removed', () => {
 
 test('the Cards menu and Settings flip the same switch', () => {
   const app = read('hamdash', 'static', 'js', 'app.js');
-  // The menu lists each radio under Rig control...
+  // The menu lists each radio under Rig Control...
   assert.match(app, /radioRows\(ul, c\)/);
   assert.match(app, /onclick: \(\) => toggleRadio\(rig\)/);
   // ...and the radio's row in Settings calls the same function.
   assert.match(app, /class="rig-tile"/);
   assert.match(app, /own\.onchange = \(\) => toggleRadio\(/);
-  // Rig control is a heading over the radios, not a switch: it shows
+  // Rig Control is a heading over the radios, not a switch: it shows
   // whether any radio has a tile, and pressing it does nothing.
   const head = app.slice(app.indexOf('menuButton(heading ? {'));
   const headDef = head.slice(0, head.indexOf('} : {'));

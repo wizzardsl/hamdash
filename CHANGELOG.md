@@ -7,7 +7,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Changed
-- **Listening moved into the Rig control card.** The radio's receive audio
+- **Rig control is now Rig Control**, matching the other card names.
+  Tiles already on the board take the new name.
+- **Listening moved into the Rig Control card.** The radio's receive audio
   is that radio's, so Listen, the volume and the status line now sit at the
   foot of the rig card, and the input, quality and buffer are in the rig
   tile's settings. The input defaults to the selected radio's own. The
@@ -23,7 +25,7 @@ versions follow [SemVer](https://semver.org/). The version of record is
   Settings; both add or remove the same tile, and an existing rig tile
   counts as the selected radio's, so there is never a second. It is
   named after the radio and controls only that one - tune, mode, meters
-  and transmit, with its own watchdog - while the plain Rig control tile
+  and transmit, with its own watchdog - while the plain Rig Control tile
   keeps following the selected radio. Listen's "rig" input follows the
   tile's radio. Renaming a radio renames its tile; removing one removes it.
   Any rig tile can also be re-pointed with its Radio setting. Everything else - logbook, spots, decoder,
