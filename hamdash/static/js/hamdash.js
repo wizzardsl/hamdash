@@ -96,6 +96,30 @@
     catch { return false; }          // cross-origin parent: we are on our own
   })();
 
+  let autoHeightOn = false;
+
+  /* How tall the page's content is, as opposed to how tall the window is -
+     the body fills the tile whatever is in it, so its own height says
+     nothing. The bottom of the lowest thing in normal flow, wherever the
+     body has scrolled to, plus the body's padding. Anything fixed or
+     absolute (a menu, a dialog) is not content and must not grow a tile. */
+  function contentHeight() {
+    const b = document.body;
+    if (!b) return 0;
+    const scrolled = b.scrollTop + document.documentElement.scrollTop;
+    let bottom = 0;
+    [...b.children].forEach((el) => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.position === 'fixed'
+          || cs.position === 'absolute' || el.tagName === 'SCRIPT') return;
+      const r = el.getBoundingClientRect();
+      bottom = Math.max(bottom, r.bottom + scrolled + (parseFloat(cs.marginBottom) || 0));
+    });
+    const bs = getComputedStyle(b);
+    return Math.ceil(bottom + (parseFloat(bs.paddingBottom) || 0)
+                     + (parseFloat(bs.borderBottomWidth) || 0));
+  }
+
   function connect() {
     if (es || framed) return;
     es = new EventSource('/api/events');
@@ -248,6 +272,40 @@
     // listens behaves exactly as it always did.
     visible: true,
     hidden: false,
+    // Ask the board to fit this tile's height to the page's content: taller
+    // when the content grows (a new row of memory buttons), back down when
+    // it shrinks - never below the size the operator last set by hand, and
+    // only in whole grid rows. Opt-in, for a card whose content has a
+    // natural height; a card that fills whatever it is given (a map, a
+    // waterfall) must not call it, or it would chase its own size.
+    autoHeight() {
+      if (!framed || !HD.tileUid || autoHeightOn) return;
+      autoHeightOn = true;
+      let last = 0;
+      let timer = null;
+      const tell = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const need = contentHeight();
+          if (!need || need === last) return;
+          last = need;
+          try {
+            window.parent.postMessage({ __hamdash: 'height', uid: HD.tileUid, need },
+                                      window.origin);
+          } catch { /* no board to ask */ }
+        }, 120);
+      };
+      const watch = new ResizeObserver(tell);
+      const follow = () => [...document.body.children].forEach((el) => watch.observe(el));
+      follow();
+      new MutationObserver(() => { follow(); tell(); })
+        .observe(document.body, { childList: true, subtree: true });
+      window.addEventListener('resize', tell);
+      // A tab coming to the front says so again: the board fits only the
+      // card on show, so what it said while hidden was not acted on.
+      HD.onVisible((shown) => { if (shown) { last = 0; tell(); } });
+      tell();
+    },
     onVisible(fn) {
       window.addEventListener('hamdash:visible', (e) => fn(e.detail));
       return HD.visible;

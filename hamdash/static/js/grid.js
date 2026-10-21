@@ -110,6 +110,31 @@
       return { w: Math.min(w, this.cols), h };
     }
 
+    /* A card asked for its tile to fit its content (`HD.autoHeight`).
+
+       Grows to fit, and shrinks back as the content does - but never below
+       the height the tile had before it was first grown, which is the
+       operator's choice, nor below what its card needs. `_autoBase` is that
+       height; it is not saved (layout.json keeps only the stack keys), so
+       after a reload the tile's height is the new base and it does not
+       shrink below it. Only the card on show is listened to: a background
+       tab resizing its tile would be a tile changing size for no reason
+       anybody can see. */
+    fitHeight(cardUid, px) {
+      const t = this.stackOf(cardUid);
+      if (!t || t.popped || t.active !== cardUid || !(px > 0)) return;
+      const base = t._autoBase !== undefined ? t._autoBase : t.h;
+      const h = Math.max(this.rowsFor(px), this.minOf(t).h, base);
+      if (h === t.h) return;
+      if (h > base) t._autoBase = base; else delete t._autoBase;
+      t.h = h;
+      const node = this._nodes.get(t.uid);
+      if (node) this._place(t, node);
+      this._resolve(t);
+      this.reflow();
+      this.onChange(this.tiles);
+    }
+
     get cellW() {
       const inner = this.el.clientWidth - this.gap * 2;
       return (inner - this.gap * (this.cols - 1)) / this.cols;
@@ -648,7 +673,9 @@
           this.onDocked();
           return;
         }
-        if (mode === 'resize') { t.pop_w = null; t.pop_h = null; }
+        // A size set by hand is the operator's: it is what an automatic fit
+        // grows from and shrinks back to.
+        if (mode === 'resize') { t.pop_w = null; t.pop_h = null; delete t._autoBase; }
         this._resolve(t);
         this.reflow();
         this.onChange(this.tiles);
@@ -789,6 +816,7 @@
           t.h = Math.max(min.h, t.h + d[1]);
           t.pop_w = null;
           t.pop_h = null;
+          delete t._autoBase;
         } else {
           t.x = clamp(t.x + d[0], 0, this.cols - t.w);
           t.y = Math.max(0, t.y + d[1]);

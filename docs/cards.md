@@ -335,6 +335,7 @@ Load it and the rest follows — theme, events, settings, units:
 | **distance** | `HD.distance(to, from)`, `HD.fmtDistance(km)`, `HD.units`, `HD.distanceUnit()` |
 | **bus** | `HD.on(topic, fn)`, `HD.publish(topic, payload)` |
 | **visibility** | `HD.visible`, `HD.hidden`, `HD.onVisible(fn)` |
+| **tile size** | `HD.autoHeight()` - the board fits your tile's height to your page's content, in whole rows: taller as it grows, back down as it shrinks, never below the size the operator last set by hand. For content with a natural height (a list of buttons); a page that fills whatever it is given - a map, a waterfall - must not call it. |
 | **raw** | `HD.get`, `HD.post`, `HD.put`, `HD.del`, `HD.postText` |
 | **odds** | `HD.fmtHz(hz)`, `HD.bearingName(deg)`, `HD.flag(iso)`, `HD.openExternal(url)` |
 

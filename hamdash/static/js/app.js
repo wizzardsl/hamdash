@@ -1700,6 +1700,18 @@
 
   // ---- bus wiring -----------------------------------------------------
   HD.on('card.status', (p) => shell.status(p.id, p.status));
+  // A card asking for its tile to fit its content (`HD.autoHeight`). Taken
+  // only from the frame that really is that card - a card cannot resize
+  // somebody else's tile by naming its uid - and only by a shell that has
+  // tile heights to change; the phone has none.
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.__hamdash !== 'height' || e.origin !== location.origin) return;
+    const frame = [...document.querySelectorAll('iframe[data-uid]')]
+      .find((f) => f.contentWindow === e.source);
+    if (!frame || frame.dataset.uid !== d.uid || !shell.fitHeight) return;
+    shell.fitHeight(d.uid, Number(d.need));
+  });
   // A card saving its own tile's settings - the rig card's step and its
   // memories - goes straight to the host, and the board did not hear of
   // it. It held its own copy, and the next layout save (any drag, any

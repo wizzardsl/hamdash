@@ -747,6 +747,9 @@ async function boot() {
   mems = HDMem.clean(conf.memories);
   renderMems();
   wireMemories();
+  // The memories wrap onto rows as there are more of them; the tile grows
+  // a row to keep them all on screen, and gives it back when they go.
+  HD.autoHeight();
 
   $('#vfo-a').onclick = () => radio.vfo('A').then(paint).catch(fail);
   $('#vfo-b').onclick = () => radio.vfo('B').then(paint).catch(fail);

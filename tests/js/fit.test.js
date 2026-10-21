@@ -88,8 +88,8 @@ test('resizing goes no smaller than the card needs', () => {
   const src = fs.readFileSync(path.join(JS, 'grid.js'), 'utf8');
   assert.doesNotMatch(src, /t\.min_w \|\| 2, this\.cols/,
     'a resize still clamps to the floor stored on the tile');
-  assert.strictEqual((src.match(/this\.minOf\(t\)/g) || []).length, 3,
-    'add, drag-resize and keyboard resize all ask minOf');
+  assert.strictEqual((src.match(/this\.minOf\(t\)/g) || []).length, 4,
+    'add, drag-resize, keyboard resize and the automatic fit all ask minOf');
 });
 
 test('the cards measured to need it say so', () => {
@@ -101,4 +101,74 @@ test('the cards measured to need it say so', () => {
     assert.ok(fit(id).w, `${id} has no width`);
     assert.strictEqual(fit(id).h, undefined, `${id} would be held tall`);
   }
+});
+
+/* ---- a card asking its tile to fit its content (HD.autoHeight) ---- */
+function aTile(over = {}) {
+  const b = aBoard();
+  const t = { uid: 't1', x: 0, y: 0, w: 6, h: 5, active: 'c1',
+    cards: [{ uid: 'c1', card: 'rig_control' }, { uid: 'c2', card: 'spots' }], ...over };
+  const saved = [];
+  const resolved = [];
+  Object.assign(b, { tiles: [t], _nodes: new Map(), stackOf: () => t,
+    onChange: () => saved.push(t.h), _resolve: (x) => resolved.push(x.uid) });
+  return { b, t, saved, resolved };
+}
+
+test('a tile grows to fit its content, in whole rows', () => {
+  const { b, t, saved, resolved } = aTile();
+  B.fitHeight.call(b, 'c1', 500);          // 500 px of content: 6 rows
+  assert.strictEqual(t.h, b.rowsFor(500));
+  assert.strictEqual(t.h, 6);
+  assert.deepStrictEqual(saved, [6], 'the new height was not saved');
+  assert.deepStrictEqual(resolved, ['t1'], 'the tiles below were not pushed down');
+});
+
+test('and shrinks back as the content does - to where it started, no further', () => {
+  const { b, t } = aTile();
+  B.fitHeight.call(b, 'c1', 590);          // 7 rows: 7 x 90 - 10 - 28 = 592
+  assert.strictEqual(t.h, 7);
+  B.fitHeight.call(b, 'c1', 500);          // a row of memories deleted
+  assert.strictEqual(t.h, 6);
+  B.fitHeight.call(b, 'c1', 100);          // nearly empty
+  assert.strictEqual(t.h, 5, 'it shrank below the size the operator chose');
+  assert.strictEqual(t._autoBase, undefined, 'still thinks it is grown');
+});
+
+test('a tile the operator made tall is not shrunk to its content', () => {
+  const { b, t, saved } = aTile({ h: 8 });
+  B.fitHeight.call(b, 'c1', 300);
+  assert.strictEqual(t.h, 8);
+  assert.deepStrictEqual(saved, [], 'it saved a change that did not happen');
+});
+
+test('only the card on show, and never a popped-out tile', () => {
+  const back = aTile();
+  B.fitHeight.call(back.b, 'c2', 900);     // c2 is a background tab
+  assert.strictEqual(back.t.h, 5);
+  const popped = aTile({ popped: true });
+  B.fitHeight.call(popped.b, 'c1', 900);
+  assert.strictEqual(popped.t.h, 5);
+});
+
+test('a size set by hand is what an automatic fit grows from', () => {
+  const src = fs.readFileSync(path.join(JS, 'grid.js'), 'utf8');
+  // Both resize paths forget the automatic base, or the next fit would
+  // shrink the tile back past where the operator just put it.
+  assert.strictEqual((src.match(/delete t\._autoBase;/g) || []).length, 3,
+    'drag-resize, keyboard resize and fitHeight itself');
+  // Not saved: layout.json keeps the stack keys only.
+  assert.ok(!L.STACK_KEYS.includes('_autoBase'));
+});
+
+test('a card can only resize its own tile', () => {
+  const app = fs.readFileSync(path.join(JS, 'app.js'), 'utf8');
+  const at = app.indexOf("d.__hamdash !== 'height'");
+  assert.ok(at > 0, 'the board does not listen');
+  const body = app.slice(at, at + 600);
+  // The uid in the message is checked against the frame it came from.
+  assert.match(body, /f\.contentWindow === e\.source/);
+  assert.match(body, /frame\.dataset\.uid !== d\.uid/);
+  const page = fs.readFileSync(path.join(ROOT, 'plugins', 'rig_control', 'index.html'), 'utf8');
+  assert.match(page, /HD\.autoHeight\(\);/);
 });

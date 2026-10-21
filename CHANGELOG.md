@@ -24,7 +24,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   move it to the current frequency, or delete it, with Undo. Drag them
   into whatever order you like. They belong to the tile, so each rig tile
   keeps its own, and the six fixed quick buttons become the first ones a
-  tile starts with.
+  tile starts with. When they wrap onto another row the tile grows a row
+  to keep them on screen, pushing the tiles below it down, and shrinks
+  back when they go - never smaller than you last made it yourself.
 - **Cards start big enough to show everything without a scroll bar.** A
   card can say what its page needs, and a new tile starts at least that
   big and cannot be resized smaller. Rig Control starts at 6×5 on a

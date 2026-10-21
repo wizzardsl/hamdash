@@ -447,6 +447,19 @@ were diffed before and after.
   show. **A card that saves settings from its page sends only the keys it
   changed** (`HD.saveSettings({memories})`): the host merges, and sending
   the whole cached object can put back what another browser just edited.
+- **`HD.autoHeight()` fits a tile to its card's content, and the page
+  measures content, not the window.** The body fills the tile whatever is
+  in it, so `contentHeight` takes the bottom of the lowest in-flow child
+  (fixed and absolute ones - a menu, a dialog - are not content). The
+  board grows in whole rows and shrinks back no further than `_autoBase`,
+  the height before it first grew - the operator's choice, which a manual
+  resize resets. `_autoBase` is not saved, so after a reload the current
+  height is the floor. Only the card on show is obeyed, never a popped
+  tile, and the board checks the message came from *that* tile's frame,
+  or a card could resize another's. A card that fills its window (a map)
+  must not call it: it would chase its own size. Tiles it pushed down stay
+  pushed - the board does not close gaps by itself (see Tidy up).
+  `tests/js/fit.test.js`.
 - **A python card serves its folder under `assets/`**, not at its root:
   `<script src="memories.js">` is a 404 and the page dies on its first
   line, where `path_map`'s bare `prop.js` works because it is an `html`

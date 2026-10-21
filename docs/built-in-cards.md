@@ -51,6 +51,12 @@ name, a frequency and a mode. Click one to go there.
 - **Drag** a memory to move it. **Alt** with the left or right arrow does
   the same from the keyboard; **Escape** puts a drag back.
 
+When there are more than fit across, they wrap onto another row and the
+tile grows a row to keep everything on screen, pushing the tiles below it
+down. Delete some and it shrinks back - but never below the size you last
+gave it yourself, and the tiles it pushed stay put (**Tidy up** in the
+Cards menu closes the gap).
+
 Each rig tile has its own memories, kept with the tile - so two rig tiles
 on two radios keep two lists, and a tile keeps its memories when it is
 moved, stacked or popped out. A new tile starts with a handful of common
