@@ -11,6 +11,10 @@
   "h": 6,
   "min_w": 4,
   "min_h": 4,
+  "fit": {
+    "w": 320,
+    "h": 250
+  },
   "permissions": [
     "space",
     "lookup"

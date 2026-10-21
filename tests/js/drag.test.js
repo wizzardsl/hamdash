@@ -94,6 +94,11 @@ function aDrag() {
     onError() {},
     onHint: (what) => hints.push(what),
     onDocked: () => hints.push('docked'),
+    // A resize asks how small the tile may go; no card here has a `fit`.
+    fitOf: () => null,
+    minOf: Board.prototype.minOf,
+    colsFor: Board.prototype.colsFor,
+    rowsFor: Board.prototype.rowsFor,
   };
   Board.prototype._drag.call(self, {
     button: 0, clientX: 300, clientY: 300, pointerId: 1, preventDefault() {},

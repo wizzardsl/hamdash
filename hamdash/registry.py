@@ -39,6 +39,12 @@ class Card:
     h: int = 3
     min_w: int = 2
     min_h: int = 2
+    # What the card's page needs to show everything without scrolling, in
+    # pixels: {"w": 460, "h": 410}. The board turns it into columns and rows
+    # for the window it is in - a column is a twelfth of the screen, so a
+    # need in columns would still scroll on a smaller one. Leave out `h` for
+    # a card whose list is meant to grow and scroll.
+    fit: dict = field(default_factory=dict)
     permissions: list[str] = field(default_factory=list)
     # Bus namespace, declared. Both default to empty, which means "not
     # declared" rather than "none": publishes falls back to the whole of
@@ -159,6 +165,9 @@ def _read(d: Path) -> Card | None:
             setattr(card, key, val)
 
     card.uses = _strings(card.uses)
+    card.fit, bad = _fit(card.fit)
+    if bad:
+        card.warnings.append(f"fit: {bad}")
     card.hidden = card.hidden is True
     card.check_namespace()
 
@@ -171,6 +180,29 @@ def _read(d: Path) -> Card | None:
     elif card.kind == "url" and not card.url:
         card.error = "kind is 'url' but no url is set in card.json"
     return card
+
+
+def _fit(value) -> tuple[dict, str]:
+    """`fit` as whole pixels, and what was wrong with it if anything.
+
+    The board does arithmetic with these, and a string or a negative would
+    come out as a tile of NaN columns rather than as an error anybody sees.
+    """
+    if value in (None, {}):
+        return {}, ""
+    if not isinstance(value, dict):
+        return {}, 'expected {"w": pixels, "h": pixels}'
+    out, bad = {}, []
+    for k in ("w", "h"):
+        if k not in value:
+            continue
+        v = value[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) \
+                or not 0 < v <= 4000:
+            bad.append(f"{k} must be a number of pixels, got {v!r}")
+            continue
+        out[k] = int(round(v))
+    return out, "; ".join(bad)
 
 
 def _strings(value) -> list[str]:

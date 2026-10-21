@@ -171,6 +171,7 @@
     // they know and a hint that keeps coming back is just noise.
     onHint: (what) => { if (what === 'drag') hintDock(); },
     onDocked: () => { learned('dock'); },
+    fitOf: (cardId) => (cards.find((c) => c.id === cardId) || {}).fit || null,
     renderBody,
     });
   }

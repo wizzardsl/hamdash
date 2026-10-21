@@ -36,6 +36,12 @@
   const EDGE_SLOW = 140;      // px/s once the pointer is just inside the edge
   const EDGE_FAST = 1500;     // px/s hard against it
 
+  // A tile's border and header, between its size on the grid and the size
+  // of the card page inside it. Measured on the board: a 3x3 tile is
+  // 308x260 and its card's frame 306x232.
+  const TILE_X = 2;
+  const TILE_Y = 28;
+
   // What a board *is* lives in layout.js, with no DOM: normalising, docking,
   // undocking, overlap. This file owns the pixels and the event handlers and
   // calls in for the rest, so there is one implementation of the model and
@@ -63,6 +69,11 @@
       this.onHint = opts.onHint || (() => {});
       this.onDocked = opts.onDocked || (() => {});
       this.isPoppedOpen = opts.isPoppedOpen || (() => true);
+      // What a card needs to show everything without scrolling, in pixels
+      // (`fit` in its manifest). Pixels, because a column is a twelfth of
+      // the window: a minimum in columns that fits on one screen scrolls
+      // on a smaller one.
+      this.fitOf = opts.fitOf || (() => null);
       this.tiles = [];
       this.arranging = false;
       this._nodes = new Map();          // tile uid -> element
@@ -70,6 +81,33 @@
       this._warnings = new Map();       // card id -> manifest complaints
       global.addEventListener('resize', () => this.reflow());
       this._dropTarget();
+    }
+
+    /* Columns and rows a card needs for `px` of its own page, on this board
+       as wide as it is now. The tile spends TILE_X of its width and TILE_Y
+       of its height on its border and header - measured, not guessed. */
+    colsFor(px) {
+      const n = Math.ceil((px + TILE_X + this.gap) / (this.cellW + this.gap));
+      return Math.min(this.cols, Math.max(1, n));
+    }
+
+    rowsFor(px) {
+      return Math.max(1, Math.ceil((px + TILE_Y + this.gap) / (this.rowPx + this.gap)));
+    }
+
+    /* The smallest a tile may be: its own floor, raised to fit the largest
+       need of any card in it. Worked out each time rather than stored,
+       because it changes with the window and layout.json does not keep it. */
+    minOf(t) {
+      let w = t.min_w || 2;
+      let h = t.min_h || 2;
+      (t.cards || []).forEach((c) => {
+        const f = this.fitOf(c.card);
+        if (!f) return;
+        if (f.w) w = Math.max(w, this.colsFor(f.w));
+        if (f.h) h = Math.max(h, this.rowsFor(f.h));
+      });
+      return { w: Math.min(w, this.cols), h };
     }
 
     get cellW() {
@@ -88,6 +126,11 @@
     /* `tile` may be a card ({card, uid, ...}) or an already-built stack. */
     add(tile) {
       const t = L.asStack({ x: 0, y: this._nextRow(), w: 4, h: 3, ...tile });
+      // A new tile starts big enough to show its card without scrolling.
+      // Only a new one: a board somebody arranged is not resized for them.
+      const need = this.minOf(t);
+      t.w = Math.max(t.w, need.w);
+      t.h = Math.max(t.h, need.h);
       t.x = clamp(t.x, 0, Math.max(0, this.cols - t.w));
       this.tiles.push(t);
       this._mount(t);
@@ -451,6 +494,7 @@
       // screen position means a different row, so the origin moves with it.
       let startY = e.clientY;
       const orig = { x: t.x, y: t.y, w: t.w, h: t.h };
+      const min = this.minOf(t);
       const cw = this.cellW + this.gap;
       const ch = this.rowPx + this.gap;
       let willPop = false;
@@ -506,8 +550,8 @@
             this.onHint('drag');
           }
         } else {
-          t.w = clamp(orig.w + dx, t.min_w || 2, this.cols - t.x);
-          t.h = Math.max(t.min_h || 2, orig.h + dy);
+          t.w = clamp(orig.w + dx, min.w, this.cols - t.x);
+          t.h = Math.max(min.h, orig.h + dy);
         }
         this._place(t, node);
         // Dragging towards the bottom used to stop scrolling at whatever
@@ -740,8 +784,9 @@
         if (!d) return;
         e.preventDefault();
         if (e.shiftKey) {
-          t.w = clamp(t.w + d[0], t.min_w || 2, this.cols - t.x);
-          t.h = Math.max(t.min_h || 2, t.h + d[1]);
+          const min = this.minOf(t);
+          t.w = clamp(t.w + d[0], min.w, this.cols - t.x);
+          t.h = Math.max(min.h, t.h + d[1]);
           t.pop_w = null;
           t.pop_h = null;
         } else {

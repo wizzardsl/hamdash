@@ -292,7 +292,14 @@ function aKeyedTile(over = {}) {
     _place() {}, _resolve() {}, reflow() {},
     onChange: () => saved.push(1),
     _sayPlace: Board.prototype._sayPlace,
+    // How small it may go: the tile's own floor, raised by a card's `fit`.
+    cellW: 90,
+    fitOf: (id) => (over.fits || {})[id] || null,
+    minOf: Board.prototype.minOf,
+    colsFor: Board.prototype.colsFor,
+    rowsFor: Board.prototype.rowsFor,
   };
+  delete t.fits;
   Board.prototype._wireKeys.call(self, t, node);
   return { t, head, saved };
 }
@@ -330,6 +337,18 @@ test('a tile cannot be made narrower than its card allows', () => {
   const k = aKeyedTile({ w: 3, min_w: 3 });
   k.head.fire('keydown', press('ArrowLeft', { shiftKey: true }));
   assert.strictEqual(k.t.w, 3);
+});
+
+test('nor smaller than its card needs to show without scrolling', () => {
+  // The floor comes from the card's `fit`, in pixels, and is worked out
+  // when the key is pressed - `min_w` on the tile does not survive a reload.
+  // At 90 px columns 560 px is 6 of them, and 390 px is 5 rows.
+  const k = aKeyedTile({ w: 6, h: 5, fits: { spots: { w: 560, h: 390 } } });
+  k.head.fire('keydown', press('ArrowLeft', { shiftKey: true }));
+  k.head.fire('keydown', press('ArrowUp', { shiftKey: true }));
+  assert.deepStrictEqual([k.t.w, k.t.h], [6, 5]);
+  k.head.fire('keydown', press('ArrowRight', { shiftKey: true }));
+  assert.strictEqual(k.t.w, 7, 'growing it still works');
 });
 
 test('every move is saved', () => {

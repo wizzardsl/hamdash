@@ -18,6 +18,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
+- **Cards start big enough to show everything without a scroll bar.** A
+  card can say what its page needs, and a new tile starts at least that
+  big and cannot be resized smaller. Rig Control starts at 6×5 on a
+  1280-pixel window instead of 4×3, where it scrolled; Path to Station and
+  PSK Reporter are held to the size their controls need; Spots and the
+  Logbook are held to the width their tables need and keep their height,
+  since their lists are meant to scroll. Tiles already on the board are
+  left as they are.
 - **Every radio can have a rig tile of its own.** In the Cards menu, Rig
   control is now a heading with each radio in Settings → Radio listed
   under it; ticking a radio gives it a tile, and the heading shows whether

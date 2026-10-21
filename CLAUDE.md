@@ -422,6 +422,22 @@ were diffed before and after.
   overtake the one above it: dropping the sort leaves two tiles
   overlapping, which `tests/js/layout.test.js` checks as a property
   rather than by listing positions.
+- **A card's `fit` is in pixels, and the grid does the arithmetic.** A
+  column is a twelfth of the window, so a minimum in columns that fits on
+  one screen scrolls on a smaller one; `colsFor`/`rowsFor` turn the
+  manifest's pixels into cells for the board as it is now, and `minOf` is
+  asked by `add` and by both resize paths. It is worked out each time
+  because `min_w` lives on the tile only until the next reload -
+  `layout.json` does not keep it. **`TILE_X`/`TILE_Y` are measured** (a
+  3x3 tile is 308x260 around a 306x232 frame) and a column is 95.83 px on
+  a 1280 window, so a frame is half a pixel narrower than the browser
+  reports. **Measure a card's fit with its longest status line showing**:
+  the rig card was measured at 460x410, then scrolled by 12 px on a fresh
+  board because "This radio has no audio input set" wraps to two more
+  lines - below 560 px wide its controls wrap and the card grows, so it is
+  560x390. Width only (`fit.w`) for a card whose list is meant to scroll.
+  Only new tiles grow; a board somebody arranged is not resized for them.
+  `tests/js/fit.test.js`, `tests/test_card_fit.py`.
 - **`.toast` is `pointer-events: none`** so a status message never swallows a
   click on the board. A toast with a button has to add `.has-action` or the
   button is unclickable and silently does nothing.

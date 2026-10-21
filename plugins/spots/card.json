@@ -11,6 +11,9 @@
   "h": 5,
   "min_w": 4,
   "min_h": 3,
+  "fit": {
+    "w": 590
+  },
   "permissions": [
     "radio"
   ],

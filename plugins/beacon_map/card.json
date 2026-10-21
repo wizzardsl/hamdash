@@ -11,6 +11,10 @@
   "h": 4,
   "min_w": 3,
   "min_h": 3,
+  "fit": {
+    "w": 280,
+    "h": 270
+  },
   "permissions": [
     "lookup"
   ],

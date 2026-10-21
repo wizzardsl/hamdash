@@ -83,6 +83,7 @@ poll on a schedule, or keep state shared between tiles.
   "view": "index.html",
 
   "w": 4, "h": 3, "min_w": 2, "min_h": 2,
+  "fit": { "w": 460, "h": 410 },
 
   "permissions": ["radio"],
   "publishes": ["my_card.tuned"],
@@ -103,6 +104,7 @@ poll on a schedule, or keep state shared between tiles.
 | `url` | `url` cards only: where to point. `http`/`https` only. |
 | `created_by` | set to `hamdash` on a manifest the board wrote from **New from URL…**. It is what makes that card deletable from the menu; leave it off a card you write and nothing in the UI can remove it. |
 | `w`, `h` | first size in grid cells. `min_w`, `min_h` the smallest it is useful at. |
+| `fit` | what your page needs to show everything without a scroll bar, in **pixels** of the page itself: `{"w": 460, "h": 410}`. A new tile starts at least that big and cannot be resized smaller. Pixels rather than cells because a cell is a twelfth of the window - a need in cells that fits on one screen scrolls on a smaller one. Leave out `h` if your card is a list that is meant to grow and scroll. Measure it rather than guess: shrink the tile until something scrolls or is cut off. |
 | `permissions` | which shared services you may call. See below. |
 | `publishes` | bus topics you will send. Omit for "all of `<id>.*`". |
 | `subscribes` | bus topics you want. Omit for "everything". |
