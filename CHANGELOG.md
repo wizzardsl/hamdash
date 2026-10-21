@@ -6,7 +6,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.0.0]
+
+hamdash 1.0. Each radio can have a Rig Control tile of its own, with memory
+buttons you can edit; Listen lives in the rig card and can put each radio in
+one ear; cards start big enough to show everything; tabs can be put in order;
+and the README and guides are up to date, with the phone layout shown.
+
 ### Changed
+- **The README and guides are up to date for 1.0**, with a new screenshot of
+  the board and the phone layout shown alongside it.
 - **Listen on the simulated radio plays a test tone** when it has no audio
   input set, rather than saying there is none. Give the simulated radio an
   input and Listen plays that, as before; a real radio with none set still

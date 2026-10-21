@@ -5,12 +5,14 @@ CW decoding, satellites and remote audio — arranged however you like, and
 you can add your own cards.
 
 Runs as a desktop app on Windows, macOS and Linux: no server to configure,
-no localhost URL to remember, nothing installed system-wide.
+no localhost URL to remember, nothing installed system-wide. **It works on
+your phone too** — open the board from it and it becomes one card at a time
+with a bar along the bottom.
 
-![The hamdash board: a world map with the aurora and greyline, rig control, spots, a logbook and satellite tracking](docs/images/board.png)
+![The hamdash board: a world map with your station, Rig Control with its memory buttons and Listen, a logbook, and Spots stacked with Satellites as tabs](docs/images/board.png)
 
 <sub>Solar flux, sunspot number, A, K and the X-ray flare class sit along the
-top bar beside the clock. Everything below here is one board. Drag the tiles where you want them, stack them into tabs, or pop one out into its own window.</sub>
+top bar beside the clock. Everything below here is one board. Drag the tiles where you want them, stack them into tabs and drag the tabs into order, or pop one out into its own window.</sub>
 
 **Want your own card on the board?** [docs/cards.md](docs/cards.md) is the
 whole contract, and [docs/card-template](docs/card-template) is a card that
@@ -32,10 +34,11 @@ Your config, log and cards live in one directory:
 `%APPDATA%\hamdash` / `~/Library/Application Support/hamdash` / `~/.config/hamdash`
 (or `HAMDASH_HOME`). Back it up by copying that folder.
 
-Out of the box the radio is in **mock mode** so everything is usable with no
+Out of the box the radio is **simulated**, so everything is usable with no
 hardware. For a real rig, add it in Settings → Radio — hamdash speaks
 **flrig**, **OmniRig**, **Hamlib** and a **rigctld** you are already running,
-and starts Hamlib's daemon for you.
+and starts Hamlib's daemon for you. Up to ten radios can be set up, and
+each can have a Rig Control tile of its own.
 
 Hamlib is a program rather than a Python package, so `pip` cannot bring it:
 
@@ -43,26 +46,41 @@ Hamlib is a program rather than a Python package, so `pip` cannot bring it:
 python tools/get_hamlib.py     # downloads the official build, checksum-verified
 ```
 
-Or point hamdash at a `rigctld` you run yourself:
+Or run `rigctld` yourself and add it in Settings → Radio as **rigctld**,
+with its host and port:
 
 ```bash
 rigctld -m 1035 -r /dev/ttyUSB0 -s 38400    # -m 1 is the Hamlib dummy rig
 ```
 
-```json
-// config.json
-{ "station": { "callsign": "VE7ABC", "grid": "DO10" },
-  "radio": { "mock": false, "rigctld_host": "127.0.0.1", "rigctld_port": 4532 } }
-```
+## On your phone
+
+Open the same board from a phone's browser and it lays itself out for the
+screen: **one card at a time**, full width, with a bar along the bottom to
+switch between them — four and a **More**. Cards start only when you first
+open them, so a phone is not running six cards to show you one, and the
+choice of view follows the window unless you pick one yourself.
+
+<p>
+<img src="docs/images/phone-rig.png" width="260" alt="hamdash on a phone: the Rig Control card full width, with the dial, tuning, Transmit, + Memory, both VFOs, the meter, memory buttons and Listen, and a bar of cards along the bottom">
+&nbsp;
+<img src="docs/images/phone-spots.png" width="260" alt="hamdash on a phone: the Spots card full width, a list of POTA, SOTA and cluster spots with flags, bands and modes, and the bar of cards along the bottom">
+</p>
+
+To reach it from a phone, start hamdash with `--host` (see
+[Putting it on your network](#putting-it-on-your-network)). More in
+[docs/board.md](docs/board.md#on-a-phone).
 
 ## What is on the board
 
-Twelve cards ship with it, and a tile can hold any of them:
+Eleven cards ship with it, and a tile can hold any of them:
 
 - **Rig Control** — the dial, mode, both VFOs, split, a meter that shows
-  signal while receiving and power while transmitting, and **Listen**: the
-  radio's receive audio in the browser, so the board is usable from another
-  machine on your network.
+  signal while receiving and power while transmitting, **memory buttons**
+  you save, name, rearrange and delete, and **Listen**: the radio's receive
+  audio in the browser, so the board is usable from another machine on your
+  network. Each radio can have a tile of its own, so two radios are tuned,
+  metered and heard side by side — one in each ear if you like.
 - **Logbook** — log a contact, search it, import and export ADIF, and sync
   with LoTW, QRZ or World Radio League.
 - **Spots** — POTA, SOTA, the DX cluster and contests on one list, plus live
@@ -71,14 +89,15 @@ Twelve cards ship with it, and a tile can hold any of them:
 - **PSK Reporter** — who is receiving whom, on a map.
 - **Satellites** — which amateur satellites are up, when the next pass is,
   and where they are going.
-- **Path to Station** — great-circle path, greyline, aurora and space weather,
-  and **Band to here (MUF)**: what frequency will reach each place on the map,
+- **Map** — great-circle path, greyline, aurora and space weather, and
+  **Band to here (MUF)**: what frequency will reach each place on the map,
   from the ionosondes that have actually sounded in the last two hours.
-- **Beacon map** — bearing and distance to the station you are looking at.
+- **Path to Station** — bearing and distance to the station you are
+  looking at.
 - **Spectrum** — a waterfall from the radio's sound card.
 - **Decoder** — live CW off the air, with the DSP tested against synthesised
   Morse from 6 to 45 WPM.
-- **Web embed** — any page in a tile. **Cards → New from URL…** makes a named
+- **Web Page** — any page in a tile. **Cards → New from URL…** makes a named
   card out of one without your writing anything, and deletes it again.
 - **Hello Card** — the example, in about thirty lines.
 
@@ -122,7 +141,7 @@ own feed, with every filter running against what is already on your disk.
 | **[Using the board](docs/board.md)** | moving cards, stacking them into tabs, popping one out, tile settings, themes |
 | **[Radios](docs/radios.md)** | flrig, OmniRig, Hamlib and rigctld; VFOs, split, the meter, and the transmitter rules |
 | **[Logging and callsigns](docs/logging.md)** | the log, syncing it with LoTW, QRZ and WRL, lookups, grids and flags |
-| **[The cards that come with it](docs/built-in-cards.md)** | spectrum, CW decoder, PSK Reporter, spots |
+| **[The cards that come with it](docs/built-in-cards.md)** | memories, listening, spectrum, CW decoder, PSK Reporter, satellites, spots |
 | **[Writing a card](docs/cards.md)** | the whole extension contract, with a [template](docs/card-template) you can copy |
 | **[The bus](docs/bus.md)** | one pub/sub channel for the board, and who may say what |
 | **[When something goes wrong](docs/troubleshooting.md)** | where to look, and the failure modes worth knowing |
@@ -136,11 +155,11 @@ run.py ──> hamdash/app.py            Flask: static shell, REST API, SSE bus,
              ├── registry.py         reads card.json from plugins/ and <home>/cards/
              ├── proc.py             one OS process per python card, restart with backoff
              ├── config.py           config.json, layout.json, search paths
-             ├── services/           radio (rigctld), callsign, logbook, grid math
+             ├── services/           radios, audio, callsign, logbook, bands, grid math
              ├── sdk/                what a card author imports
              └── static/             board, drag/resize, themes, card palette
-plugins/     rig_control, logbook, beacon_map, spectrum, path_map, decoder,
-             psk_reporter, web_embed, hello_card
+plugins/     rig_control, logbook, spots, path_map, beacon_map, psk_reporter,
+             satellites, spectrum, decoder, web_embed, hello_card
 ```
 
 Why processes and not imports: a card someone wrote at 1am shouldn't be able to

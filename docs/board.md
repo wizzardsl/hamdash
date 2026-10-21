@@ -16,9 +16,20 @@ Arranging tiles, stacking them into tabs, popping one out into its own window, a
 ## Moving cards around
 
 Drag a tile by its header, resize it from the bottom-right corner — no mode to
-enter first. **Arrange** just turns on the grid guides and keeps the resize
-handles visible. Overlaps are resolved by pushing tiles *down*, never sideways:
-horizontal position is what people place deliberately, vertical order isn't.
+enter first; the grid guides appear while you drag. Overlaps are resolved by
+pushing tiles *down*, never sideways: horizontal position is what people place
+deliberately, vertical order isn't.
+
+**A new tile starts big enough to show its card without a scroll bar**, and
+cannot be resized smaller than that — measured in pixels, so it holds on a
+small screen as well as a large one. Cards that are lists (Spots, the
+Logbook) only keep their width; their height is yours, since the list is
+meant to scroll. Tiles already on the board are never resized for you.
+
+**The Rig Control tile grows with its memories.** When the memory buttons
+wrap onto another row the tile grows a row to keep everything on screen,
+pushing the tiles below down, and it shrinks back as they go — never below
+the size you last gave it yourself.
 
 **The board can be arranged without a mouse**: tab to a card's header and
 the arrow keys move it, shift and the arrows resize it. The header says
@@ -50,6 +61,12 @@ A card can have several tiles (two `web_embed` tiles are two different pages),
 so a row with more than one shows a count and unticking takes all of them off
 at once. That would throw away per-tile settings, so instead of asking first
 the toast offers **Undo**, which puts them back with their settings intact.
+
+**Rig Control is a heading, with your radios under it.** Tick a radio to give
+it a tile of its own — named after it, and controlling only that radio —
+and untick it to take the tile away. The heading itself is ticked when any
+radio has one. A Rig Control tile from before this, which follows whichever
+radio is selected, counts as the selected radio's.
 
 **New from URL…** makes a card out of a web page without your writing
 anything. Give it a name and an address and it joins the menu like any other
@@ -229,6 +246,8 @@ It is picked by the size of the window, not by what browser you are using —
 so a narrow desktop window gets it too, and a tablet in landscape does not.
 Nothing is configured, and nothing is stored on the server: open the board
 from your phone and it is simply there.
+
+<img src="images/phone-rig.png" width="260" alt="hamdash on a phone: the Rig Control card full width with the bar of cards along the bottom">
 
 The bar holds four cards and a **More**, which lists the rest. Which four
 follows what you reach for away from the desk: the logbook first, then spots,
