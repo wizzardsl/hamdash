@@ -1718,9 +1718,18 @@
   // resize) wrote that older copy back: the setting reverted the moment
   // the operator rearranged the board. Kept in step here, without saving
   // or repainting anything.
+  // What is stored, not the public view: that has the defaults filled in,
+  // which written back into layout.json would pin today's defaults on the
+  // tile, and its secrets blanked, which written back would erase them. The
+  // announcement leaves secrets out, so the board keeps its own.
   HD.on('card.settings_changed', (p) => {
     const entry = p && p.uid && shell.get(p.uid);
-    if (entry && p.values) entry.settings = { ...p.values };
+    if (!entry || !p.stored) return;
+    const held = {};
+    Object.keys(p.secrets_set || {}).forEach((k) => {
+      if (entry.settings && k in entry.settings) held[k] = entry.settings[k];
+    });
+    entry.settings = { ...p.stored, ...held };
   });
   HD.on('config.changed', (p) => {
     config = p;

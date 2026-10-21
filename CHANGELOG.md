@@ -61,6 +61,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
   choice and the volume are kept per tile, in this browser.
 
 ### Fixed
+- **Listen went to the test tone after a memory was saved, and stayed
+  there.** A tile's settings change was announced with only what is stored
+  on the tile, without the card's defaults, so the rig card lost its
+  "follow the radio's input" setting and the audio engine fell back to the
+  test tone. Every card now reads its settings afresh when told they
+  changed, which fills the defaults in.
+- **A tile's secret settings were sent to every card on the board** in that
+  same announcement - the Map card's weather key, for one. They are blanked
+  in it now; only the card that owns the tile reads the real value.
 - **A card's own setting could revert when the board was rearranged.** The
   rig card's tuning step - and now its memories - are saved by the card,
   and the board went on holding its older copy and wrote that back with

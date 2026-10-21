@@ -129,7 +129,18 @@ test('the board keeps up with a card saving its own settings', () => {
   // It sent its own older copy back with every layout save, so a card's
   // setting reverted the moment anything on the board was moved.
   const app = read('hamdash', 'static', 'js', 'app.js');
-  assert.match(app, /HD\.on\('card\.settings_changed', \(p\) => \{[\s\S]{0,120}entry\.settings = \{ \.\.\.p\.values \}/);
+  // What is stored, not the public view with its defaults and blanked
+  // secrets - written back, those would pin defaults and erase secrets.
+  const at = app.indexOf("HD.on('card.settings_changed'");
+  const fn = app.slice(at, app.indexOf('\n  });', at));
+  assert.match(fn, /entry\.settings = \{ \.\.\.p\.stored, \.\.\.held \}/);
+  assert.doesNotMatch(fn, /p\.values/);
+  // A card page reads its settings afresh when told: the announcement has
+  // no secrets, and it is reading that fills in the defaults. Taking the
+  // announcement as the settings is what put Listen on the test tone.
+  const sdk = read('hamdash', 'static', 'js', 'hamdash.js');
+  const on = sdk.slice(sdk.indexOf('    onSettings(fn) {'));
+  assert.match(on.slice(0, on.indexOf('\n    },')), /HD\.settings\(\)\.then/);
   // And the settings sheet keeps what the host kept, not just its fields.
   assert.match(app, /settingTile\.settings = \(kept && kept\.values\)/);
 });

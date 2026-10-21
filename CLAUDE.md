@@ -233,6 +233,18 @@ pipe from the supervisor) is left alone.
   screen shows it and the service answers only "incorrect", which sends you
   looking at the password rather than at the paste. `config.tidy_credential`
   and `CREDENTIALS`.
+- **`card.settings_changed` is in `bus.ALWAYS`, so it is public.** It
+  carried the tile's stored settings raw - the Map card's weather key went
+  to every card page on the board - and stored only, with no manifest
+  defaults, which is the half that showed: the rig card took it as its
+  settings, lost `device` (default "rig", never stored because never
+  changed), and Listen asked the engine for nothing, which is the test
+  tone. A settings-sheet save stores every field and hid it for months; a
+  memory save stores one. The payload is now `values` (defaults in,
+  secrets blank), `stored` (secrets out, for the board's copy - defaults
+  must not be written into layout.json) and `secrets_set`; and
+  `HD.onSettings` re-reads with `HD.settings()` rather than trusting the
+  payload, the way the Python SDK always has. `tests/test_tile_settings_event.py`.
 - Tile settings of type `secret` follow the same rule, with one difference:
   the card that owns the tile does get the real value, because it has to use
   it (`path_map` builds a tile URL from its weather key). Everyone else gets

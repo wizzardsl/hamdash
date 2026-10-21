@@ -578,11 +578,32 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             values = cfg.set_tile_settings(uid, incoming)
         except KeyError as exc:
             return jsonify(error=str(exc)), 404
-        # Cards cache settings; this is how they find out to stop.
+        # Cards cache settings; this is how they find out to stop. It is in
+        # bus.ALWAYS, so every card page on the board hears it: the values
+        # are what reading them returns to a card that is not the owner -
+        # the manifest's defaults filled in (a page that took the stored
+        # values alone lost every setting nobody had changed, which is how
+        # the rig card's Listen fell back to the test tone the first time a
+        # memory was saved), and secrets blanked. `stored` is what is on the
+        # tile, secrets left out, for the board's own copy.
+        public, secret_set = _public_settings(card_for_tile, values)
+        stored = {k: v for k, v in values.items() if k not in secret_set}
         BUS.publish("card.settings_changed",
-                    {"uid": uid, "card": tile.get("card"), "values": values},
+                    {"uid": uid, "card": tile.get("card"), "values": public,
+                     "stored": stored, "secrets_set": secret_set},
                     source="host")
         return jsonify({"uid": uid, "values": values})
+
+    def _public_settings(card, stored: dict) -> tuple[dict, dict]:
+        """A tile's settings as anybody but its own card may see them."""
+        values = {**(card.defaults() if card else {}), **(stored or {})}
+        secret_set = {}
+        for f in (card.schema() if card else []):
+            if f["type"] != "secret":
+                continue
+            secret_set[f["name"]] = bool(str(values.get(f["name"]) or "").strip())
+            values[f["name"]] = ""
+        return values, secret_set
 
     def _safe_config() -> dict:
         """Config without the secrets.

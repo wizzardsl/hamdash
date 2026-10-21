@@ -166,6 +166,13 @@ const conf = await HD.settings();            // the same thing, in the page
 HD.onSettings((values) => redraw(values));   // the operator edited them
 ```
 
+`HD.onSettings` hands you the same thing `HD.settings()` does - your
+defaults filled in, your secrets included - because it reads them afresh
+when told the tile changed. If you listen for `card.settings_changed`
+yourself, know that every card on the board hears it: its `values` have
+the defaults filled in and every secret blanked, so treat it as "go and
+read them", not as the settings.
+
 **`secret` is handled for you.** The card that owns the tile gets the real
 value because it has to use it; everyone else gets an empty string and a
 `secrets_set` marker. Do not log it and do not echo it back into a form —

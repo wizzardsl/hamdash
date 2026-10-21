@@ -450,9 +450,15 @@
       return HD.put(`/api/tiles/${uid || HD.tileUid}/settings`, { values });
     },
     // fires when the operator edits this tile's settings
+    // Read afresh rather than taken from the announcement: that goes to
+    // every card on the board, so it cannot carry this card's secrets, and
+    // reading is what fills in the manifest's defaults the same way
+    // HD.settings() always has. The announcement is the fallback only if
+    // the read fails.
     onSettings(fn) {
       return HD.on('card.settings_changed', (p) => {
-        if (!HD.tileUid || p.uid === HD.tileUid) fn(p.values || {}, p);
+        if (HD.tileUid && p.uid !== HD.tileUid) return;
+        HD.settings().then((v) => fn(v, p), () => fn(p.values || {}, p));
       });
     },
 
