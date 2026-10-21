@@ -20,6 +20,35 @@
     border: 1px solid var(--rule); border-radius: var(--radius); padding: 4px 6px; }
   .mem { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
   .mem button { font-size: 12px; padding: 3px 7px; }
+  /* Dragged by the button itself, so a touch on one is ours and not the
+     page's scroll; the long press for the menu needs that too. */
+  .mem button { touch-action: none; user-select: none; }
+  .mem button.dragging { opacity: .55; outline: 1px dashed var(--accent); }
+  /* Saving one sits at the far end of the transmit row, under the step. */
+  #mem-save { margin-left: auto; }
+  .mem-note { font-size: 12px; color: var(--muted); margin-top: 6px;
+              display: flex; gap: 8px; align-items: center; }
+  .mem-note[hidden] { display: none; }    /* an author display beats [hidden] */
+  .mem-note button { font-size: 12px; padding: 1px 7px; }
+  /* A memory's own menu: right-click, or a long press on a touch screen. */
+  .mem-menu { position: fixed; z-index: 10; min-width: 170px; padding: 4px;
+              background: var(--panel); border: 1px solid var(--rule);
+              border-radius: var(--radius); box-shadow: 0 6px 18px rgba(0,0,0,.35);
+              display: flex; flex-direction: column; }
+  .mem-menu[hidden] { display: none; }
+  .mem-menu button { font: inherit; font-size: 12px; text-align: left;
+                     color: var(--ink); background: none; border: 0;
+                     border-radius: var(--radius); padding: 5px 8px; cursor: pointer; }
+  .mem-menu button:hover, .mem-menu button:focus-visible { background: var(--panel-2); }
+  .mem-menu button.danger { color: var(--alert); }
+  .mem-dlg { border: 1px solid var(--rule); border-radius: var(--radius);
+             background: var(--panel); color: var(--ink); padding: 12px;
+             width: min(300px, 90vw); }
+  .mem-dlg::backdrop { background: rgba(0,0,0,.4); }
+  .mem-dlg h2 { font-size: 13px; margin: 0 0 2px; }
+  .mem-dlg small { color: var(--muted); display: block; margin-bottom: 8px; }
+  .mem-dlg input { width: 100%; box-sizing: border-box; }
+  .mem-dlg .acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
   .ptt { background: var(--alert); color: var(--bg); }
   /* On the air. The label says so too, but a transmitting radio deserves
      something visible from across the room. */
@@ -104,6 +133,8 @@
   <button class="btn" id="tune">Tune</button>
   <select id="mode"></select>
   <button class="btn ptt" id="ptt">Transmit</button>
+  <button class="btn btn-quiet" id="mem-save" type="button"
+          title="Save this frequency and mode as a memory button">+ Memory</button>
 </div>
 
 <div class="vfos" id="vfos" hidden>
@@ -125,13 +156,32 @@
   <div class="read" id="m-read"></div>
 </div>
 
-<div class="mem" id="mem"></div>
+<div class="mem" id="mem" aria-label="Memories. Right-click one to rename or delete it; drag to move it."></div>
+<p class="mem-note" id="mem-note" hidden><span id="mem-note-text"></span>
+  <button class="btn btn-quiet" id="mem-undo" type="button">Undo</button></p>
+<div class="mem-menu" id="mem-menu" role="menu" hidden>
+  <button type="button" role="menuitem" data-act="rename">Rename…</button>
+  <button type="button" role="menuitem" data-act="update">Set to the current frequency</button>
+  <button type="button" role="menuitem" data-act="delete" class="danger">Delete</button>
+</div>
+<dialog class="mem-dlg" id="mem-dlg">
+  <form method="dialog" id="mem-form">
+    <h2 id="mem-dlg-title">Name this memory</h2>
+    <small id="mem-dlg-what"></small>
+    <input id="mem-name" maxlength="24" autocomplete="off" aria-label="Memory name">
+    <div class="acts">
+      <button class="btn btn-quiet" value="cancel" type="button" id="mem-cancel">Cancel</button>
+      <button class="btn" value="ok" id="mem-ok">Save</button>
+    </div>
+  </form>
+</dialog>
 <p class="err" id="err"></p>
 
 <div class="listen-wrap" id="listen" aria-label="Listen to this radio"></div>
 
 <script src="/static/js/hamdash.js"></script>
 <script src="/static/js/listen.js"></script>
+<script src="assets/memories.js"></script>
 <script>
 HD.cardId = 'rig_control';
 const $ = (s) => document.querySelector(s);
@@ -377,6 +427,240 @@ function paint(s) {
   }
 }
 
+// ---- memories -----------------------------------------------------------
+// Kept in the tile's settings, so they travel with the tile and a second
+// rig tile on another radio has its own. Saved as `{memories}` alone: the
+// host merges, so this cannot write back a stale copy of anything else.
+let mems = [];
+let memDrag = null;           // the drag in progress, if any
+let memSuppress = false;      // the click that ends a drag or a long press
+let menuAt = -1;              // which memory the menu is open for
+let undoTimer = null;
+
+const describe = (m) => `${HD.fmtHz(m.hz)} MHz ${m.mode}`.trim();
+
+async function saveMems(list) {
+  mems = list;
+  renderMems();
+  try { await HD.saveSettings({ memories: list }); } catch (e) { fail(e); }
+}
+
+function renderMems() {
+  const box = $('#mem');
+  box.innerHTML = '';
+  mems.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-quiet';
+    b.textContent = m.label;
+    b.dataset.i = String(i);
+    b.title = `${describe(m)}. Right-click to rename or delete; drag to move.`;
+    b.setAttribute('aria-label', `${m.label}, ${describe(m)}`);
+    box.appendChild(b);
+  });
+}
+
+async function recall(m) {
+  try {
+    // Mode before frequency: a radio applies its CW offset on entering CW,
+    // so the other order leaves the dial that offset away from where the
+    // memory said.
+    await radio.mode(m.mode);
+    paint(await radio.freq(m.hz));
+  } catch (e) { fail(e); }
+}
+
+/* Name a memory: a new one from the dial, or an existing one renamed.
+   An in-page dialog: the browser's own prompt box is chrome inside a webview. */
+function askName(title, what, start) {
+  const dlg = $('#mem-dlg');
+  $('#mem-dlg-title').textContent = title;
+  $('#mem-dlg-what').textContent = what;
+  const input = $('#mem-name');
+  input.value = start;
+  return new Promise((resolve) => {
+    const done = (v) => { dlg.close(); resolve(v); };
+    $('#mem-form').onsubmit = (e) => { e.preventDefault(); done(input.value.trim() || null); };
+    $('#mem-cancel').onclick = () => done(null);
+    dlg.oncancel = (e) => { e.preventDefault(); done(null); };
+    dlg.showModal();
+    input.select();
+  });
+}
+
+async function saveCurrent() {
+  if (!live || !live.ok || !live.freq) {
+    $('#err').textContent = 'No frequency to save - the radio is not answering.';
+    return;
+  }
+  if (mems.length >= HDMem.MAX) {
+    $('#err').textContent = `That is ${HDMem.MAX} memories - delete one to make room.`;
+    return;
+  }
+  const m = { hz: live.freq, mode: live.mode || '' };
+  const label = await askName('Name this memory', describe(m),
+                              HDMem.suggest(m.hz, m.mode));
+  if (label) saveMems([...mems, { ...m, label: label.slice(0, HDMem.MAX_LABEL) }]);
+}
+
+function removeAt(i) {
+  const gone = mems[i];
+  if (!gone) return;
+  const before = mems.slice();
+  saveMems(mems.filter((_, j) => j !== i));
+  // Undo rather than "are you sure": deleting is quick to do by mistake on
+  // a small button, and quick to put right.
+  $('#mem-note-text').textContent = `Deleted \u201c${gone.label}\u201d.`;
+  $('#mem-note').hidden = false;
+  $('#mem-undo').onclick = () => { hideNote(); saveMems(before); };
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideNote, 8000);
+}
+
+function hideNote() { clearTimeout(undoTimer); $('#mem-note').hidden = true; }
+
+function openMenu(i, x, y) {
+  menuAt = i;
+  const menu = $('#mem-menu');
+  menu.hidden = false;
+  // Kept inside the card: the tile is small and the menu must not be cut
+  // off by its edge.
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = `${Math.max(4, Math.min(x, innerWidth - w - 4))}px`;
+  menu.style.top = `${Math.max(4, Math.min(y, innerHeight - h - 4))}px`;
+  menu.querySelector('button').focus();
+}
+
+function closeMenu() { $('#mem-menu').hidden = true; menuAt = -1; }
+
+async function menuAct(act) {
+  const i = menuAt;
+  const m = mems[i];
+  closeMenu();
+  if (!m) return;
+  if (act === 'delete') removeAt(i);
+  if (act === 'rename') {
+    const label = await askName('Rename this memory', describe(m), m.label);
+    if (label) saveMems(mems.map((x, j) => (j === i ? { ...x, label } : x)));
+  }
+  if (act === 'update') {
+    if (!live || !live.ok || !live.freq) {
+      $('#err').textContent = 'No frequency to save - the radio is not answering.';
+      return;
+    }
+    saveMems(mems.map((x, j) => (j === i
+      ? { ...x, hz: live.freq, mode: live.mode || x.mode } : x)));
+  }
+}
+
+function wireMemories() {
+  const box = $('#mem');
+  $('#mem-save').onclick = saveCurrent;
+  const at = (e) => {
+    const b = e.target.closest('#mem button');
+    return b ? Number(b.dataset.i) : -1;
+  };
+
+  box.addEventListener('click', (e) => {
+    if (memSuppress) { memSuppress = false; return; }
+    const i = at(e);
+    if (i >= 0) recall(mems[i]);
+  });
+  box.addEventListener('contextmenu', (e) => {
+    const i = at(e);
+    if (i < 0) return;
+    e.preventDefault();
+    const r = e.target.getBoundingClientRect();
+    // The context-menu key has no pointer position; put it by the button.
+    const keyed = !e.clientX && !e.clientY;
+    openMenu(i, keyed ? r.left : e.clientX, keyed ? r.bottom : e.clientY);
+  });
+  box.addEventListener('keydown', (e) => {
+    const i = at(e);
+    if (i < 0) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeAt(i); }
+    // Moving one without a pointer: Alt and an arrow.
+    if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      const to = i + (e.key === 'ArrowLeft' ? -1 : 1);
+      if (to < 0 || to >= mems.length) return;
+      saveMems(HDMem.move(mems, i, to));
+      box.querySelector(`button[data-i="${to}"]`).focus();
+    }
+  });
+
+  // Drag to reorder, and a long press for the menu on a touch screen. A
+  // drag starts only once the pointer has moved, and the pointer is only
+  // captured then - capturing on pointerdown would send the click to the
+  // wrong place (see "setPointerCapture" in CLAUDE.md).
+  box.addEventListener('pointerdown', (e) => {
+    const i = at(e);
+    if (i < 0 || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const btn = e.target.closest('button');
+    const start = { x: e.clientX, y: e.clientY };
+    let rects = null;
+    let target = i;
+    let held = null;
+    if (e.pointerType !== 'mouse') {
+      held = setTimeout(() => {
+        held = null;
+        if (memDrag) return;
+        memSuppress = true;
+        openMenu(i, start.x, start.y);
+      }, 550);
+    }
+    const move = (ev) => {
+      if (!memDrag) {
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+        clearTimeout(held); held = null;
+        memDrag = { from: i };
+        try { btn.setPointerCapture(ev.pointerId); } catch { /* gone */ }
+        // The boxes as they were, so the drop does not chase a layout that
+        // is moving under it.
+        rects = [...box.children].map((c) => c.getBoundingClientRect());
+        btn.classList.add('dragging');
+      }
+      target = HDMem.dropIndex(rects, ev.clientX, ev.clientY, i);
+      const others = [...box.children].filter((c) => c !== btn);
+      box.insertBefore(btn, others[target] || null);
+    };
+    const end = (ev) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', end);
+      removeEventListener('pointercancel', end);
+      removeEventListener('keydown', esc);
+      clearTimeout(held);
+      // The click a drag or a long press ends with is swallowed - but a
+      // drag often ends with no click at all (the button moved out from
+      // under the pointer), and a flag left set ate the next real press.
+      // A click comes before any timer, so this clears it after.
+      setTimeout(() => { memSuppress = false; }, 0);
+      if (!memDrag) return;
+      memDrag = null;
+      memSuppress = true;
+      // Released outside the card counts as put back, like Escape.
+      if (ev && ev.type === 'pointerup' && target !== i) saveMems(HDMem.move(mems, i, target));
+      else renderMems();
+    };
+    const esc = (ev) => { if (ev.key === 'Escape') { target = i; end(null); } };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', end);
+    addEventListener('pointercancel', end);
+    addEventListener('keydown', esc);
+  });
+
+  $('#mem-menu').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (b) menuAct(b.dataset.act);
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!$('#mem-menu').hidden && !e.target.closest('#mem-menu')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#mem-menu').hidden) closeMenu();
+  });
+}
+
 // Point the tile at the radio its settings name. Changing it while this
 // tile has a radio on the air unkeys that one first: the keep-alive is
 // about to stop, and saying so beats leaving it to the watchdog.
@@ -413,11 +697,16 @@ async function boot() {
   // travels with the tile.
   $('#step').onchange = async () => {
     conf = { ...conf, step_hz: Number($('#step').value) };
-    try { await HD.saveSettings(conf); } catch { /* still applies now */ }
+    // Only what changed: the host merges, and sending the whole of `conf`
+    // could put back a memory list another browser has just edited.
+    try { await HD.saveSettings({ step_hz: conf.step_hz }); } catch { /* still applies now */ }
   };
   HD.onSettings(async (v) => {
     conf = v || {};
     if (conf.step_hz) $('#step').value = String(conf.step_hz);
+    // Another browser on this tile saved its memories; not mid-drag, when
+    // redrawing would drop the button out from under the pointer.
+    if (!memDrag) { mems = HDMem.clean(conf.memories); renderMems(); }
     if (await bind()) {
       try { paint(await radio.state()); } catch (e) { fail(e); }
       if (metering) startMetering();
@@ -455,23 +744,9 @@ async function boot() {
     radio.ptt(!transmitting).then(paint).catch(fail);
   };
 
-  const { memories } = await HD.card('rig_control', '/api/memories');
-  $('#mem').innerHTML = '';
-  memories.forEach((m) => {
-    const b = document.createElement('button');
-    b.className = 'btn btn-quiet';
-    b.textContent = m.label;
-    b.onclick = async () => {
-      try {
-        // Mode before frequency: a radio applies its CW offset on entering
-        // CW, so the other order leaves the dial that offset away from
-        // where the memory said.
-        await radio.mode(m.mode);
-        paint(await radio.freq(m.hz));
-      } catch (e) { fail(e); }
-    };
-    $('#mem').appendChild(b);
-  });
+  mems = HDMem.clean(conf.memories);
+  renderMems();
+  wireMemories();
 
   $('#vfo-a').onclick = () => radio.vfo('A').then(paint).catch(fail);
   $('#vfo-b').onclick = () => radio.vfo('B').then(paint).catch(fail);

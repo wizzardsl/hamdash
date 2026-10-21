@@ -8,20 +8,8 @@ from hamdash.sdk import Card
 
 card = Card(__file__)
 
-MEMORIES = [
-    ("FT8 20m", 14_074_000, "USB"),
-    ("FT8 40m", 7_074_000, "USB"),
-    ("SSB 20m DX", 14_195_000, "USB"),
-    ("CW 40m", 7_030_000, "CW"),
-    ("WSPR 20m", 14_095_600, "USB"),
-    ("2m calling", 146_520_000, "FM"),
-]
-
-
-@card.get("/memories")
-def memories():
-    return {"memories": [{"label": l, "hz": hz, "mode": m}
-                         for l, hz, m in MEMORIES]}
+# The memory buttons are the tile's own, in its settings, and the page
+# owns them (`memories.js`): nothing here needs to know about them.
 
 
 @card.on("log.qso_added")

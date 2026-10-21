@@ -420,8 +420,12 @@
         : el.value;
     });
     try {
-      await HD.put(`/api/tiles/${settingTile.uid}/settings`, { values });
-      settingTile.settings = values;
+      // What the host kept, not what the form sent: the form holds only the
+      // fields it shows, and a card's own settings - the rig card's
+      // memories - live beside them. Keeping the form's half would drop
+      // them at the next layout save.
+      const kept = await HD.put(`/api/tiles/${settingTile.uid}/settings`, { values });
+      settingTile.settings = (kept && kept.values) || { ...settingTile.settings, ...values };
       shell.markPopped(settingTile.uid, !!settingTile.popped);   // repaint
       const node = document.querySelector(`.tile[data-uid="${settingTile.uid}"] iframe`);
       if (node) node.src = node.src;
@@ -1696,6 +1700,16 @@
 
   // ---- bus wiring -----------------------------------------------------
   HD.on('card.status', (p) => shell.status(p.id, p.status));
+  // A card saving its own tile's settings - the rig card's step and its
+  // memories - goes straight to the host, and the board did not hear of
+  // it. It held its own copy, and the next layout save (any drag, any
+  // resize) wrote that older copy back: the setting reverted the moment
+  // the operator rearranged the board. Kept in step here, without saving
+  // or repainting anything.
+  HD.on('card.settings_changed', (p) => {
+    const entry = p && p.uid && shell.get(p.uid);
+    if (entry && p.values) entry.settings = { ...p.values };
+  });
   HD.on('config.changed', (p) => {
     config = p;
     paintStation();

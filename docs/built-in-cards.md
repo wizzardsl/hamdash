@@ -37,6 +37,25 @@ Two things about it are worth knowing if you write something similar:
 It needs `numpy` and `sounddevice`, both in `requirements.txt` and both in the
 frozen build.
 
+## Memories
+
+The buttons along the middle of the **Rig Control** card are memories: a
+name, a frequency and a mode. Click one to go there.
+
+- **+ Memory**, at the right end of the Transmit row, saves where the radio
+  is now. It asks for a name and offers one to start from (`14.074 USB`).
+- **Right-click** a memory - or **long-press** it on a touch screen - for
+  *Rename*, *Set to the current frequency* and *Delete*. Deleting offers
+  **Undo** for a few seconds. With the keyboard: focus a memory, then
+  **Delete** removes it and the context-menu key opens the menu.
+- **Drag** a memory to move it. **Alt** with the left or right arrow does
+  the same from the keyboard; **Escape** puts a drag back.
+
+Each rig tile has its own memories, kept with the tile - so two rig tiles
+on two radios keep two lists, and a tile keeps its memories when it is
+moved, stacked or popped out. A new tile starts with a handful of common
+ones (FT8 on 20 m and 40 m, and so on) to change or delete.
+
 ## Listening to the radio
 
 **Listen** sits at the foot of the **Rig Control** card and plays the radio's

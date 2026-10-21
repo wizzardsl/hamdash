@@ -18,6 +18,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
+- **Memory buttons on the Rig Control card you can edit.** **+ Memory**
+  saves the current frequency and mode under a name you choose.
+  Right-click a memory (or long-press on a touch screen) to rename it,
+  move it to the current frequency, or delete it, with Undo. Drag them
+  into whatever order you like. They belong to the tile, so each rig tile
+  keeps its own, and the six fixed quick buttons become the first ones a
+  tile starts with.
 - **Cards start big enough to show everything without a scroll bar.** A
   card can say what its page needs, and a new tile starts at least that
   big and cannot be resized smaller. Rig Control starts at 6×5 on a
@@ -48,6 +55,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   choice and the volume are kept per tile, in this browser.
 
 ### Fixed
+- **A card's own setting could revert when the board was rearranged.** The
+  rig card's tuning step - and now its memories - are saved by the card,
+  and the board went on holding its older copy and wrote that back with
+  the next drag or resize. It keeps up now.
 - **A ticked box in the Cards menu showed "¹3"** instead of a tick, since
   the menu was written.
 - **Selecting another radio while transmitting** closed the radio without

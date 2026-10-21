@@ -438,6 +438,24 @@ were diffed before and after.
   560x390. Width only (`fit.w`) for a card whose list is meant to scroll.
   Only new tiles grow; a board somebody arranged is not resized for them.
   `tests/js/fit.test.js`, `tests/test_card_fit.py`.
+- **The board holds a copy of every tile's settings and writes it back
+  on every layout save** - so a card that saves its own settings (the rig
+  card's step, its memories) had them reverted by the next drag, with
+  nothing to say so. `app.js` takes `card.settings_changed` into its copy
+  now, and the tile settings sheet keeps the host's merged reply rather
+  than its own form fields, which would drop anything the form does not
+  show. **A card that saves settings from its page sends only the keys it
+  changed** (`HD.saveSettings({memories})`): the host merges, and sending
+  the whole cached object can put back what another browser just edited.
+- **A python card serves its folder under `assets/`**, not at its root:
+  `<script src="memories.js">` is a 404 and the page dies on its first
+  line, where `path_map`'s bare `prop.js` works because it is an `html`
+  card served by the host.
+- **The click that ends a drag is swallowed - and a drag often ends
+  without one.** The rig card's memories set a flag to eat the drag's own
+  click, but a real drag moves the button out from under the pointer, so
+  no click came and the flag ate the operator's *next* press. Found only
+  with real mouse input; it clears on a zero timer after release now.
 - **`.toast` is `pointer-events: none`** so a status message never swallows a
   click on the board. A toast with a button has to add `.has-action` or the
   button is unclickable and silently does nothing.
