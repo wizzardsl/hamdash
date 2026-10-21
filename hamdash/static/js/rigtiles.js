@@ -26,6 +26,22 @@
                                        && boundTo(c) === String(id || ''));
   }
 
+  /* The tiles that are on a radio as the Cards menu means it: those bound
+     to it, and - for the selected radio - a plain rig tile too, because
+     that is the radio it is showing. Without the second half a board with
+     a plain tile offered the FT-900 again unticked, and ticking it put a
+     second tile on the same radio. */
+  function ofRadio(cards, id, selected) {
+    const mine = forRadio(cards, id);
+    return id && String(id) === String(selected || '')
+      ? [...forRadio(cards, ''), ...mine] : mine;
+  }
+
+  /* Every rig tile on the board, whichever radio it is on. */
+  function all(cards) {
+    return (cards || []).filter((c) => c.card === CARD);
+  }
+
   /* What to add for a radio's own tile. Its title is the radio's name,
      because two rig tiles both called "Rig control" are two tiles nobody
      can tell apart. */
@@ -58,5 +74,5 @@
     return out;
   }
 
-  root.HDRigTiles = { CARD, boundTo, forRadio, def, tidy };
+  root.HDRigTiles = { CARD, boundTo, forRadio, ofRadio, all, def, tidy };
 }(typeof window !== 'undefined' ? window : globalThis));

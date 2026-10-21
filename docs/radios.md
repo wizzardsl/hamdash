@@ -105,12 +105,15 @@ installed the tab says so and takes a model number instead.
 
 The radio marked *selected* is the one the whole board follows: the
 logbook's frequency and mode, the spots card's tune, the decoder and the
-spectrum. The plain **Rig control** tile follows it too.
+spectrum.
 
-Every radio can also have a **rig tile of its own**. Tick it in the
-**Cards** menu, where each radio is listed under Rig control, or tick
-**Own tile on the board** beside it in Settings → Radio - the two are the
-same switch. That tile is named after the radio and controls only it,
+Every radio can have a **rig tile of its own**. In the **Cards** menu,
+**Rig control** is a heading with your radios listed under it: tick a
+radio to give it a tile, untick it to take the tile away. The heading
+itself is ticked when any radio has one. **Own tile on the board**
+beside each radio in Settings → Radio is the same switch. A rig tile
+from before this - one that follows whichever radio is selected - counts
+as the selected radio's tile, so ticking that radio never adds a second. That tile is named after the radio and controls only it,
 whichever radio is selected: it tunes, changes mode, reads the meters and
 keys that radio, and its Listen "rig" input is that radio's sound card.
 Put each in an ear with Listen's Left / Right. Renaming the radio renames

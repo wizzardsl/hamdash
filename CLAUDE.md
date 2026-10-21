@@ -747,9 +747,12 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   **A radio's own tile is a `rig_control` entry with `settings.radio`,
   nothing more**, and `static/js/rigtiles.js` is the one place that says
   which tile is whose - the Cards menu row and the Settings switch both
-  call `toggleRadio`, so they cannot disagree. The plain Rig control row
-  counts only *unbound* tiles, or unticking it would take every radio's
-  tile too. **A tile born with settings is saved before it is mounted**
+  call `toggleRadio`, so they cannot disagree. **Rig control in the
+  menu is a heading, not a switch** (`head: true`, a `div`): a switch
+  there plus one per radio was two ways onto one radio, and the operator
+  got a plain tile and an FT-900 tile showing the same rig. For the same
+  reason `ofRadio` counts a plain (unbound) tile as the *selected*
+  radio's - that is what it shows. **A tile born with settings is saved before it is mounted**
   (`addBorn`): the card reads its settings from the host, the board's
   save is debounced 300 ms, and the page came up on the defaults -
   driving the selected radio under a title naming another - until

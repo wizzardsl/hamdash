@@ -448,10 +448,15 @@ html, body {
   border: 1px solid var(--grip); display: grid; place-items: center;
   font-size: 11px; line-height: 1; color: var(--bg);
 }
-.menu-item[aria-checked="true"] .menu-tick {
+.menu-item[aria-checked="true"] .menu-tick,
+.menu-head[data-on="true"] .menu-tick {
   background: var(--accent); border-color: var(--accent);
 }
-.menu-item[aria-checked="true"] .menu-tick::after { content: "¹3"; }
+/* A heading over the rows below it: shows, does not switch. */
+.menu-item.menu-head { cursor: default; }
+.menu-item.menu-head:hover { background: none; }
+.menu-item[aria-checked="true"] .menu-tick::after,
+.menu-head[data-on="true"] .menu-tick::after { content: "\2713"; }
 .menu-text { flex: 1; min-width: 0; }
 .menu-text small { display: block; color: var(--muted); font-size: 11px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -496,6 +496,7 @@
   // that follow the selected radio.
   const RT = window.HDRigTiles;
   const radios = () => ((config && config.radio && config.radio.rigs) || []);
+  const selectedRadio = () => ((config && config.radio) || {}).active || '';
 
   function tilesOf(cardId) {
     if (cardId === RT.CARD) return RT.forRadio(shell.cards, '');
@@ -503,12 +504,19 @@
   }
 
   /* One row of the Cards menu: a tick, a name, a line under it, a count. */
-  function menuButton({ name, sub, mine, disabled, onclick, indent }) {
-    const b = document.createElement('button');
-    b.className = 'menu-item' + (indent ? ' menu-sub' : '');
-    b.type = 'button';
-    b.setAttribute('role', 'menuitemcheckbox');
-    b.setAttribute('aria-checked', String(mine.length > 0));
+  function menuButton({ name, sub, mine, disabled, onclick, indent, head }) {
+    // A heading is a label for the rows under it, not a switch of its own:
+    // it shows whether any of them is on and does nothing when pressed.
+    const b = document.createElement(head ? 'div' : 'button');
+    b.className = 'menu-item' + (indent ? ' menu-sub' : '')
+      + (head ? ' menu-head' : '');
+    if (head) {
+      b.dataset.on = String(mine.length > 0);
+    } else {
+      b.type = 'button';
+      b.setAttribute('role', 'menuitemcheckbox');
+      b.setAttribute('aria-checked', String(mine.length > 0));
+    }
     // The name has to be explicit: the visible label is wrapped in spans
     // alongside a decorative tick, and the computed name came out empty -
     // a screen reader announced six unnamed checkboxes.
@@ -534,7 +542,7 @@
       n.textContent = `\u00d7${mine.length}`;
       b.appendChild(n);
     }
-    b.onclick = onclick;
+    if (onclick) b.onclick = onclick;
     return b;
   }
 
@@ -545,11 +553,11 @@
     if (c.id !== RT.CARD || c.error) return;
     radios().forEach((rig) => {
       const li = document.createElement('li');
-      const sel = rig.id === (config.radio || {}).active;
+      const sel = rig.id === selectedRadio();
       li.appendChild(menuButton({
         name: rig.name || 'Radio',
-        sub: `Its own rig tile${sel ? ' \u00b7 the selected radio' : ''}`,
-        mine: RT.forRadio(shell.cards, rig.id),
+        sub: sel ? 'The selected radio' : 'Rig control for this radio',
+        mine: RT.ofRadio(shell.cards, rig.id, selectedRadio()),
         indent: true,
         onclick: () => toggleRadio(rig),
       }));
@@ -564,11 +572,18 @@
     offered().forEach((c) => {
       const mine = tilesOf(c.id);
       const li = document.createElement('li');
-      li.appendChild(menuButton({
+      // Rig control is one tile per radio, so it is a heading over the
+      // radios rather than a switch of its own - a switch here and one per
+      // radio below meant two ways to put a tile on the same radio.
+      const heading = c.id === RT.CARD && !c.error && radios().length > 0;
+      li.appendChild(menuButton(heading ? {
         name: c.name,
-        sub: c.error ? c.error
-          : (c.id === RT.CARD && radios().length
-            ? 'Follows the selected radio' : (c.description || c.kind)),
+        sub: 'One tile per radio, below',
+        mine: RT.all(shell.cards),
+        head: true,
+      } : {
+        name: c.name,
+        sub: c.error ? c.error : (c.description || c.kind),
         mine, disabled: !!c.error,
         onclick: () => toggleCard(c),
       }));
@@ -604,7 +619,8 @@
   function toggleRadio(rig) {
     const c = cards.find((x) => x.id === RT.CARD);
     if (!c) return;
-    toggleTiles(rig.name || 'Radio', RT.forRadio(shell.cards, rig.id),
+    toggleTiles(rig.name || 'Radio',
+                RT.ofRadio(shell.cards, rig.id, selectedRadio()),
                 RT.def(rig, c)).then(syncRigTileBoxes);
   }
 
@@ -1033,7 +1049,7 @@
   function syncRigTileBoxes() {
     document.querySelectorAll('#rig-list .rig-tile').forEach((box) => {
       box.checked = !!box.dataset.rig
-        && RT.forRadio(shell.cards, box.dataset.rig).length > 0;
+        && RT.ofRadio(shell.cards, box.dataset.rig, selectedRadio()).length > 0;
     });
   }
 
@@ -1198,7 +1214,8 @@
     // the board, not the radio.
     const own = sel('rig-tile');
     own.dataset.rig = rig.id || '';
-    own.checked = !!rig.id && RT.forRadio(shell.cards, rig.id).length > 0;
+    own.checked = !!rig.id
+      && RT.ofRadio(shell.cards, rig.id, selectedRadio()).length > 0;
     own.disabled = !rig.id || !cards.some((c) => c.id === RT.CARD);
     own.onchange = () => toggleRadio({ ...rig, name: sel('rig-name').value || rig.name });
 

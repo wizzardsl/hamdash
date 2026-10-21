@@ -16,9 +16,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and it is no longer in the Cards menu.
 
 ### Added
-- **Every radio can have a rig tile of its own.** Each radio in Settings →
-  Radio is listed under Rig control in the Cards menu, and has an "Own tile
-  on the board" switch in Settings; both add or remove the same tile. It is
+- **Every radio can have a rig tile of its own.** In the Cards menu, Rig
+  control is now a heading with each radio in Settings → Radio listed
+  under it; ticking a radio gives it a tile, and the heading shows whether
+  any has one. Each radio also has an "Own tile on the board" switch in
+  Settings; both add or remove the same tile, and an existing rig tile
+  counts as the selected radio's, so there is never a second. It is
   named after the radio and controls only that one - tune, mode, meters
   and transmit, with its own watchdog - while the plain Rig control tile
   keeps following the selected radio. Listen's "rig" input follows the
@@ -35,6 +38,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
   choice and the volume are kept per tile, in this browser.
 
 ### Fixed
+- **A ticked box in the Cards menu showed "¹3"** instead of a tick, since
+  the menu was written.
 - **Selecting another radio while transmitting** closed the radio without
   unkeying it. The radio on the air now stays open until the watchdog or
   you take it off.

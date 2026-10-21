@@ -40,6 +40,22 @@ test("a radio's tiles are the rig tiles bound to it, and nothing else", () => {
   assert.deepStrictEqual(RT.forRadio(BOARD, 'other'), []);
 });
 
+test("the selected radio's row counts a plain rig tile as its own", () => {
+  // A plain tile shows the selected radio. Counting it only as "the
+  // selected radio" left the FT-900 row unticked on a board already
+  // showing the FT-900, and ticking it put a second tile on the same radio.
+  assert.deepStrictEqual(RT.ofRadio(BOARD, 'r900', 'r900').map((c) => c.uid),
+    ['plain', 'sel', 'ft']);
+  assert.deepStrictEqual(RT.ofRadio(BOARD, 'r900', 'other').map((c) => c.uid),
+    ['ft']);
+  assert.deepStrictEqual(RT.ofRadio(BOARD, 'other', 'other').map((c) => c.uid),
+    ['plain', 'sel']);
+});
+
+test('every rig tile, whichever radio it is on', () => {
+  assert.deepStrictEqual(RT.all(BOARD).map((c) => c.uid), ['plain', 'sel', 'ft']);
+});
+
 test("a radio's own tile is a rig tile, named after it, bound by id", () => {
   const d = RT.def({ id: 'r900', name: 'FT-900' }, { w: 4, h: 3 });
   assert.strictEqual(d.card, 'rig_control');
@@ -76,9 +92,16 @@ test('the Cards menu and Settings flip the same switch', () => {
   // ...and the radio's row in Settings calls the same function.
   assert.match(app, /class="rig-tile"/);
   assert.match(app, /own\.onchange = \(\) => toggleRadio\(/);
-  // The plain Rig control row counts only the tiles with no radio of their
-  // own, or unticking it would take every radio's tile off too.
-  assert.match(app, /if \(cardId === RT\.CARD\) return RT\.forRadio\(shell\.cards, ''\)/);
+  // Rig control is a heading over the radios, not a switch: it shows
+  // whether any radio has a tile, and pressing it does nothing.
+  const head = app.slice(app.indexOf('menuButton(heading ? {'));
+  const headDef = head.slice(0, head.indexOf('} : {'));
+  assert.match(headDef, /head: true/);
+  assert.match(headDef, /RT\.all\(shell\.cards\)/);
+  assert.doesNotMatch(headDef, /onclick/, 'the heading is still a switch');
+  // Both switches count what the menu counts.
+  assert.match(app, /mine: RT\.ofRadio\(shell\.cards, rig\.id, selectedRadio\(\)\)/);
+  assert.match(app, /own\.checked = !!rig\.id\s*&& RT\.ofRadio\(/);
   // The board loads the module before the shell that uses it.
   const page = read('hamdash', 'static', 'index.html');
   assert.ok(page.indexOf('rigtiles.js') > 0
@@ -96,6 +119,14 @@ test("a radio's tile is saved before its card loads", () => {
   assert.ok(body.indexOf("await HD.put('/api/layout'") < body.indexOf('shell.add(def)'),
     'the tile is mounted before its settings are saved');
   assert.match(app, /await addBorn\(def\)/);
+});
+
+test('a ticked box shows a tick', () => {
+  // It was the two characters "¹3" from the day the menu was written.
+  const css = read('hamdash', 'static', 'css', 'app.css');
+  const rules = css.match(/menu-tick::after[^}]*}/g) || [];
+  assert.ok(rules.length > 0);
+  rules.forEach((r) => assert.match(r, /content: "\\2713"/, r));
 });
 
 test('renaming a tile repaints it without reloading the card', () => {
