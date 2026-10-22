@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.0.1]
+
 ### Fixed
 - **The app opens its window when the radio is switched off.** With a radio
   selected that was not answering - flrig not running, say - 1.0.0 on
