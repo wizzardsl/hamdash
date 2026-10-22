@@ -6,6 +6,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **The app opens its window when the radio is switched off.** With a radio
+  selected that was not answering - flrig not running, say - 1.0.0 on
+  Windows started, waited fifteen seconds and quit without showing anything
+  or writing a word to the log. The start-up check was waiting on the radio
+  as well as on the app; it now asks only the app, and the health check
+  reports what the radio last said instead of asking it again. Anything that
+  stops the app starting is now written to `hamdash.log`.
+
 ## [1.0.0]
 
 hamdash 1.0. Each radio can have a Rig Control tile of its own, with memory

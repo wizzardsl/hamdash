@@ -251,6 +251,12 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         the 'about:' link), so the pop-out backend is chosen from this."""
         return jsonify(native=bool(native), platform=sys.platform)
 
+    @app.get("/api/ping")
+    def ping():
+        """The server is up. Touches nothing, so it answers as fast as
+        waitress can - which is the whole of what the launcher asks."""
+        return jsonify(ok=True)
+
     @app.get("/popout")
     def popout_shell():
         """Chrome for a popped-out card: same card, second window."""
@@ -1382,12 +1388,15 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
 
     @app.get("/api/health")
     def health():
+        # The poller's last reading, never `rig.state()`: an unreachable
+        # radio made this take 2-4 s, and the launcher waits on it.
+        radio = rig.last_state()
         return jsonify(ok=True, cards=len(cards),
                        running=sum(1 for w in sup.workers.values()
                                    if w.status == "running"),
                        wedged=[w.card.id for w in sup.workers.values()
                                if w.status == "wedged"],
-                       radio=rig.state().get("ok"))
+                       radio=(radio or {}).get("ok"))
 
     @app.post("/api/shutdown")
     def shutdown_now():

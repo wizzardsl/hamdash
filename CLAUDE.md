@@ -210,6 +210,29 @@ in `proc._drain` that relays a card's output, which would kill the drain
 thread and lose exactly the diagnostics the log exists for.
 `run.ensure_streams()` runs first and points them at devnull. A real stream (a
 pipe from the supervisor) is left alone.
+**The flip side: in that build stderr is not a place to say anything.**
+1.0.0 from the release zip opened no window and logged nothing, because
+`main()` gave up with a `print(..., file=sys.stderr)` and exit code 1 - into
+devnull. The log stopped at `Serving on` and the event log was empty; the
+exit code (taken with `Start-Process -PassThru`) and the timing were the
+only clues. Anything that ends startup must go through `logging` too.
+
+**9. Startup waits for the server, not for the radio.** `wait_for` probed
+`/api/health` at 0.5 s a try for 15 s, and `health()` called `rig.state()`
+inline - with the selected radio an flrig whose flrig was not running, each
+refused loopback connect costs ~2 s on Windows, so health took 2-4 s, every
+probe timed out, and the app exited ~20 s in with no window. It works in
+`--browser` (no probe), which is the quickest way to split "server" from
+"window". A radio that is off must never stop the board opening: a probe
+asks only whether the server answers, and a request handler reports the
+poller's last state rather than asking the radio (invariant 4).
+So `wait_for` asks `/api/ping`, which touches nothing; `health()` reports
+`rig.last_state()` - the selected `RigLink`'s `last`, written by its own
+poller, read without the manager's lock because `select()` holds that while
+a backend opens; and every failing return in `main()` goes through
+`fail()`, which logs as well as prints, with logging set up before the
+first of them (the port check). `tests/test_startup_probe.py` holds all
+three, including that no bare non-zero `return` is left in `main()`.
 
 ## Secrets
 

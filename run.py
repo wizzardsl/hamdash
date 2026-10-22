@@ -122,14 +122,37 @@ def free_port() -> int:
 
 
 def wait_for(url: str, timeout: float = 15.0) -> bool:
+    """Is the server answering? Not the radio, not the cards - the server.
+
+    This probed `/api/health`, which asked the rig inline: with flrig not
+    running that took 2-4 s on Windows, every 0.5 s probe timed out, and
+    1.0.0 opened no window at all. `/api/ping` touches nothing, and the
+    per-probe timeout is generous because a slow answer is still an answer.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            urllib.request.urlopen(url + "/api/health", timeout=0.5)
+            urllib.request.urlopen(url + "/api/ping", timeout=2.0)
             return True
         except Exception:  # noqa: BLE001
             time.sleep(0.1)
     return False
+
+
+def fail(code: int, *lines: str) -> int:
+    """Say why the app is not starting, on stderr *and* in the log.
+
+    A windowed build has no console - stderr is devnull (ensure_streams) -
+    so a reason printed only there is no reason at all: the operator sees
+    nothing open and the log ends mid-start. `main()` sets logging up
+    before the first of these. Not used by `--stop`, a console command
+    whose output is the point, nor by `--run-card`, whose stderr is a pipe
+    the supervisor already logs - a card must not take the log file.
+    """
+    for line in lines:
+        print(line, file=sys.stderr)
+    logging.getLogger("hamdash").error("not starting: %s", " ".join(lines))
+    return code
 
 
 class _Truncating(logging.Formatter):
@@ -323,15 +346,15 @@ def main() -> int:
 
     port = args.port or (8765 if args.browser else free_port())
 
-    why = why_not_bindable(args.host, port)
-    if why:
-        print(f"cannot listen on {args.host}:{port} - {why}",
-              file=sys.stderr)
-        print("  pick another with --port, or stop whatever has it",
-              file=sys.stderr)
-        return 2
+    # Logging first, so a refusal below reaches hamdash.log: in a windowed
+    # build it is the only place anything can be read.
     cfg = Config(args.home)
     setup_logging(cfg)
+
+    why = why_not_bindable(args.host, port)
+    if why:
+        return fail(2, f"cannot listen on {args.host}:{port} - {why}",
+                    "  pick another with --port, or stop whatever has it")
     # /api/shutdown calls this. close_once is defined below; the hook is
     # read when the route fires, which is long after. Ending the process
     # belongs here rather than in the app: by this point the cards are
@@ -421,10 +444,9 @@ def main() -> int:
     threading.Thread(target=wsgi_serve, kwargs={"app": app, **kwargs},
                      daemon=True, name="hamdash-http").start()
     if not wait_for(url):
-        print("server did not come up in time; check the output above",
-              file=sys.stderr)
         close_once()
-        return 1
+        return fail(1, f"the server at {url} did not answer within 15 s",
+                    "  check the lines above in hamdash.log")
 
     native_windows.configure(url)
     popouts = native_windows.PopoutApi()

@@ -1317,6 +1317,9 @@ class RigLink:
         self._ptt_confirmed = False
         self._ptt_drop = ""
         self._ptt_drop_at = 0.0
+        # What the polling thread last read, for whoever must not wait on
+        # the radio to know how it is - see RigManager.last_state().
+        self.last: dict | None = None
 
     def entry(self) -> dict | None:
         """The radio's entry as configured now, so an edited sound card
@@ -1544,6 +1547,7 @@ class RigLink:
                 except Exception as exc:                # noqa: BLE001
                     LOG.exception("rig poll failed: %s", exc)
                     continue
+                self.last = st
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
                        st.get("ok"), st.get("rig_id"), st.get("rig"),
                        st.get("audio_in"), st.get("audio_out"),
@@ -1751,6 +1755,18 @@ class RigManager:
     # --- the selected radio, for everything that does not name one -------
     def state(self) -> dict:
         return self.link().state()
+
+    def last_state(self) -> dict | None:
+        """The selected radio as its poller last saw it, without asking it.
+
+        For `/api/health`, which must answer at once whatever the radio is
+        doing: `state()` goes to the backend, and a backend that is not
+        there - flrig not running - takes seconds to say so on Windows,
+        about two per refused loopback connect. None means nothing has been
+        polled yet. No lock: `select()` holds it while a backend opens.
+        """
+        link = self._links.get(self._active)
+        return link.last if link is not None else None
 
     def set_freq(self, hz: int) -> dict:
         return self.link().set_freq(hz)
