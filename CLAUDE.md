@@ -2764,6 +2764,26 @@ release notes cut from `CHANGELOG.md` (`tools/release_notes.py`).
   link test now. They are what a visitor meets first, and a dead link
   there is the first thing they see.
 
+## Two machines
+
+hamdash is developed from **two hosts, each with its own Claude Code
+session**, both pushing to `main`: a **Linux** machine (where most of the
+code, the test runs and the screenshots are done, with a scratch board and a
+long-running instance on port 4444) and the operator's **Windows 11** PC (the
+real station, and where every Windows-only bug - the frozen build above all -
+has to be reproduced). Neither session can see the other's files or
+processes.
+
+- **Fetch before editing, and pull if `origin/main` moved.** The other host
+  may have pushed since you last looked.
+- **Keep the checkout clean while the other session is working**, so its
+  push does not collide with half-finished edits here.
+- **Something only one host can see is that host's job.** A session that
+  needs the other machine writes a brief for the operator to paste there
+  rather than guessing at a system it cannot reach.
+- Commit finished work freely; **push, tag or release only when the
+  operator says so** (see Releasing).
+
 ## Keeping this file true
 
 **A stale "not done" list is worse than no list**: it sends the next session
