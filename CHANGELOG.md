@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.1.0]
+
 ### Added
 - **A Nets tab in the Spots card**: the nets being logged in NetLogger right
   now - name, frequency, band, mode, net control, how long it has been
