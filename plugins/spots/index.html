@@ -107,6 +107,7 @@
   <span class="tabs">
     <button id="tab-spots" class="on" type="button">Spots <span class="count" id="n-spots"></span></button>
     <button id="tab-contests" type="button">Contests <span class="count" id="n-contests"></span></button>
+    <button id="tab-nets" type="button" title="Nets in progress, from NetLogger">Nets <span class="count" id="n-nets"></span></button>
   </span>
   <span class="spacer"></span>
   <span class="note" id="status"></span>
@@ -175,6 +176,7 @@ let conf = {};
 let tab = 'spots';
 let data = { spots: [], sources: [], now: 0 };
 let cons = { on: [], soon: [], source: {} };
+let nets = { nets: [], source: {}, now: 0 };
 const off = new Set();          // sources switched off on this tile
 let filters = { band: '', mode: '', q: '' };
 // Where a mode came from when the source itself did not say. Both are shown
@@ -357,7 +359,57 @@ function paintContests() {
          target="_blank" rel="noopener">QSO Dates</a></p>`;
 }
 
+// Nets in progress, from NetLogger. A net's frequency is whatever its
+// logger typed: "2m" names a band and has no number to tune to, so it is
+// shown as written and is not a button - a click must not send the radio
+// somewhere the card made up.
+function paintNets() {
+  const now = nets.now || Date.now() / 1000;
+  const list = nets.nets || [];
+  const src = nets.source || {};
+  if (!list.length) {
+    $('#pane').innerHTML = `<p class="empty">${src.error && !src.held
+      ? `NetLogger is not answering — ${esc(String(src.error).slice(0, 80))}`
+      : (src.age_s !== undefined && nets.now ? 'No nets on NetLogger right now.'
+                                             : 'Asking NetLogger…')}</p>`
+      + NET_CREDIT;
+    return;
+  }
+  const tune = conf.tune_on_click !== false;
+  $('#pane').innerHTML = `<table><thead><tr>
+      <th>Started</th><th>Net</th><th>Freq</th><th>Band</th><th>Mode</th>
+      <th>Net control</th><th title="Following it in NetLogger">Following</th>
+    </tr></thead><tbody>${list.map((n) => `<tr>
+      <td class="mono dim" title="${n.started ? hhmm(n.started) + ' UTC' : ''}">${
+        n.started ? `${ago(Math.max(0, now - n.started))} ago` : ''}</td>
+      <td class="call">${esc(n.name)}</td>
+      <td>${n.hz ? (tune
+          ? `<button class="freq" data-tune="${n.hz}" data-mode="${esc(n.mode)}"
+                     title="Tune the radio here">${(n.hz / 1e6).toFixed(3)}</button>`
+          : `<span class="freq">${(n.hz / 1e6).toFixed(3)}</span>`)
+        : `<span class="dim" title="NetLogger has this as written, with no frequency to tune to">${esc(n.freq)}</span>`}</td>
+      <td class="mono dim">${esc(n.band)}</td>
+      <td class="mono">${esc(n.mode)}</td>
+      <td class="mono dim">${esc(n.control)}</td>
+      <td class="mono dim">${n.subscribers || ''}</td>
+    </tr>`).join('')}</tbody></table>${NET_CREDIT}`;
+}
+
+const NET_CREDIT = `<p class="credit">Nets from <a href="https://www.netlogger.org/"
+  target="_blank" rel="noopener">NetLogger</a>, the nets being logged there now</p>`;
+
 function paintStatus() {
+  if (tab === 'nets') {
+    // On this tab the spot sources are beside the point: say how fresh
+    // NetLogger's list is, and whether it is answering.
+    const src = nets.source || {};
+    $('#status').textContent = src.error
+      ? `NetLogger — ${String(src.error).slice(0, 40)}`
+      : (src.age_s !== undefined ? `NetLogger ${ago(src.age_s)}` : '');
+    $('#status').className = 'note' + (src.error ? ' warn' : '');
+    $('#n-nets').textContent = (nets.nets || []).length ? `(${nets.nets.length})` : '';
+    return;
+  }
   const bits = (data.sources || [])
     .filter((s) => !off.has(s.name))
     .map((s) => s.ok ? `${s.label || s.name} ${ago(s.age_s)}`
@@ -369,10 +421,11 @@ function paintStatus() {
   $('#status').className = 'note'
     + ((data.sources || []).some((s) => !s.ok && !off.has(s.name)) ? ' warn' : '');
   $('#n-contests').textContent = cons.on.length ? `(${cons.on.length})` : '';
+  $('#n-nets').textContent = (nets.nets || []).length ? `(${nets.nets.length})` : '';
 }
 
 function paint() {
-  (tab === 'spots' ? paintSpots : paintContests)();
+  ({ spots: paintSpots, contests: paintContests, nets: paintNets }[tab])();
   paintStatus();
 }
 
@@ -397,6 +450,15 @@ async function loadContests(force) {
     cons = await HD.card('spots', `/api/contests${force ? '?force=1' : ''}`);
   } catch (e) { $('#err').textContent = e.message; return; }
   if (tab === 'contests') paint(); else paintStatus();
+}
+
+// Only while the Nets tab is on show: nobody else needs NetLogger asked.
+async function loadNets(force) {
+  if (!force && (HD.hidden || tab !== 'nets')) return;
+  try {
+    nets = await HD.card('spots', `/api/nets${force ? '?force=1' : ''}`);
+  } catch (e) { $('#err').textContent = e.message; return; }
+  if (tab === 'nets') paint(); else paintStatus();
 }
 
 // ---- events ---------------------------------------------------------------
@@ -434,9 +496,11 @@ $('#clear').onclick = () => {
 
 $('#tab-spots').onclick = () => { tab = 'spots'; tabs(); paint(); };
 $('#tab-contests').onclick = () => { tab = 'contests'; tabs(); paint(); };
+$('#tab-nets').onclick = () => { tab = 'nets'; tabs(); paint(); loadNets(true); };
 function tabs() {
   $('#tab-spots').classList.toggle('on', tab === 'spots');
   $('#tab-contests').classList.toggle('on', tab === 'contests');
+  $('#tab-nets').classList.toggle('on', tab === 'nets');
   $('#filters').hidden = tab !== 'spots';
 }
 
@@ -444,7 +508,8 @@ $('#refresh').onclick = async (e) => {
   e.target.disabled = true;
   // The floor is in the card. This only means "do not wait for the poll",
   // and the card says no if the source was asked a moment ago.
-  await Promise.all([loadSpots(true), loadContests(true)]);
+  await Promise.all([loadSpots(true), loadContests(true),
+                     tab === 'nets' ? loadNets(true) : null]);
   e.target.disabled = false;
 };
 
@@ -493,7 +558,9 @@ $('#pane').addEventListener('click', async (e) => {
   } catch (err) { $('#err').textContent = err.message; }
   // Anything else that wants to know what we are looking at. Within this
   // card's own namespace; it is a pick, not a lookup result.
-  const row = visible()[Number(b.closest('tr').dataset.i)];
+  // Only a spot: a net row has no place in the spots list, and its index
+  // would name some other station.
+  const row = tab === 'spots' ? visible()[Number(b.closest('tr').dataset.i)] : null;
   if (row) HD.publish('spots.picked', row).catch(() => {});
 });
 
@@ -507,6 +574,7 @@ $('#pane').addEventListener('click', async (e) => {
   // The card holds the floor, so this is just "show me what it has".
   setInterval(loadSpots, 30000);
   setInterval(loadContests, 300000);
+  setInterval(loadNets, 60000);
 })();
 </script>
 </body>

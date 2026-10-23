@@ -2311,6 +2311,25 @@ the live service.
   something. Tried live against VE7CC and NC7J: both connected; in 75 s
   they sent different spots, so the merge is proven by tests, not by
   that run.
+- **Nets come from NetLogger, not NetFinder, and that is a decision.**
+  NetFinder (netfinder.radio) is the better directory - scheduled nets as
+  well as live ones - but it has no API or feed, no robots.txt, and its
+  terms are behind a login, so reading it would be scraping a site whose
+  rules we cannot see: the WA7BNM answer. Its contact is K4HCK (Amateur
+  Radio Weekly); asking for a feed is the way to get scheduled nets.
+  NetLogger's `api/GetActiveNets.php` is read-only XML that needs **no
+  key** - the APIKey/SessionKey in their API are for subscribing and
+  messaging - and RagChew (ragchew.site, MIT) polls it in the open, once a
+  minute, backing off on a 429. Undocumented and marked "Copyright The
+  NetLogger System", so the operator chose to use it; the Feed floor is 60
+  s, the page asks only while the Nets tab is open, and the reply says
+  whose list it is on screen.
+  **Its frequency is free text** - "147.090", "3916", "3.919" and "2m" in
+  one live reply. `net_hz` reads it by size like the rig card's box, lets
+  the net's own Band field break a tie ("1296" is 23 cm only in MHz), and
+  treats a band word ("2m", "70cm") as no frequency at all rather than 2
+  MHz: a click must not tune the radio somewhere the card made up.
+  `tests/test_spots_nets.py` runs against a real captured reply.
 - **`show_rbn` alone used to turn all three polled sources back on.**
   "Everything off means everything on" was a fair reading of an empty choice
   until there were live feeds to want instead. `_wanted()` only falls back

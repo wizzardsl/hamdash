@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<NetLoggerXML>
+ <Header>
+  <CreationDateUTC>Fri 10/23/2026 03:01:56</CreationDateUTC>
+  <Copyright>The NetLogger System 2026</Copyright>
+  <APIVersion>1.3.5</APIVersion>
+  <TimeZone>UTC</TimeZone>
+ </Header>
+ <ServerList>
+  <ResponseCode>200 OK</ResponseCode>
+  <Server>
+   <ServerName>NETLOGGER</ServerName>
+   <ServerActiveNetCount>6</ServerActiveNetCount>
+   <Net>
+    <NetName>BCARC ARES</NetName>
+    <AltNetName>BCARC ARES</AltNetName>
+    <Frequency>147.090</Frequency>
+    <Logger>KQ4PJM-HENRY - v3.1.7W</Logger>
+    <NetControl>KQ4PJM</NetControl>
+    <Date>2026-10-22 23:46:35</Date>
+    <Mode>FM</Mode>
+    <Band>2m</Band>
+    <SubscriberCount>1</SubscriberCount>
+   </Net>
+   <Net>
+    <NetName>FREEWHEELERS</NetName>
+    <AltNetName>FREEWHEELERS</AltNetName>
+    <Frequency>3916</Frequency>
+    <Logger>AK4QM-MATTHEW - v3.1.7W</Logger>
+    <NetControl>KI4BIY</NetControl>
+    <Date>2026-10-23 02:58:59</Date>
+    <Mode>SSB</Mode>
+    <Band>80m</Band>
+    <SubscriberCount>3</SubscriberCount>
+   </Net>
+   <Net>
+    <NetName>Friendly Bunch Conversation</NetName>
+    <AltNetName>Friendly Bunch Conversation</AltNetName>
+    <Frequency>3.919</Frequency>
+    <Logger>KB4ABJ-BOBBY - v3.1.7W</Logger>
+    <NetControl>BOBBY</NetControl>
+    <Date>2026-10-23 03:01:52</Date>
+    <Mode>SSB</Mode>
+    <Band>80m</Band>
+    <SubscriberCount>1</SubscriberCount>
+   </Net>
+   <Net>
+    <NetName>The Fusion Net</NetName>
+    <AltNetName>The Fusion Net</AltNetName>
+    <Frequency>2m</Frequency>
+    <Logger>AC2AE-JOE - v3.1.7W</Logger>
+    <NetControl>AC2AE-JOE</NetControl>
+    <Date>2026-10-23 00:31:25</Date>
+    <Mode>SSB</Mode>
+    <Band>40m</Band>
+    <SubscriberCount>2</SubscriberCount>
+   </Net>
+   <Net>
+    <NetName>W6SD(dot_com) Magic Mtn NET</NetName>
+    <AltNetName>W6SD(dot_com) Magic Mtn NET</AltNetName>
+    <Frequency>147.735</Frequency>
+    <Logger>WB6UNG-RANDY - v3.1.7W</Logger>
+    <NetControl>W6ELI</NetControl>
+    <Date>2026-10-23 02:56:20</Date>
+    <Mode>FM</Mode>
+    <Band>2m</Band>
+    <SubscriberCount>5</SubscriberCount>
+   </Net>
+   <Net>
+    <NetName>WM9W-Nameless Net-ALLSTAR-458800</NetName>
+    <AltNetName>WM9W-Nameless Net-ALLSTAR-458800</AltNetName>
+    <Frequency>224.520</Frequency>
+    <Logger>AC9WM-RAF - v3.1.7M</Logger>
+    <NetControl>AC9WM</NetControl>
+    <Date>2026-10-23 02:40:27</Date>
+    <Mode>FM</Mode>
+    <Band>1.25m</Band>
+    <SubscriberCount>2</SubscriberCount>
+   </Net>
+  </Server>
+  <Server>
+   <ServerName>NETLOGGER1</ServerName>
+   <ServerActiveNetCount>0</ServerActiveNetCount>
+  </Server>
+  <Server>
+   <ServerName>NETLOGGER2</ServerName>
+   <ServerActiveNetCount>1</ServerActiveNetCount>
+   <Net>
+    <NetName>OMISS 80m SSB Net</NetName>
+    <AltNetName>OMISS 80m SSB Net</AltNetName>
+    <Frequency>3.825</Frequency>
+    <Logger>WE4BAD-MIKEY - v3.1.7W</Logger>
+    <NetControl>WE4BAD</NetControl>
+    <Date>2026-10-23 02:36:33</Date>
+    <Mode>SSB</Mode>
+    <Band>80m</Band>
+    <SubscriberCount>22</SubscriberCount>
+   </Net>
+  </Server>
+  <Server>
+   <ServerName>NETLOGGER3</ServerName>
+   <ServerActiveNetCount>1</ServerActiveNetCount>
+   <Net>
+    <NetName>YL SYSTEM 40 METER WC</NetName>
+    <AltNetName>YL SYSTEM 40 METER WC</AltNetName>
+    <Frequency>7.254</Frequency>
+    <Logger>KN6RSX-TACK - v3.1.7W</Logger>
+    <NetControl>KN6RSX TACK</NetControl>
+    <Date>2026-10-23 01:36:18</Date>
+    <Mode>SSB</Mode>
+    <Band>40m</Band>
+    <SubscriberCount>8</SubscriberCount>
+   </Net>
+  </Server>
+  <Server>
+   <ServerName>NETLOGGER4</ServerName>
+   <ServerActiveNetCount>0</ServerActiveNetCount>
+  </Server>
+ </ServerList>
+</NetLoggerXML>

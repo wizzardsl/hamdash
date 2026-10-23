@@ -45,6 +45,12 @@ POTA_SPOTS = "https://api.pota.app/spot/activator"
 SOTA_SPOTS = "https://api2.sota.org.uk/api/spots/{count}/all/all"
 DX_SPOTS = "https://www.dxsummit.fi/api/v1/spots"
 CONTESTS = "https://www.qsodates.com/api/downloads?format=json"
+# NetLogger's list of nets in progress. Read-only and keyless - the key in
+# their API is for subscribing to a net and sending messages, which this
+# does not do. Not documented anywhere public; RagChew (MIT, ragchew.site)
+# polls it the same way, once a minute, backing off on a 429.
+NETS = "https://www.netlogger.org/api/GetActiveNets.php"
+NETS_MAX_BYTES = 2_000_000
 
 KINDS = ("pota", "sota", "dx")
 
@@ -343,3 +349,100 @@ def live(rows: list[dict], now: float, soon_days: float = 14.0) -> dict:
     ahead = [c for c in rows
              if now < c["start"] <= now + soon_days * 86400]
     return {"on": on, "soon": ahead[:40]}
+
+
+# ------------------------------------------------------------------- nets
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+_BAND_WORD = re.compile(r"\b\d+(?:\.\d+)?\s*(?:cm|m|met(?:er|re)s?)\b", re.I)
+
+
+def net_hz(text, band: str = "") -> int:
+    """A net's frequency in hertz, from whatever its logger typed.
+
+    NetLogger's frequency is free text, and live it arrives as "147.090"
+    (MHz), "3916" (kHz), "3.919" (MHz) and "2m" (no number at all) in one
+    reply. The number is read as MHz, kHz or Hz by size, like the rig
+    card's box - except that the net's own Band field breaks a tie when it
+    agrees with one reading: "1296" is 23 cm in megahertz and nothing in
+    kilohertz. No number is 0, never a guess - "2m" names a band, not a
+    frequency, and a click must not tune the radio somewhere invented.
+    """
+    text = str(text or "")
+    # "2m", "70cm", "40 meters": a band written where a frequency goes.
+    if _BAND_WORD.search(text):
+        return 0
+    m = _NUMBER.search(text)
+    if not m:
+        return 0
+    v = float(m.group())
+    if v <= 0:
+        return 0
+    readings = [int(round(v * k)) for k in (1e6, 1e3, 1)]
+    if band:
+        want = str(band).strip().lower()
+        for hz in readings:
+            if (band_for(hz) or "").lower() == want:
+                return hz
+    if "." not in m.group() and v >= 1_000_000:
+        return readings[2]
+    return readings[0] if v < 1000 else readings[1] if v < 1_000_000 else readings[2]
+
+
+def _net_time(text) -> float:
+    """NetLogger's "2026-10-23 02:58:59", which is UTC (its header says so)."""
+    try:
+        when = dt.datetime.strptime(str(text or "").strip(), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return 0.0
+    return when.replace(tzinfo=dt.timezone.utc).timestamp()
+
+
+def nets(raw=None) -> list[dict]:
+    """Nets in progress, from NetLogger.
+
+    `raw` is the XML, for tests. An empty list is NetLogger saying "404 ...
+    query returned an empty result", which is how it says no nets are on -
+    an answer, not a failure. Any other response code is a failure, so the
+    feed backs off and keeps the list it had.
+    """
+    import xml.etree.ElementTree as ET
+
+    if raw is None:
+        r = requests.get(NETS, timeout=TIMEOUT,
+                         headers={"User-Agent": UA, "Accept": "text/xml"})
+        r.raise_for_status()
+        raw = r.content[:NETS_MAX_BYTES]
+    root = ET.fromstring(raw)
+    code = (root.findtext("./ServerList/ResponseCode") or "").strip()
+    if not code.startswith("200"):
+        if code.startswith("404") and "empty" in (root.findtext("./Error") or "").lower():
+            return []
+        raise ValueError(f"NetLogger answered {code or 'without a response code'}"
+                         f": {(root.findtext('./Error') or '').strip()}")
+    out = []
+    for server in root.findall("./ServerList/Server"):
+        server_name = (server.findtext("ServerName") or "").strip()
+        for n in server.findall("Net"):
+            text = lambda tag: (n.findtext(tag) or "").strip()  # noqa: E731
+            name = text("NetName")
+            if not name:
+                continue
+            band = text("Band")
+            hz = net_hz(text("Frequency"), band)
+            try:
+                subs = int(text("SubscriberCount") or 0)
+            except ValueError:
+                subs = 0
+            out.append({
+                "name": name, "freq": text("Frequency"), "hz": hz,
+                # Their band is what the net said; ours only when they
+                # gave none. A frequency of "2m" still gets a band.
+                "band": band or (band_for(hz) if hz else ""),
+                "mode": _mode(text("Mode")),
+                "control": text("NetControl"), "logger": text("Logger"),
+                "started": _net_time(text("Date")), "subscribers": subs,
+                "server": server_name,
+            })
+    out.sort(key=lambda n: -n["started"])
+    return out
+

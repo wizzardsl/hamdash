@@ -15,6 +15,9 @@ rather than in the page (the shape `psk_reporter` settled on):
 * **Filtering happens in the browser**, over what was already fetched. A band
   or a search box must never be a reason to call anybody's server.
 
+Nets come from NetLogger's list of nets in progress, at most once a
+minute, and only while somebody has the Nets tab open.
+
 Contests are fetched rarely on purpose: they are a year's calendar, they move
 about as often, and the source's keyed API allows twenty calls a day while
 its bulk export - the one its own downloads page links to - allows this.
@@ -52,6 +55,10 @@ _stream_wanted: dict = {}
 # this is the pace of a human watching, not of a program.
 FLOOR = 60.0
 CONTEST_FLOOR = 6 * 3600.0
+# NetLogger's nets in progress: a net runs for an hour or so and changes
+# when somebody starts or closes one, so once a minute is plenty - and it
+# is the pace RagChew settled on against the same server.
+NETS_FLOOR = 60.0
 # How long a spot is worth showing at all. The services keep their own
 # windows; this is the card refusing to draw an hour-old spot as news.
 MAX_AGE = 3600.0
@@ -136,6 +143,7 @@ class Feed:
 
 _feeds = {k: Feed(k, sources.FETCH[k], FLOOR) for k in sources.KINDS}
 _contests = Feed("contests", sources.contests, CONTEST_FLOOR)
+_nets = Feed("nets", sources.nets, NETS_FLOOR)
 
 
 def _wanted(conf: dict) -> list[str]:
@@ -282,6 +290,14 @@ def contests():
     now = time.time()
     out = sources.live(_contests.rows, now)
     return {**out, "now": now, "source": _contests.status()}
+
+
+@card.get("/nets")
+def nets():
+    """Nets in progress. Asked only while the Nets tab is on show; the
+    floor holds whatever the page does."""
+    _nets.get(force=request.args.get("force") in ("1", "true"))
+    return {"nets": _nets.rows, "now": time.time(), "source": _nets.status()}
 
 
 @card.post("/refresh")

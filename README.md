@@ -83,7 +83,8 @@ Eleven cards ship with it, and a tile can hold any of them:
   metered and heard side by side — one in each ear if you like.
 - **Logbook** — log a contact, search it, import and export ADIF, and sync
   with LoTW, QRZ or World Radio League.
-- **Spots** — POTA, SOTA, the DX cluster and contests on one list, plus live
+- **Spots** — POTA, SOTA, the DX cluster, contests and the nets running now,
+  plus live
   telnet feeds from the Reverse Beacon Network, which answers the question
   nothing else here does: *who can hear me*.
 - **PSK Reporter** — who is receiving whom, on a map.

@@ -236,7 +236,7 @@ nothing after the elements are loaded and works with no network at all.
 ## Spots
 
 The `spots` card answers "who is on, and why is the band full" — and, if you
-ask it to, "who can hear *me*". It puts six sources on one list:
+ask it to, "who can hear *me*". It puts seven sources on one list:
 
 | source | what it is | where from |
 |---|---|---|
@@ -246,6 +246,7 @@ ask it to, "who can hear *me*". It puts six sources on one list:
 | **RBN** | what the CW/FT8 skimmers are hearing | `telnet.reversebeacon.net` |
 | **Cluster (telnet)** | a live DXSpider or CC-Cluster node | whichever you point it at |
 | **Contests** | what is running and what is next | [QSO Dates](https://www.qsodates.com/) |
+| **Nets** | nets being logged right now | [NetLogger](https://www.netlogger.org/) |
 
 The first three and the contests are polled over HTTP. The last two are live:
 one TCP connection held open, spots arriving as they happen.
@@ -289,6 +290,15 @@ which the frequency (or the comment) settles.
 The **Contests** tab leads with what is on *now* and how long is left, because
 a contest that started yesterday is exactly the one that explains the band and
 exactly the one a list sorted by start time has already scrolled past.
+
+The **Nets** tab lists the nets being run in NetLogger right now, newest
+first: the net, its frequency, band and mode, who is net control, how long it
+has been going and how many are following it there. Click a frequency to tune
+to it, the same as a spot. A net's frequency is whatever its logger typed, so
+one written as a band ("2m") is shown as written and cannot be clicked -
+there is no frequency in it to go to. NetLogger is asked at most once a minute,
+and only while the Nets tab is open. It covers nets *in progress*; scheduled
+nets are not in it.
 
 All the filtering happens in the browser, over what was last fetched. Each
 source is asked at most once a minute, contests every six hours, and the cache
