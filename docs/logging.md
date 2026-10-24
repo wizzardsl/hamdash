@@ -244,6 +244,10 @@ one.
   ionosondes, via prop.kc2g.com and GIRO. Points, not a field: the familiar
   smooth MUF map is an interpolation of exactly these stations, and plotting
   the measurements says what is known and where without inventing the rest.
+- **ITU zones** — the 90 ITU zones, outlined with their numbers, on both the
+  flat and the azimuthal map. The boundaries come bundled with hamdash, so the
+  layer works offline. The PSK Reporter map has it too. (CQ zones are a
+  different set of lines and not drawn here.)
 - **Band to here (MUF)** — the same path calculation swept across the whole
   map: for every place, the highest frequency that will carry a path from
   *your* station to it. Not the familiar MUF chart, which plots MUF(3000) at

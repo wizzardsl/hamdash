@@ -6,6 +6,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **An ITU zones layer on the maps.** Tick **ITU zones** in the layer
+  control on the Map or the PSK Reporter card to outline all 90 zones with
+  their numbers, on the flat and the azimuthal projection alike. The zone
+  boundaries are bundled, so it works offline; they come from HB9HIL's
+  hamradio-zones-geojson (MIT).
+
 ## [1.1.0]
 
 ### Added

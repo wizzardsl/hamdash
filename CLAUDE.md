@@ -1776,6 +1776,26 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
 - D-RAP arrives as a text table, not JSON. All-zero is the normal, good case
   and is reported as `quiet`, not as an empty failure - worked out from
   the cells *before* `grid=1` drops them, so it stays right either way.
+- **ITU zones are bundled data, and the build is a script, not a one-off.**
+  `vendor/ituzones.js` comes from HB9HIL's hamradio-zones-geojson (MIT,
+  the data Wavelog draws), pinned to a commit in `tools/itu_zones.py` and
+  simplified to 0.1 degrees like `world.js` and `borders.js` - 1.5 MB and
+  73,000 points down to 39 kB. Its licence travels beside it
+  (`ITU-ZONES-LICENSE.txt`) and the README's licence table names it.
+  **The source writes two different things the same way**: a whole
+  parallel round a polar cap is a jump from +180 to -180, and so is a seam.
+  The first build dropped both and zones 74 and 75 drew nothing; a jump
+  along one latitude is now that parallel, filled with a point every 5
+  degrees, and only edges *on* +-180 are dropped. Longitudes stay
+  unwrapped (-200, 191), which is what the world copies want.
+  **Straight is straight in projected space**, so on the azimuthal map a
+  long edge between two corners is a chord across the disc: `drawItu`
+  runs each line through `densifyLine` (2 degrees) on that projection only,
+  and the data stays as corners. It is drawn on the inert space canvas,
+  labels included, so it never takes a click from a spot. The test that
+  matters puts eight real cities in their real zones - VE7 in 2, G in 27,
+  VK2 in 59 - because a boundary a degree out still draws a plausible map.
+  `tests/js/itu-zones.test.js`, `tests/test_itu_zones_tool.py`.
 - **D-RAP is drawn as a field too**, through the same `fieldImage` and
   `placeField` the aurora uses; the only difference between the two is
   what counts as full scale, so they share `fieldRamp` and differ by a

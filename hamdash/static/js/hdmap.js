@@ -38,6 +38,24 @@ window.HDMap = (function () {
   readTheme();
   window.addEventListener('hamdash:theme', readTheme);
 
+  // A zone number on the map: the theme's own colours, so it follows a
+  // theme change without a redraw, and a halo so it reads over land and
+  // sea alike. Here rather than in each card's stylesheet, because both
+  // map cards draw it.
+  if (typeof document !== 'undefined' && document.head
+      && !document.getElementById('hd-itu-style')) {
+    const st = document.createElement('style');
+    st.id = 'hd-itu-style';
+    // Centred by the inner span: Leaflet positions the marker itself with
+    // a transform, so one set on it here would move every label to 0,0.
+    st.textContent = '.hd-itu-label{pointer-events:none}'
+      + '.hd-itu-label span{position:absolute;left:0;top:0;'
+      + 'transform:translate(-50%,-50%);color:var(--accent);'
+      + 'font:600 11px/1 var(--mono,monospace);white-space:nowrap;'
+      + 'text-shadow:0 0 3px var(--bg),0 0 3px var(--bg),0 0 2px var(--bg)}';
+    document.head.appendChild(st);
+  }
+
   // ---- where the world repeats ---------------------------------------------
   // Unwrapping a path across the Pacific puts its far end in the world copy
   // next door - a station in Japan lands at -221, which is where Japan is one
@@ -564,6 +582,27 @@ window.HDMap = (function () {
   const DRAP_FULL = 30;
   const drapRamp = (mhz, stops) => fieldRamp(mhz, DRAP_FULL, stops);
 
+  /* Points every `step` degrees along a line given by its corners.
+
+     Leaflet joins a line's points straight in *projected* space. On the
+     flat map a zone edge is a meridian or a parallel and straight is
+     right; on the azimuthal one a 40-degree run of parallel drawn
+     between its two ends is a chord across the disc, not the arc it is.
+     The data is kept as corners (it is 39 kB that way) and filled in
+     here, only for the projection that bends it. */
+  function densifyLine(line, step) {
+    const out = [line[0]];
+    for (let i = 1; i < line.length; i++) {
+      const [x0, y0] = line[i - 1];
+      const [x1, y1] = line[i];
+      const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / step);
+      for (let k = 1; k <= n; k++) {
+        out.push([x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n]);
+      }
+    }
+    return out;
+  }
+
   // ---- space weather -------------------------------------------------------
   // These go through the host, not straight from the card: NOAA's aurora grid
   // is ~1.5 MB of mostly zero, they publish every five minutes, and a card
@@ -601,6 +640,7 @@ window.HDMap = (function () {
       aurora: L.layerGroup(),
       drap: L.layerGroup(),
       muf: L.layerGroup(),
+      itu: L.layerGroup(),
       weather: null,
     };
 
@@ -773,6 +813,34 @@ window.HDMap = (function () {
       } catch (e) { say({ error: `MUF: ${e.message}` }); }
     }
 
+    /* ITU zones: the outlines and the numbers, from vendor/ituzones.js.
+
+       Not space weather, but it is a map overlay both map cards want, so it
+       lives with the others rather than in a second copy per card. No
+       network - the data is bundled - so it is drawn whole whenever it is
+       switched on. On the space canvas, which never takes the mouse: a
+       zone line under the pointer must not stop a click reaching a spot.
+       The lines are unwrapped across the date line in the data itself, so
+       they are only shifted per world copy, never split. */
+    function drawItu() {
+      const g = groups.itu;
+      g.clearLayers();
+      const zones = window.ITU_ZONES || [];
+      if (!zones.length) { say({ error: 'ITU zones: the zone data did not load' }); return; }
+      each((dx) => zones.forEach((z) => {
+        z.lines.forEach((ln) => L.polyline(
+          (azimuthal ? densifyLine(ln, 2) : ln).map(([lon, lat]) => [lat, lon + dx]), {
+          renderer: canvas, color: theme.accent, weight: 1, opacity: 0.55,
+          dashArray: '4 4', interactive: false,
+        }).addTo(g));
+        L.marker([z.at[0], z.at[1] + dx], {
+          icon: L.divIcon({ className: 'hd-itu-label',
+                            html: `<span>${Number(z.n)}</span>`, iconSize: [0, 0] }),
+          interactive: false, keyboard: false,
+        }).addTo(g);
+      }));
+    }
+
     // Clouds need somebody's API key, so the layer only exists once there is
     // one. An entry that always fails is worse than no entry.
     const key = (opts.owmKey || '').trim();
@@ -787,6 +855,7 @@ window.HDMap = (function () {
       'Aurora (NOAA)': groups.aurora,
       'Absorption (D-RAP)': groups.drap,
       'Ionosondes (MUF)': groups.muf,
+      'ITU zones': groups.itu,
     };
     if (groups.weather) overlays.Clouds = groups.weather;
 
@@ -794,6 +863,7 @@ window.HDMap = (function () {
     function sync() {
       if (map.hasLayer(groups.greyline)) drawGreyline(groups.greyline);
       else groups.greyline.clearLayers();
+      if (map.hasLayer(groups.itu)) drawItu(); else groups.itu.clearLayers();
       [[groups.aurora, drawAurora], [groups.drap, drawDrap],
        [groups.muf, drawMuf]].forEach(([g, draw]) => {
         if (map.hasLayer(g)) draw(); else g.clearLayers();
@@ -807,7 +877,8 @@ window.HDMap = (function () {
 
     return { groups, overlays, sync, canvas,
              draw: { greyline: () => drawGreyline(groups.greyline),
-                     aurora: drawAurora, drap: drawDrap, muf: drawMuf } };
+                     aurora: drawAurora, drap: drawDrap, muf: drawMuf,
+                     itu: drawItu } };
   }
 
   return {
@@ -819,7 +890,7 @@ window.HDMap = (function () {
     copies, each, shift, WORLD_EDGE, onCopies, worldSpan,
     subsolar, nightPolygon, drawGreyline,
     azimuthalCRS, builtInBasemap, basemap,
-    create, resetControl, spaceLayers,
+    create, resetControl, spaceLayers, densifyLine,
     get azimuthal() { return azimuthal; },
   };
 })();
