@@ -7,11 +7,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
-- **An ITU zones layer on the maps.** Tick **ITU zones** in the layer
-  control on the Map or the PSK Reporter card to outline all 90 zones with
-  their numbers, on the flat and the azimuthal projection alike. The zone
-  boundaries are bundled, so it works offline; they come from HB9HIL's
-  hamradio-zones-geojson (MIT).
+- **ITU and CQ zone layers on the maps.** Tick **ITU zones** or **CQ
+  zones** in the layer control on the Map or the PSK Reporter card to
+  outline all 90 ITU or 40 CQ (WAZ) zones with their numbers, on the flat
+  and the azimuthal projection alike. They are drawn in different colours
+  and dashes so both can be on at once. The boundaries are bundled, so they
+  work offline; they come from HB9HIL's hamradio-zones-geojson (MIT).
 
 ## [1.1.0]
 

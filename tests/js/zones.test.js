@@ -1,9 +1,9 @@
-/* The ITU zones overlay, under `node --test`.
+/* The ITU and CQ zone overlays, under `node --test`.
  *
  *   node --test 'tests/js/*.test.js'
  *
- * The data is `hamdash/static/vendor/ituzones.js`, built by
- * tools/itu_zones.py from HB9HIL's GeoJSON (MIT). A boundary that is a
+ * The data is `hamdash/static/vendor/ituzones.js` and `cqzones.js`, built
+ * by tools/zones.py from HB9HIL's GeoJSON (MIT). A boundary that is a
  * degree out still draws a perfectly plausible map, so the test that
  * matters is the one that puts real places in their real zones - checked
  * against the ITU's own assignments, not against numbers read off this
@@ -19,7 +19,10 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const w = {};
 // eslint-disable-next-line no-new-func
 new Function('window', read('hamdash', 'static', 'vendor', 'ituzones.js'))(w);
+// eslint-disable-next-line no-new-func
+new Function('window', read('hamdash', 'static', 'vendor', 'cqzones.js'))(w);
 const ZONES = w.ITU_ZONES;
+const CQ = w.CQ_ZONES;
 
 const closed = (r) => r.length > 2 && r[0][0] === r[r.length - 1][0]
   && r[0][1] === r[r.length - 1][1];
@@ -36,7 +39,7 @@ function inside([x, y], ring) {
 
 /* Which zones a place falls in: the data is unwrapped across the date line,
    so a place is also tried one world either side. */
-const zonesAt = (lon, lat) => ZONES.filter((z) => z.lines.some((r) => closed(r)
+const zonesAt = (lon, lat, set = ZONES) => set.filter((z) => z.lines.some((r) => closed(r)
   && [0, -360, 360].some((d) => inside([lon + d, lat], r)))).map((z) => z.n);
 
 test('all ninety zones, once each', () => {
@@ -65,11 +68,28 @@ test('places are in their ITU zones', () => {
   }
 });
 
+test('the forty CQ zones, once each, and places in them', () => {
+  assert.deepStrictEqual(CQ.map((z) => z.n), Array.from({ length: 40 }, (_, i) => i + 1));
+  const want = {
+    'Vancouver, VE7': [[-123.1, 49.25], 3],
+    'New York, W2': [[-74.0, 40.7], 5],
+    'London, G': [[-0.1, 51.5], 14],
+    'Moscow, UA3': [[37.6, 55.75], 16],
+    'Tokyo, JA1': [[139.7, 35.7], 25],
+    'Johannesburg, ZS6': [[28.0, -26.2], 38],
+    'Sydney, VK2': [[151.2, -33.9], 30],
+    'Buenos Aires, LU': [[-58.4, -34.6], 13],
+  };
+  for (const [place, [[lon, lat], zone]] of Object.entries(want)) {
+    assert.deepStrictEqual(zonesAt(lon, lat, CQ), [zone], place);
+  }
+});
+
 test('nothing is drawn along the date line or across the world', () => {
   // A segment that jumps more than half the world, or runs along +-180, is a
   // seam: drawn, it is a line straight across the map, or a stripe at the
   // date line near the poles.
-  ZONES.forEach((z) => z.lines.forEach((ln) => {
+  [...ZONES, ...CQ].forEach((z) => z.lines.forEach((ln) => {
     for (let i = 1; i < ln.length; i++) {
       const [a, b] = [ln[i - 1], ln[i]];
       assert.ok(Math.abs(a[0] - b[0]) <= 180, `zone ${z.n} jumps the world`);
@@ -93,12 +113,14 @@ test('the polar bands keep their parallels, with points all the way round', () =
   }
 });
 
-test('the bundle is small, and says whose it is', () => {
-  const src = read('hamdash', 'static', 'vendor', 'ituzones.js');
-  assert.ok(src.length < 60_000, `${src.length} bytes`);
-  assert.match(src, /HB9HIL/);
-  assert.match(src, /MIT/);
-  assert.match(read('hamdash', 'static', 'vendor', 'ITU-ZONES-LICENSE.txt'), /HB9HIL/);
+test('the bundles are small, and say whose they are', () => {
+  for (const f of ['ituzones.js', 'cqzones.js']) {
+    const src = read('hamdash', 'static', 'vendor', f);
+    assert.ok(src.length < 80_000, `${f}: ${src.length} bytes`);
+    assert.match(src, /HB9HIL/, f);
+    assert.match(src, /MIT/, f);
+  }
+  assert.match(read('hamdash', 'static', 'vendor', 'ZONES-LICENSE.txt'), /HB9HIL/);
 });
 
 /* ---- the drawing ------------------------------------------------------ */
@@ -123,19 +145,25 @@ test('a long edge gets points along it, and keeps its ends', () => {
   assert.ok(got.some(([x, y]) => x === -20 && y === 30));
 });
 
-test('both map cards offer it, and it never takes the mouse', () => {
+test('both map cards offer both, and neither takes the mouse', () => {
   const src = read('hamdash', 'static', 'js', 'hdmap.js');
   assert.match(src, /'ITU zones': groups\.itu/);
-  // Drawn only while it is switched on.
-  assert.match(src, /if \(map\.hasLayer\(groups\.itu\)\) drawItu\(\); else groups\.itu\.clearLayers\(\);/);
+  assert.match(src, /'CQ zones': groups\.cq/);
+  // Drawn only while switched on.
+  assert.match(src, /if \(map\.hasLayer\(groups\[k\]\)\) drawZones\(k\); else groups\[k\]\.clearLayers\(\);/);
   // On the inert canvas, and the labels too: a zone line must not stop a
   // click reaching a spot on the PSK map.
-  const draw = src.slice(src.indexOf('function drawItu()'));
+  const draw = src.slice(src.indexOf('function drawZones(kind)'));
   const body = draw.slice(0, draw.indexOf('\n    }\n'));
   assert.match(body, /renderer: canvas/);
   assert.strictEqual((body.match(/interactive: false/g) || []).length, 2);
+  // Told apart when both are on: a different colour and dash each.
+  assert.match(src, /itu: \{ data: \(\) => window\.ITU_ZONES, colour: \(\) => theme\.accent,\s*dash: '4 4'/);
+  assert.match(src, /cq: \{ data: \(\) => window\.CQ_ZONES, colour: \(\) => theme\.signal,\s*dash: '1 4'/);
   for (const card of ['path_map', 'psk_reporter']) {
-    assert.match(read('plugins', card, 'index.html'),
-      /<script src="\/static\/vendor\/ituzones\.js"><\/script>/, card);
+    const page = read('plugins', card, 'index.html');
+    for (const f of ['ituzones', 'cqzones']) {
+      assert.match(page, new RegExp(`<script src="/static/vendor/${f}\\.js"></script>`), `${card}: ${f}`);
+    }
   }
 });

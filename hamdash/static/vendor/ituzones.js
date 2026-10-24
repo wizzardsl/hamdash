@@ -1,8 +1,8 @@
 /* ITU zones: outlines and label positions for the 90 zones.
 
    From HB9HIL's hamradio-zones-geojson, MIT licence, copyright 2024
-   HB9HIL - see ITU-ZONES-LICENSE.txt beside this file. Built by
-   tools/itu_zones.py from commit 091b813f35c8: outlines
+   HB9HIL - see ZONES-LICENSE.txt beside this file. Built by
+   tools/zones.py from ituzones.geojson at commit 091b813f35c8: outlines
    simplified and rounded to 0.1 degrees, longitudes left unwrapped,
    and edges lying on the date line dropped. Do not edit by hand;
    change the tool and run it again. */

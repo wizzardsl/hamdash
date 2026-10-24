@@ -1,4 +1,4 @@
-"""tools/itu_zones.py, which builds the ITU zones overlay's data.
+"""tools/zones.py, which builds the ITU and CQ zone overlays' data.
 
 The rules worth pinning are the two about the date line, because the
 source writes two different things the same way: a whole parallel (a
@@ -11,8 +11,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-TOOL = Path(__file__).resolve().parent.parent / "tools" / "itu_zones.py"
-spec = importlib.util.spec_from_file_location("itu_zones_tool", TOOL)
+TOOL = Path(__file__).resolve().parent.parent / "tools" / "zones.py"
+spec = importlib.util.spec_from_file_location("zones_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
@@ -67,7 +67,17 @@ class TestTheBuild(unittest.TestCase):
 
     def test_it_is_pinned_to_a_commit(self):
         self.assertRegex(tool.COMMIT, r"^[0-9a-f]{40}$")
-        self.assertIn(tool.COMMIT, tool.URL)
+        self.assertIn(tool.COMMIT, tool.BASE)
+
+    def test_cq_zones_read_their_own_property_names(self):
+        """The two files differ only in a prefix: itu_ against cq_."""
+        f = {"type": "Feature",
+             "properties": {"cq_zone_number": 14, "cq_zone_name_loc": [52, 0]},
+             "geometry": {"type": "Polygon", "coordinates": [
+                 [[-10, 40], [10, 40], [10, 60], [-10, 60], [-10, 40]]]}}
+        (zone,) = tool.build({"features": [f]}, "cq")
+        self.assertEqual((zone["n"], zone["at"]), (14, [52, 0]))
+        self.assertEqual(set(tool.SETS), {"itu", "cq"})
 
 
 if __name__ == "__main__":

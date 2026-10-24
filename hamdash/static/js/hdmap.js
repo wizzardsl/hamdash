@@ -43,16 +43,17 @@ window.HDMap = (function () {
   // sea alike. Here rather than in each card's stylesheet, because both
   // map cards draw it.
   if (typeof document !== 'undefined' && document.head
-      && !document.getElementById('hd-itu-style')) {
+      && !document.getElementById('hd-zone-style')) {
     const st = document.createElement('style');
-    st.id = 'hd-itu-style';
+    st.id = 'hd-zone-style';
     // Centred by the inner span: Leaflet positions the marker itself with
     // a transform, so one set on it here would move every label to 0,0.
-    st.textContent = '.hd-itu-label{pointer-events:none}'
-      + '.hd-itu-label span{position:absolute;left:0;top:0;'
+    st.textContent = '.hd-zone-label{pointer-events:none}'
+      + '.hd-zone-label span{position:absolute;left:0;top:0;'
       + 'transform:translate(-50%,-50%);color:var(--accent);'
       + 'font:600 11px/1 var(--mono,monospace);white-space:nowrap;'
-      + 'text-shadow:0 0 3px var(--bg),0 0 3px var(--bg),0 0 2px var(--bg)}';
+      + 'text-shadow:0 0 3px var(--bg),0 0 3px var(--bg),0 0 2px var(--bg)}'
+      + '.hd-zone-label.cq span{color:var(--signal)}';
     document.head.appendChild(st);
   }
 
@@ -641,6 +642,7 @@ window.HDMap = (function () {
       drap: L.layerGroup(),
       muf: L.layerGroup(),
       itu: L.layerGroup(),
+      cq: L.layerGroup(),
       weather: null,
     };
 
@@ -813,28 +815,42 @@ window.HDMap = (function () {
       } catch (e) { say({ error: `MUF: ${e.message}` }); }
     }
 
-    /* ITU zones: the outlines and the numbers, from vendor/ituzones.js.
+    /* Zone outlines and their numbers: ITU zones from vendor/ituzones.js
+       and CQ (WAZ) zones from vendor/cqzones.js, one drawing for both.
 
-       Not space weather, but it is a map overlay both map cards want, so it
-       lives with the others rather than in a second copy per card. No
-       network - the data is bundled - so it is drawn whole whenever it is
-       switched on. On the space canvas, which never takes the mouse: a
-       zone line under the pointer must not stop a click reaching a spot.
-       The lines are unwrapped across the date line in the data itself, so
-       they are only shifted per world copy, never split. */
-    function drawItu() {
-      const g = groups.itu;
+       Not space weather, but map overlays both map cards want, so they live
+       with the others rather than in a second copy per card. No network -
+       the data is bundled - so a set is drawn whole whenever it is switched
+       on. On the space canvas, which never takes the mouse: a zone line
+       under the pointer must not stop a click reaching a spot. The lines
+       are unwrapped across the date line in the data itself, so they are
+       only shifted per world copy, never split.
+
+       The two sets differ in colour and in dash, ITU in the accent and
+       dashed, CQ in the signal colour and dotted, so both can be on at
+       once and still be told apart - and each label wears its line's
+       colour (`hd-zone-label cq`). */
+    const ZONE_SETS = {
+      itu: { data: () => window.ITU_ZONES, colour: () => theme.accent,
+             dash: '4 4', label: 'itu', name: 'ITU zones' },
+      cq: { data: () => window.CQ_ZONES, colour: () => theme.signal,
+            dash: '1 4', label: 'cq', name: 'CQ zones' },
+    };
+
+    function drawZones(kind) {
+      const set = ZONE_SETS[kind];
+      const g = groups[kind];
       g.clearLayers();
-      const zones = window.ITU_ZONES || [];
-      if (!zones.length) { say({ error: 'ITU zones: the zone data did not load' }); return; }
+      const zones = set.data() || [];
+      if (!zones.length) { say({ error: `${set.name}: the zone data did not load` }); return; }
       each((dx) => zones.forEach((z) => {
         z.lines.forEach((ln) => L.polyline(
           (azimuthal ? densifyLine(ln, 2) : ln).map(([lon, lat]) => [lat, lon + dx]), {
-          renderer: canvas, color: theme.accent, weight: 1, opacity: 0.55,
-          dashArray: '4 4', interactive: false,
-        }).addTo(g));
+            renderer: canvas, color: set.colour(), weight: 1, opacity: 0.6,
+            dashArray: set.dash, interactive: false,
+          }).addTo(g));
         L.marker([z.at[0], z.at[1] + dx], {
-          icon: L.divIcon({ className: 'hd-itu-label',
+          icon: L.divIcon({ className: `hd-zone-label ${set.label}`,
                             html: `<span>${Number(z.n)}</span>`, iconSize: [0, 0] }),
           interactive: false, keyboard: false,
         }).addTo(g);
@@ -856,6 +872,7 @@ window.HDMap = (function () {
       'Absorption (D-RAP)': groups.drap,
       'Ionosondes (MUF)': groups.muf,
       'ITU zones': groups.itu,
+      'CQ zones': groups.cq,
     };
     if (groups.weather) overlays.Clouds = groups.weather;
 
@@ -863,7 +880,9 @@ window.HDMap = (function () {
     function sync() {
       if (map.hasLayer(groups.greyline)) drawGreyline(groups.greyline);
       else groups.greyline.clearLayers();
-      if (map.hasLayer(groups.itu)) drawItu(); else groups.itu.clearLayers();
+      ['itu', 'cq'].forEach((k) => {
+        if (map.hasLayer(groups[k])) drawZones(k); else groups[k].clearLayers();
+      });
       [[groups.aurora, drawAurora], [groups.drap, drawDrap],
        [groups.muf, drawMuf]].forEach(([g, draw]) => {
         if (map.hasLayer(g)) draw(); else g.clearLayers();
@@ -878,7 +897,7 @@ window.HDMap = (function () {
     return { groups, overlays, sync, canvas,
              draw: { greyline: () => drawGreyline(groups.greyline),
                      aurora: drawAurora, drap: drawDrap, muf: drawMuf,
-                     itu: drawItu } };
+                     itu: () => drawZones('itu'), cq: () => drawZones('cq') } };
   }
 
   return {
