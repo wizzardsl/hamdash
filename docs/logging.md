@@ -249,6 +249,11 @@ one.
   map. ITU is dashed in the accent colour and CQ dotted in the signal colour,
   so both can be on at once. The boundaries come bundled with hamdash, so the
   layers work offline. The PSK Reporter map has them too.
+- **ITU regions** — the boundaries of Regions 1, 2 and 3, which decide
+  which band plan applies. Built from the Radio Regulations' definition, so
+  Russia and Kazakhstan are Region 1 all the way to the Pacific and Iran is
+  Region 3. Near those countries the line follows the coast, where the
+  real boundary is out at the territorial sea.
 - **Band to here (MUF)** — the same path calculation swept across the whole
   map: for every place, the highest frequency that will carry a path from
   *your* station to it. Not the familiar MUF chart, which plots MUF(3000) at

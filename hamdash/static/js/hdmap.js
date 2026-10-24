@@ -53,7 +53,9 @@ window.HDMap = (function () {
       + 'transform:translate(-50%,-50%);color:var(--accent);'
       + 'font:600 11px/1 var(--mono,monospace);white-space:nowrap;'
       + 'text-shadow:0 0 3px var(--bg),0 0 3px var(--bg),0 0 2px var(--bg)}'
-      + '.hd-zone-label.cq span{color:var(--signal)}';
+      + '.hd-zone-label.cq span{color:var(--signal)}'
+      + '.hd-zone-label.region span{color:var(--ink);font-size:13px;opacity:.8;'
+      + 'letter-spacing:.04em;text-transform:uppercase}';
     document.head.appendChild(st);
   }
 
@@ -643,6 +645,7 @@ window.HDMap = (function () {
       muf: L.layerGroup(),
       itu: L.layerGroup(),
       cq: L.layerGroup(),
+      regions: L.layerGroup(),
       weather: null,
     };
 
@@ -857,6 +860,33 @@ window.HDMap = (function () {
       }));
     }
 
+    /* The three ITU Regions, from vendor/ituregions.js - built by
+       tools/regions.py from the Radio Regulations' own definition, so the
+       boundary in Asia follows the countries the rule names (Russia,
+       Kazakhstan, Mongolia and the rest are Region 1 east of line A; Iran
+       is Region 3 west of it) rather than line A itself. Solid and a
+       little heavier than the zones, in the ink colour, since they are the
+       coarser division and both can be on at once. */
+    function drawRegions() {
+      const g = groups.regions;
+      g.clearLayers();
+      const data = window.ITU_REGIONS;
+      if (!data || !data.lines) { say({ error: 'ITU regions: the region data did not load' }); return; }
+      each((dx) => {
+        data.lines.forEach((ln) => L.polyline(
+          (azimuthal ? densifyLine(ln, 2) : ln).map(([lon, lat]) => [lat, lon + dx]), {
+            renderer: canvas, color: theme.ink, weight: 1.6, opacity: 0.55,
+            interactive: false,
+          }).addTo(g));
+        data.labels.forEach((lab) => L.marker([lab.at[0], lab.at[1] + dx], {
+          icon: L.divIcon({ className: 'hd-zone-label region',
+                            html: `<span>${String(lab.text).replace(/[<&]/g, '')}</span>`,
+                            iconSize: [0, 0] }),
+          interactive: false, keyboard: false,
+        }).addTo(g));
+      });
+    }
+
     // Clouds need somebody's API key, so the layer only exists once there is
     // one. An entry that always fails is worse than no entry.
     const key = (opts.owmKey || '').trim();
@@ -873,6 +903,7 @@ window.HDMap = (function () {
       'Ionosondes (MUF)': groups.muf,
       'ITU zones': groups.itu,
       'CQ zones': groups.cq,
+      'ITU regions': groups.regions,
     };
     if (groups.weather) overlays.Clouds = groups.weather;
 
@@ -883,6 +914,7 @@ window.HDMap = (function () {
       ['itu', 'cq'].forEach((k) => {
         if (map.hasLayer(groups[k])) drawZones(k); else groups[k].clearLayers();
       });
+      if (map.hasLayer(groups.regions)) drawRegions(); else groups.regions.clearLayers();
       [[groups.aurora, drawAurora], [groups.drap, drawDrap],
        [groups.muf, drawMuf]].forEach(([g, draw]) => {
         if (map.hasLayer(g)) draw(); else g.clearLayers();
@@ -897,7 +929,8 @@ window.HDMap = (function () {
     return { groups, overlays, sync, canvas,
              draw: { greyline: () => drawGreyline(groups.greyline),
                      aurora: drawAurora, drap: drawDrap, muf: drawMuf,
-                     itu: () => drawZones('itu'), cq: () => drawZones('cq') } };
+                     itu: () => drawZones('itu'), cq: () => drawZones('cq'),
+                     regions: drawRegions } };
   }
 
   return {

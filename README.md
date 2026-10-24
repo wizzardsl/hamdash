@@ -233,6 +233,7 @@ Bundled with it, each keeping its own licence beside the files:
 | [satellite.js](https://github.com/shashwatak/satellite-js) | MIT — `hamdash/static/vendor/satellite.min.js`, SGP4 orbital propagation |
 | Natural Earth coastlines and boundaries | public domain, simplified into `vendor/world.js` and `vendor/borders.js` |
 | [ITU and CQ zone boundaries](https://github.com/HB9HIL/hamradio-zones-geojson) by HB9HIL | MIT — simplified into `vendor/ituzones.js` and `vendor/cqzones.js` by `tools/zones.py` |
+| ITU Regions, from the Radio Regulations (Art. 5) and Natural Earth countries | public domain — built into `vendor/ituregions.js` by `tools/regions.py` |
 
 Hamlib is **not** bundled: `rigctl` and `rigctld` are GPL and hamdash is MIT,
 so shipping them would put their licence and a source offer on every release.

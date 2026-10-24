@@ -13,6 +13,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   and the azimuthal projection alike. They are drawn in different colours
   and dashes so both can be on at once. The boundaries are bundled, so they
   work offline; they come from HB9HIL's hamradio-zones-geojson (MIT).
+- **An ITU Regions layer on the maps.** **ITU regions** outlines Regions 1,
+  2 and 3 - the split the band plans follow - with their names. Nobody
+  publishes them as data, so they are built from the Radio Regulations'
+  own definition (lines A, B and C, the twelve countries that are Region 1
+  wherever they lie, and Iran in Region 3) and Natural Earth's country
+  outlines.
 
 ## [1.1.0]
 

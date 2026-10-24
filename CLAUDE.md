@@ -1800,6 +1800,26 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   sets - VE7 in ITU 2 and CQ 3, G in 27 and 14 - because a boundary a
   degree out still draws a plausible map.
   `tests/js/zones.test.js`, `tests/test_zones_tool.py`.
+- **ITU Regions are built from the rule, because nobody publishes them.**
+  `tools/regions.py` draws the Radio Regulations' lines A, B and C (Art. 5,
+  as in 47 CFR 2.104(b) - public domain) as great circles at 1-degree
+  steps, then applies the exceptions with shapely set operations on
+  Natural Earth's 1:110m countries: the twelve named countries are Region 1
+  wherever they lie, Iran is Region 3 on both sides of line A, and the
+  Arctic north of Russia is Region 1. **Territory includes water and the
+  outlines do not**, so taken literally the Caspian, the White Sea and the
+  east of the Black Sea are pockets of Region 3; water those countries
+  enclose (a morphological close, `CLOSE`, minus all land so a concave
+  neighbour is never swallowed) goes to their side. Further out the line
+  follows the coast where the real one is the territorial sea - the file
+  header says so. Shapely is the tool's dependency, not hamdash's: the
+  tool's shape tests skip without it, and use boxes for countries so they
+  fetch nothing. **The polygons share line C in two longitude frames**
+  (-120 for Region 2, +240 for Region 3), so their boundaries hold it
+  twice and the world copies drew it twice; the tool drops a line whose
+  copy one world west is already there, and slivers under a degree.
+  `tests/js/regions.test.js` checks the lines cross the far south only at
+  60 E, 20 W and 120 W, which is where nothing but the rule decides it.
 - **D-RAP is drawn as a field too**, through the same `fieldImage` and
   `placeField` the aurora uses; the only difference between the two is
   what counts as full scale, so they share `fieldRamp` and differ by a
