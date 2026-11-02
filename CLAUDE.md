@@ -2941,12 +2941,16 @@ release notes cut from `CHANGELOG.md` (`tools/release_notes.py`).
 ## Two machines
 
 hamdash is developed from **two hosts, each with its own Claude Code
-session**, both pushing to `main`: a **Linux** machine (where most of the
-code, the test runs and the screenshots are done, with a scratch board and a
-long-running instance on port 4444) and the operator's **Windows 11** PC (the
-real station, and where every Windows-only bug - the frozen build above all -
-has to be reproduced). Neither session can see the other's files or
-processes.
+session**, both pushing to `main`. **Since November 2026 the Linux machine
+is the station**: the operator's live board runs there on port 4444 with
+the real FT-900 (through flrig), and it is where most of the code, the test
+runs and the screenshots are done - so the 4444 board is somebody's station
+in use, and changes are tried on a scratch instance first. The **Windows
+11** laptop was the original station and is now the machine for
+Windows-only checks: the frozen build above all, OmniRig, and Windows file
+locking. Every Windows-only bug so far was found there, and Windows is
+still what most users run, so "not checked on Windows" stays worth saying.
+Neither session can see the other's files or processes.
 
 - **Fetch before editing, and pull if `origin/main` moved.** The other host
   may have pushed since you last looked.
