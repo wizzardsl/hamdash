@@ -106,6 +106,7 @@ poll on a schedule, or keep state shared between tiles.
 | `w`, `h` | first size in grid cells. `min_w`, `min_h` the smallest it is useful at. |
 | `fit` | what your page needs to show everything without a scroll bar, in **pixels** of the page itself: `{"w": 460, "h": 410}`. A new tile starts at least that big and cannot be resized smaller. Pixels rather than cells because a cell is a twelfth of the window - a need in cells that fits on one screen scrolls on a smaller one. Leave out `h` if your card is a list that is meant to grow and scroll. Measure it rather than guess: shrink the tile until something scrolls or is cut off. |
 | `permissions` | which shared services you may call. See below. |
+| `uses` | other cards your card talks to, such as `["rx_audio"]` for the radio's audio. A card with no tiles of its own is stopped when nobody needs it; this is how it knows somebody does. |
 | `publishes` | bus topics you will send. Omit for "all of `<id>.*`". |
 | `subscribes` | bus topics you want. Omit for "everything". |
 | `settings` | the per-tile form the host renders for you. |
@@ -280,6 +281,45 @@ from hamdash.services.bands import for_hz      # one band table, everywhere
 from hamdash.services import audio             # device name matching
 ```
 
+### The radio's audio — `AudioFeed`
+
+**Do not open a sound card yourself.** PortAudio on Windows will not
+reliably give one input to two openers, so a card that opens the radio's
+input locks Listen, the waterfall and the decoder out of it. The `rx_audio`
+engine opens each input once and fans it out; read from it instead:
+
+```python
+from hamdash.sdk import AudioFeed
+
+def heard(samples, rate):          # float32 -1..1, on the feed's thread
+    my_decoder.feed(samples)
+
+feed = AudioFeed(card.host, "rig", 12000, heard).start()
+...
+feed.stop()                        # this listener leaves; the input closes
+                                   # only if nobody else is using it
+```
+
+Put `"uses": ["rx_audio"]` in your `card.json`, or the engine can be
+stopped under you.
+
+- **`device`** is a name as stored (an `audio_in` setting's value), `"rig"`
+  for the selected radio's own input, `"mock"` for a test tone, or `""` for
+  the system default.
+- **`rate`** is what you would like; decimation is by a whole number with a
+  real anti-alias filter, so `heard` is told the rate you actually got -
+  44.1 kHz asked for 12000 gives 14700. Ask for the least that carries your
+  signal: 12000 passes 4.3 kHz, 24000 passes 8.6. Two cards asking the same
+  rate share one filter as well as one capture.
+- **A feed joins live.** It hears what arrives after it starts, never the
+  backlog another reader left in the engine's ring.
+- `feed.status`, `feed.error` and `feed.hint` say why there is no audio, in
+  words fit for your tile: `"error"` with a hint naming the fix.
+- **Stop it when nobody is looking.** A feed is one listener to the engine;
+  a decoder whose tile is hidden should stop (and start again when shown),
+  which is what hands the input to another program. A feed that vanishes
+  without stopping is reaped after 20 seconds.
+
 ### Settings and tiles
 
 ```python
@@ -426,6 +466,10 @@ rate-limited you.
 **A sound device is stored by name, never by index.** PortAudio indices
 shuffle when anything is plugged in or a Bluetooth headset wakes up, so a
 saved index silently becomes a different device.
+
+**A sound card is opened once, by the engine.** Read the radio's audio with
+[`AudioFeed`](#the-radios-audio--audiofeed); opening the input yourself
+takes it from every other card that wants it.
 
 ---
 

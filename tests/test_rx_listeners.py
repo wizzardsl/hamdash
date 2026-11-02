@@ -65,7 +65,8 @@ class TestTheWantIsPerListener(unittest.TestCase):
         self.assertIn("card.tile_uid()", body)
 
     def test_release_only_closes_when_nothing_else_wants_it(self):
-        body = body_of("release")
+        cap = (CARD / "capture.py").read_text(encoding="utf-8")
+        body = cap[cap.index("    def release("):cap.index("    def reap(")]
         self.assertIn("and not tiles", body,
                       "release closes the device without checking whether "
                       "another listener still wants it")

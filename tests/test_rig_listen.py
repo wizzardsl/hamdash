@@ -105,7 +105,7 @@ class TestFollowingTheRadioIsSafe(unittest.TestCase):
     def test_a_tap_for_no_input_refuses_without_opening_anything(self):
         sd = mock.MagicMock()
         with mock.patch.dict(sys.modules, {"sounddevice": sd}):
-            t = self.m.Tap(self.m.NO_RIG_INPUT, 12000)
+            t = self.m.capture.Capture(self.m.NO_RIG_INPUT).start()
             t._thread.join(2)
         self.assertEqual(t.status, "error")
         self.assertIn("no audio input set", t.error)

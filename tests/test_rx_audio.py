@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 CARD = Path(__file__).resolve().parent.parent / "plugins" / "rx_audio"
+CAPTURE = (CARD / "capture.py").read_text(encoding="utf-8")
 # The player, which moved out of this card's page into one shared script
 # mounted at the foot of the rig card.
 LISTEN = CARD.parent.parent / "hamdash" / "static" / "js" / "listen.js"
@@ -227,6 +228,11 @@ class TestAskingIsNotWanting(unittest.TestCase):
         src = self.SRC[self.SRC.index("def look("):]
         src = src[:src.index("def tap_for(")]
         self.assertNotIn("Tap(", src)
+        self.assertNotIn("tap_for(", src)
+        hub = CAPTURE[CAPTURE.index("    def look("):]
+        hub = hub[:hub.index("    def tap_for(")]
+        self.assertNotIn("Tap(", hub)
+        self.assertNotIn("Capture(", hub)
 
     def test_stop_releases_rather_than_waiting_for_the_reaper(self):
         """Twenty seconds is not "now", and now is what Stop means."""
@@ -234,6 +240,8 @@ class TestAskingIsNotWanting(unittest.TestCase):
         self.assertIn("release(who())", self.SRC)
 
     def test_wants_are_counted_per_listener(self):
+        """(The bookkeeping lives in `capture.Hub` now, which
+        `tests/test_shared_capture.py` drives with fake sources.)"""
         """One listener stopping must not take the audio from another.
 
         This said *per tile* and asserted it, which was the bug rather
@@ -242,8 +250,8 @@ class TestAskingIsNotWanting(unittest.TestCase):
         device for both. `tests/test_rx_listeners.py` holds the rule now
         and drives it rather than grepping for it.
         """
-        src = self.SRC[self.SRC.index("def release("):]
-        src = src[:src.index("def _reap_idle")]
+        src = CAPTURE[CAPTURE.index("    def release("):]
+        src = src[:src.index("    def reap(")]
         self.assertIn("tiles.pop(who, None) is not None and not tiles", src)
 
 
@@ -347,7 +355,7 @@ class TestTheDeviceIsActuallyGivenBack(unittest.TestCase):
     `DSERR_ALLOCATED`, and restarting that one card process fixed it.
     The holder was the card itself: a stream it had lost the handle to.
 
-    `release()` pops the Tap out of `_taps` before stopping it, so a
+    `release()` pops the Capture out of the hub before stopping it, so a
     stream that is not closed on the way out can never be closed by
     anything again - it is held for the life of the process, and every
     later open fails with the message that blames WSJT-X. Three ways in,
@@ -365,7 +373,8 @@ class TestTheDeviceIsActuallyGivenBack(unittest.TestCase):
     rather than a reproduced fault, and is written down as such.
     """
 
-    SRC = (CARD / "card.py").read_text(encoding="utf-8")
+    # The one place a sound card is opened, since the capture is shared.
+    SRC = (CARD / "capture.py").read_text(encoding="utf-8")
 
     def body(self):
         i = self.SRC.index("    def _run(")

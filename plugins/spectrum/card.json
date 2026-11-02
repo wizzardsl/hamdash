@@ -17,6 +17,9 @@
   "publishes": [
     "spectrum.peak"
   ],
+  "uses": [
+    "rx_audio"
+  ],
   "subscribes": [
     "radio.state"
   ],
@@ -25,7 +28,7 @@
       "type": "string",
       "label": "Audio input",
       "default": "mock",
-      "help": "Part of the input's name, e.g. 'USB Audio CODEC'. Blank uses the system default. 'mock' synthesises a test signal so the card works with no radio attached; the card page lists the inputs it can see."
+      "help": "Part of the input's name, e.g. 'USB Audio CODEC'. 'rig' follows the selected radio's own audio input. Blank uses the system default. 'mock' synthesises a test signal so the card works with no radio attached; the card page lists the inputs it can see. The input is opened once and shared with Listen and the decoder, so all three can run at once."
     },
     "max_hz": {
       "type": "number",

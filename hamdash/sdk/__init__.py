@@ -31,8 +31,9 @@ import requests
 from flask import Flask, jsonify, request, send_from_directory
 
 from hamdash import bus     # topic policy only; no shared state
+from hamdash.sdk.audio import AudioFeed     # the radio's audio, shared
 
-__all__ = ["Card", "HostClient"]
+__all__ = ["Card", "HostClient", "AudioFeed"]
 
 
 class HostClient:

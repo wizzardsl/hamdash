@@ -15,8 +15,10 @@ What each bundled card does, and the decisions inside the ones that have a few.
 
 The `spectrum` card draws what is in the receiver's passband. Feed the radio's
 audio into a sound card input and pick it in the tile's settings; the card page
-lists the inputs it can see. It defaults to `mock`, a synthesised test signal,
-so the card is usable with no radio attached for the same reason the rig is.
+lists the inputs it can see, and `rig` follows the selected radio's own audio
+input. It defaults to `mock`, a synthesised test signal, so the card is usable
+with no radio attached for the same reason the rig is. A real input is shared
+with Listen and the decoder rather than taken from them.
 
 Two things about it are worth knowing if you write something similar:
 
@@ -101,9 +103,13 @@ on playing when the rig tile is behind another tab or you switch cards on
 a phone - listening while looking at something else is the point - and it
 lets go after 20 seconds if the page disappears without saying so.
 
-One input can only be open once. If a spectrum or decoder tile is already
-using the radio's audio, Listen will say so and name the likely culprit
-rather than just failing.
+**Listen, the waterfall and the decoder share the radio's input.** It is
+opened once, by the receive-audio engine behind Listen, and each of the
+three reads from that one capture - so all of them can run at once, and
+stopping one leaves the others going. The input is handed back when the
+last of them stops. Another *program* (WSJT-X, fldigi) still cannot have
+it at the same time on Windows; if Listen cannot open it, it says so and
+names the likely culprit rather than just failing.
 
 ### Listening from another machine
 
@@ -140,7 +146,9 @@ Morse, so the card works with no radio attached. Anything else is a sound
 card by name.
 
 **Stop** gives the sound card back, rather than only going quiet: the usual
-reason to stop decoding is to let WSJT-X or fldigi have the input. The tile
+reason to stop decoding is to let WSJT-X or fldigi have the input. The
+input is shared with Listen and the waterfall, so it is handed back once
+none of them is using it either. The tile
 remembers, so one left stopped is still stopped after a restart, and two
 tiles listening to the same input are counted separately — stopping one
 leaves the other running.

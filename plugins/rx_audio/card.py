@@ -14,6 +14,13 @@ having it, 192 kbit/s at 12 kHz. That is what makes this possible without
 WebRTC - which matters, because a frozen card runs inside the hamdash
 binary, so a card's dependency would be in every build.
 
+It is also the one place a sound card is opened. PortAudio on Windows
+will not reliably give one capture device to two openers, so the spectrum
+and the decoder read the radio's input from here (`AudioFeed` in the SDK)
+rather than opening it themselves: one capture per device, fanned out to
+every rate and every listener. `capture.py` is that half, and is driven
+by the tests with fake sources playing known tones.
+
 Receive only. Transmit needs a microphone, `getUserMedia` needs a secure
 context, and nothing here is authenticated - see `docs/built-in-cards.md`.
 """
@@ -21,275 +28,21 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import deque
 
-import numpy as np
 from flask import Response, request
 
 from hamdash.sdk import Card
 
-import dsp
+import capture
+from capture import BLOCK_MS
 
 card = Card(__file__)
 
-BLOCK_MS = 20           # one numbered block of audio
-HISTORY = 150           # blocks kept: 3 s, enough to ride out a stall
-IDLE_SECONDS = 20.0     # close an input no tile has asked for
-RETRY_SECONDS = 5.0     # before respinning a failed input
-# How long a Stop waits for the capture thread to actually let the
-# device go. The event is already set by then, so this is reached
-# only if PortAudio is slow to close; the normal case is a
-# millisecond. Bounded because it blocks a request thread.
-CLOSE_WAIT = 1.0
-
-_lock = threading.Lock()
-# PortAudio is not thread-safe across enumerate/open: one lock for both,
-# the same rule the spectrum card follows.
-_pa_lock = threading.Lock()
-_taps: dict[str, "Tap"] = {}
-# device -> {listener: when it last asked}. A listener is a *page*, not a
-# tile: every browser showing one tile sends the same uid, so counting by
-# tile made two browsers one entry and the first Stop closed the device
-# for both. See `who()`.
-_wanted: dict[str, dict[str, float]] = {}
-
-
-class Tap:
-    """One audio input, decimated and ringed as numbered int16 blocks."""
-
-    def __init__(self, device: str, rate: int) -> None:
-        self.device = device
-        self.wanted_rate = rate
-        self.started_at = time.time()
-        self.in_rate = 48000
-        self.out_rate = rate
-        self.block_n = max(32, int(rate * BLOCK_MS / 1000))
-        self.status = "starting"
-        self.error = ""
-        self.hint = ""
-        self.seq = 0
-        self.first_seq = 0
-        self.peak = 0.0                    # for the level meter
-        self.blocks: deque[bytes] = deque(maxlen=HISTORY)
-        self.stamps: deque[float] = deque(maxlen=HISTORY)
-        self.overflows = 0
-        self._dec: dsp.Decimator | None = None
-        self._acc = np.zeros(0, dtype=np.float32)
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True,
-                                        name=f"rx-{device or 'default'}")
-        self._thread.start()
-
-    # -- capture ---------------------------------------------------------
-    def _run(self) -> None:
-        if self.device == "mock":
-            self._run_mock()
-            return
-        if self.device == NO_RIG_INPUT:
-            # Not the system default. That used to be where 'rig' ended up
-            # for a radio with no audio input set, and the system default
-            # input is usually a microphone - which is why this card had
-            # to default to a test tone rather than to the radio.
-            return self._fail(
-                "This radio has no audio input set.",
-                "Set it in Settings -> Radio, or choose an input in this "
-                "tile's settings.")
-        try:
-            import sounddevice as sd
-        except Exception as exc:                        # noqa: BLE001
-            return self._fail(
-                f"sounddevice is not installed ({exc}).",
-                "Set this tile's input to 'mock' to try the card without a "
-                "radio, or install the sounddevice package.")
-        # Bound *outside* the try, so the close below runs for a stream
-        # that was built and then failed to start. `stream.start()` used
-        # to sit inside the `with _pa_lock` block, ahead of the try that
-        # closes it: a host error there jumped straight to the outer
-        # handler with a constructed stream holding the device and no
-        # reference left anywhere to close it.
-        stream = None
-        try:
-            try:
-                with _pa_lock:
-                    index = _resolve_device(sd, self.device)
-                    info = sd.query_devices(index)
-                    self.in_rate = int(info["default_samplerate"])
-                    self._start_dec()
-                    stream = sd.InputStream(
-                        device=index, channels=1, dtype="float32",
-                        samplerate=self.in_rate,
-                        blocksize=int(self.in_rate * BLOCK_MS / 1000),
-                        callback=self._on_audio)
-                    stream.start()
-                self.status = "running"
-                while not self._stop.wait(0.25):
-                    pass
-            finally:
-                # Closing must not be able to fail its way out of
-                # closing. A raise from `stop()` here used to propagate
-                # to the outer handler, which called `_fail()` and left
-                # the stream open - and by then the Tap has been popped
-                # from `_taps`, so nothing holds a reference and nothing
-                # can ever close it. The device is held for the life of
-                # the card process, and every later open answers
-                # DSERR_ALLOCATED, which this card reports as "another
-                # program may be holding that input" - sending the
-                # operator to look for a WSJT-X that is not running.
-                if stream is not None:
-                    with _pa_lock:
-                        for shut in (stream.stop, stream.close):
-                            try:
-                                shut()
-                            except Exception as exc:    # noqa: BLE001
-                                print(f"rx_audio: {self.device or 'default'}:"
-                                      f" {shut.__name__} failed: {exc}")
-            self.status = "stopped"
-        except Exception as exc:                        # noqa: BLE001
-            # Naming the likely cause matters more here than anywhere: a
-            # sound card can only be held by one program at a time on
-            # Windows, and "the card is deaf" is what the operator sees.
-            self._fail(
-                f"could not open {self.device or 'the default input'}: {exc}",
-                "Another program may be holding that input - a spectrum or "
-                "decoder tile here, WSJT-X, or fldigi. Close it, or choose "
-                "a different input in this tile's settings.")
-
-    def _fail(self, why: str, hint: str = "") -> None:
-        self.status = "error"
-        self.error = why
-        self.hint = hint
-
-    def _start_dec(self) -> None:
-        self._dec = dsp.Decimator(self.in_rate, self.wanted_rate)
-        self.out_rate = self._dec.out_rate
-        self.block_n = max(32, int(self.out_rate * BLOCK_MS / 1000))
-
-    def _on_audio(self, indata, frames, time_info, status) -> None:
-        if status and getattr(status, "input_overflow", False):
-            self.overflows += 1
-        self._feed(indata[:, 0].copy())
-
-    def _run_mock(self) -> None:
-        """A tone that sweeps, with a click on each whole second.
-
-        Mock by default like the rig, so the card can be set up, placed on
-        a board and listened to with no radio attached. The click is also
-        what makes latency measurable, which is how the transport was
-        proven in the first place.
-        """
-        self.in_rate = 48000
-        self._start_dec()
-        self.status = "running"
-        n = int(self.in_rate * BLOCK_MS / 1000)
-        phase = 0.0
-        nxt = time.time()
-        while not self._stop.is_set():
-            t0 = time.time()
-            t = np.arange(n, dtype=np.float32) / self.in_rate
-            hz = 600.0 + 120.0 * np.sin(t0 * 0.25)
-            block = 0.22 * np.sin(2 * np.pi * hz * t + phase)
-            phase = (phase + 2 * np.pi * hz * n / self.in_rate) % (2 * np.pi)
-            edge = np.ceil(t0) - t0
-            if 0 <= edge < n / self.in_rate:
-                i = int(edge * self.in_rate)
-                block[i:i + 240] = 0.85
-            self._feed(block.astype(np.float32))
-            nxt += n / self.in_rate
-            time.sleep(max(0.0, nxt - time.time()))
-
-    # -- ring ------------------------------------------------------------
-    def _feed(self, samples: np.ndarray) -> None:
-        if self._dec is None:
-            return
-        out = self._dec(samples)
-        if not len(out):
-            return
-        self.peak = float(np.abs(out).max())
-        self._acc = np.concatenate([self._acc, out])
-        now = time.time()
-        while len(self._acc) >= self.block_n:
-            chunk = self._acc[:self.block_n]
-            self._acc = self._acc[self.block_n:]
-            pcm = np.clip(chunk * 32767.0, -32768, 32767).astype("<i2")
-            with _lock:
-                if len(self.blocks) == HISTORY:
-                    self.first_seq += 1
-                self.blocks.append(pcm.tobytes())
-                self.stamps.append(now)
-                self.seq += 1
-                if len(self.blocks) == 1:
-                    self.first_seq = self.seq
-
-    def since(self, seq: int, limit: int = 32):
-        """Blocks after `seq`, oldest first, with the first one's stamp."""
-        with _lock:
-            if not self.blocks:
-                return self.seq, self.seq, b"", 0.0
-            start = max(seq + 1, self.first_seq)
-            if start > self.seq:
-                return self.seq, self.seq, b"", 0.0
-            i = start - self.first_seq
-            take = list(self.blocks)[i:i + limit]
-            stamp = list(self.stamps)[i] if take else 0.0
-            return start, start + len(take) - 1, b"".join(take), stamp
-
-    def info(self) -> dict:
-        return {"device": self.device, "status": self.status,
-                "error": self.error, "hint": self.hint,
-                "in_rate": self.in_rate, "rate": self.out_rate,
-                "block_n": self.block_n, "block_ms": BLOCK_MS,
-                "seq": self.seq, "first_seq": self.first_seq,
-                "overflows": self.overflows,
-                "peak": round(self.peak, 4), "now": time.time()}
-
-    def stop(self, wait: float = CLOSE_WAIT) -> None:
-        """Ask the capture thread to stop, and wait for it to let go.
-
-        Setting the flag is not releasing the device. The thread still
-        has to leave its loop, take `_pa_lock` and close the stream, and
-        `release()` used to return before any of that - so a Listen
-        pressed straight after a Stop, or the page's own status poll
-        which lands immediately after one, opened the device while the
-        previous stream still held it. PortAudio answers
-        DSERR_ALLOCATED, the card reports "another program may be
-        holding that input", and the failed Tap is then cached for
-        `RETRY_SECONDS` - so the error outlives its cause and names the
-        wrong culprit.
-
-        The wait is bounded and normally microscopic: the event is
-        already set, so the thread only has to reach its `finally`. It
-        is a blocking wait in a request thread (invariant 4), which is
-        the trade - a tenth of a second at the one moment the operator
-        asked for the device to be handed over, against a card that
-        cannot be restarted until the process is.
-        """
-        self._stop.set()
-        # Never from the capture thread itself: that is a deadlock, and
-        # it is the thread already doing the closing.
-        if threading.current_thread() is not self._thread:
-            self._thread.join(wait)
-
-
-def _resolve_device(sd, wanted: str):
-    """By name, never by index.
-
-    PortAudio indices shuffle whenever anything is plugged in or a
-    Bluetooth headset wakes, so a saved index silently becomes a
-    different device - which presents as the card being deaf rather than
-    as a settings problem.
-    """
-    if not wanted:
-        return None                                 # the system default
-    low = wanted.lower()
-    for i, d in enumerate(sd.query_devices()):
-        if d["max_input_channels"] > 0 and low in d["name"].lower():
-            return i
-    raise RuntimeError(f"no input device whose name contains {wanted!r}")
-
-
-# What 'rig' resolves to when the radio has no audio input set. Never ""
-# - that is the system default input, which is somebody's microphone.
-NO_RIG_INPUT = "<no radio input>"
+# One capture per device, fanned out to every rate and every listener -
+# Listen in the rig card, and the spectrum and decoder through their
+# feeds. See `capture.py`.
+hub = capture.Hub()
+NO_RIG_INPUT = capture.NO_RIG_INPUT
 
 
 def _device_for(conf: dict) -> str:
@@ -302,6 +55,10 @@ def _device_for(conf: dict) -> str:
     would quietly open the system default input.
     """
     want = str(conf.get("device", "mock")).strip()
+    if want == capture.SYSTEM_DEFAULT:
+        # Said in words by a card's feed (a spectrum tile left blank),
+        # because a blank override means "my tile's own settings".
+        return ""
     if want != "rig":
         return want
     st = {}
@@ -349,24 +106,16 @@ def _conf() -> dict:
 
 
 def _key_for(conf: dict) -> tuple[str, int]:
-    device = _device_for(conf)
-    try:
-        rate = int(conf.get("rate", 12000) or 12000)
-    except (TypeError, ValueError):
-        rate = 12000
-    return f"{device}|{rate}", rate
+    """(device, rate) for these settings - the device resolved, so 'rig'
+    and the radio's own input name share one capture."""
+    return _device_for(conf), capture.clamp_rate(conf.get("rate", 12000))
 
 
-def look(conf: dict) -> Tap | None:
+def look(conf: dict):
     """The tap for these settings if one is open, without opening one.
-
-    Asking must not be the same as wanting. The page polls for a status
-    line whether or not anybody is listening, and if that opened the
-    input then pressing Stop would hand the sound card back for about two
-    seconds before the next status poll took it again - which defeats the
-    only reason to press Stop.
-    """
-    return _taps.get(_key_for(conf)[0])
+    Asking must not be the same as wanting: see `Hub.look`."""
+    device, rate = _key_for(conf)
+    return hub.look(device, rate)
 
 
 def who() -> str:
@@ -389,56 +138,22 @@ def who() -> str:
     return request.args.get("who") or card.tile_uid() or "-"
 
 
-def tap_for(conf: dict, who: str) -> Tap:
+def tap_for(conf: dict, who: str):
     """The tap for these settings, opened if need be, and marked wanted."""
-    key, rate = _key_for(conf)
-    device = key.rsplit("|", 1)[0]
-    now = time.time()
-    _wanted.setdefault(key, {})[who or "-"] = now
-    t = _taps.get(key)
-    if t is None:
-        t = _taps[key] = Tap(device, rate)
-    elif t.status == "error" and now - t.started_at > RETRY_SECONDS:
-        # On a timer, not on every request: respinning a failed input each
-        # time means the caller only ever sees a brand new tap in its
-        # "starting" state and never the error that says what is wrong.
-        t = _taps[key] = Tap(device, rate)
-    return t
+    device, rate = _key_for(conf)
+    return hub.tap_for(device, rate, who)
 
 
 def release(who: str) -> None:
-    """One listener has stopped. Let go of the device now if nothing else
-    wants it - the reason to press Stop is to give the sound card to
-    another program, and in 20 seconds is not now.
-
-    *If nothing else wants it*: a second browser listening to the same
-    tile keeps its own entry, so stopping here no longer stops them.
-    """
-    for key, tiles in list(_wanted.items()):
-        if tiles.pop(who, None) is not None and not tiles:
-            t = _taps.pop(key, None)
-            if t is not None:
-                print(f"closing {key or 'default input'}: last listener left")
-                t.stop()
-            _wanted.pop(key, None)
+    """One listener has stopped; the device closes if it was the last.
+    See `Hub.release`."""
+    hub.release(who)
 
 
 def _reap_idle() -> None:
-    """Nothing tells a card that a tile was deleted, and this one holds
-    the radio's sound card open."""
     while True:
         time.sleep(5.0)
-        now = time.time()
-        for key in list(_taps):
-            tiles = _wanted.get(key, {})
-            for uid, when in list(tiles.items()):
-                if now - when > IDLE_SECONDS:
-                    tiles.pop(uid, None)
-            if not tiles:
-                print(f"closing {key or 'default input'}: no tile has asked "
-                      f"for it in {IDLE_SECONDS:.0f}s")
-                _taps.pop(key).stop()
-                _wanted.pop(key, None)
+        hub.reap()
 
 
 # ---------------------------------------------------------------- routes
@@ -448,7 +163,7 @@ def info():
     conf = _conf()
     t = look(conf)
     if t is not None:
-        return t.info()
+        return {**t.info(), "listeners": hub.listeners(t.device)}
     device, rate = _device_for(conf), _key_for(conf)[1]
     if device == NO_RIG_INPUT:
         # Said before Listen is pressed, not after: there is nothing to
@@ -475,11 +190,23 @@ def pcm():
     in time rides in headers.
     """
     t = tap_for(_conf(), who())
+    since = request.args.get("since", "0")
+    if since == "head":
+        # Join live. A newcomer - a decoder starting up, a waterfall
+        # whose tile was just added - is somebody else's backlog's
+        # stranger: it gets what arrives from now, not the three seconds
+        # the ring holds for whoever was here first.
+        seq = t.seq
+    else:
+        try:
+            seq = int(since)
+        except ValueError:
+            seq = 0
     try:
-        seq = int(request.args.get("since", "0"))
+        limit = max(1, min(capture.HISTORY, int(request.args.get("limit", "32"))))
     except ValueError:
-        seq = 0
-    first, last, body, stamp = t.since(seq)
+        limit = 32
+    first, last, body, stamp = t.since(seq, limit)
     r = Response(body, mimetype="application/octet-stream")
     r.headers["X-First-Seq"] = str(first)
     r.headers["X-Last-Seq"] = str(last)
@@ -490,6 +217,12 @@ def pcm():
     r.headers["X-Server-Now"] = f"{time.time():.6f}"
     r.headers["X-Status"] = t.status
     r.headers["X-Peak"] = f"{t.peak:.4f}"
+    # For a card's feed, which has no /info poll of its own: why there is
+    # no audio, in words. Headers are latin-1, so anything else goes.
+    if t.status == "error":
+        c = t.capture
+        r.headers["X-Error"] = c.error.encode("ascii", "replace").decode()
+        r.headers["X-Hint"] = c.hint.encode("ascii", "replace").decode()
     r.headers["Cache-Control"] = "no-store"
     return r
 

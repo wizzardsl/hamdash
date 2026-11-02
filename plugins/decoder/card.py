@@ -12,9 +12,11 @@ It follows the shape `plugins/spectrum` settled on, for the same reasons:
   and text arrives a character at a time. The card keeps what it has decoded
   with a sequence number and the page asks for everything since its last one.
 
-* **One listener per device, shared by tiles.** A sound card input can
-  usually only be opened once, and two tiles pointed at the same radio want
-  the same text anyway.
+* **It never opens a sound card.** The `rx_audio` engine does, once per
+  device, and this reads from it with `AudioFeed`, so the decoder can run
+  while Listen and the waterfall have the same input. One listener per
+  device here, shared by tiles, because two tiles on one radio want the
+  same text anyway.
 
 * **Nothing tells a card that a tile was deleted**, so a listener that nobody
   has asked for in `IDLE_SECONDS` is closed. Without that, changing the input
@@ -36,13 +38,17 @@ import time
 import numpy as np
 from flask import request
 
-from hamdash.sdk import Card
+from hamdash.sdk import AudioFeed, Card
 
 import cw
 
 card = Card(__file__)
 
-BLOCK = 2048                    # samples per callback, ~43 ms at 48 kHz
+BLOCK = 2048                    # samples per mock block, ~43 ms at 48 kHz
+# What the decoder asks the shared engine for. The passband is 250-2700
+# Hz, so 12 kHz carries it with room to spare - and it is the rate Listen
+# asks for, so the two share one filter as well as one capture.
+FEED_RATE = 12000
 KEEP_CHARS = 20000              # text held per listener, about a long ragchew
 IDLE_SECONDS = 30.0
 RETRY_SECONDS = 5.0
@@ -98,42 +104,28 @@ class Listener:
         if self.device == "mock":
             self._run_mock()
             return
+        # Not opened here. The radio's input is opened once, by the
+        # rx_audio engine, and read from it - so the decoder, the
+        # waterfall and Listen can all have the same sound card at once,
+        # which PortAudio on Windows would not allow three openers.
+        feed = AudioFeed(card.host, self.device, FEED_RATE, self._on_feed,
+                         who=f"decoder-{id(self):x}").start()
         try:
-            import sounddevice as sd
-        except Exception as exc:                        # noqa: BLE001
-            self.status = "error"
-            self.error = (f"sounddevice is not available ({exc}). Install "
-                          f"it, or set this tile's input to the mock.")
-            return
-        try:
-            with _pa_lock:
-                index = _resolve_device(sd, self.device)
-                info = sd.query_devices(index)
-                self.samplerate = int(info["default_samplerate"])
-                self._decoder = cw.CwDecoder(self.samplerate)
-                stream = sd.InputStream(device=index, channels=1,
-                                        dtype="float32",
-                                        samplerate=self.samplerate,
-                                        blocksize=BLOCK,
-                                        callback=self._on_audio)
-                stream.start()
-            try:
-                self.status = "running"
-                while not self._stop.wait(0.25):
-                    pass
-            finally:
-                with _pa_lock:
-                    stream.stop()
-                    stream.close()
-            self.status = "stopped"
-        except Exception as exc:                        # noqa: BLE001
-            self.status = "error"
-            self.error = (f"could not open {self.device or 'the default input'}"
-                          f": {exc}. Pick another input in this tile's "
-                          f"settings, or check whether another program has it.")
+            while not self._stop.wait(0.25):
+                self.status = feed.status or "starting"
+                self.error = (f"{feed.error} {feed.hint}".strip()
+                              if feed.status == "error" else "")
+        finally:
+            # Releases this listener in the engine, which closes the
+            # input only if nobody else - Listen, a waterfall - has it.
+            feed.stop()
+        self.status = "stopped"
 
-    def _on_audio(self, indata, frames, time_info, status) -> None:
-        self._feed(indata[:, 0].copy())
+    def _on_feed(self, samples: np.ndarray, rate: int) -> None:
+        if rate and rate != self.samplerate:
+            self.samplerate = int(rate)
+            self._decoder = cw.CwDecoder(self.samplerate)
+        self._feed(samples)
 
     def _run_mock(self) -> None:
         """Synthesised Morse, so the card works with no radio attached.
@@ -217,18 +209,6 @@ class Listener:
 
     def stop(self) -> None:
         self._stop.set()
-
-
-def _resolve_device(sd, wanted: str):
-    """Match an input by name, so a saved setting survives the index
-    shuffling Windows does when something is plugged in."""
-    if not wanted:
-        return None                                  # the system default
-    low = wanted.lower()
-    for i, d in enumerate(sd.query_devices()):
-        if d["max_input_channels"] > 0 and low in d["name"].lower():
-            return i
-    raise RuntimeError(f"no input device matching {wanted!r}")
 
 
 def radio_audio() -> str:
