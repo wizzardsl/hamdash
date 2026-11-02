@@ -35,6 +35,7 @@ import uuid
 
 from ..bus import BUS
 from . import audio
+from . import diagnostics
 from .radio import MODES, RigError, band_for         # noqa: F401 - re-exported
 
 # OmniRig's own enums, read from its type library rather than assumed. Worth
@@ -219,6 +220,17 @@ class Backend:
     def swap_vfo(self) -> None:
         raise RigError(f"{self.kind} cannot swap the VFOs")
 
+    def probe(self) -> dict:
+        """Read-only questions for a problem report: name -> answer.
+
+        **Reads only, and nothing that has ever upset a daemon.** This runs
+        on radios nobody here owns, at the request of somebody asking for
+        help, so it must not be able to change the radio at all - let alone
+        key it - and it leaves out `\\dump_caps`, which killed a running
+        rigctld here (see CLAUDE.md).
+        """
+        return {}
+
     def close(self) -> None:
         pass
 
@@ -305,6 +317,19 @@ class RigctldBackend(Backend):
         return f"{self.host}:{self.port}"
 
     def _cmd(self, line: str) -> list[str]:
+        # Reads are lower case (`f`, `m`, `\\get_vfo_info`) and polled, so an
+        # unchanged answer is folded; a set (`F`, `M`, `T`) never is.
+        polled = line[:1].islower() or line.startswith("\\get")
+        try:
+            out = self._cmd_raw(line)
+        except RigError as exc:
+            diagnostics.trace(f"rigctld {self.where()}", line, error=exc,
+                              repeat=polled)
+            raise
+        diagnostics.trace(f"rigctld {self.where()}", line, out, repeat=polled)
+        return out
+
+    def _cmd_raw(self, line: str) -> list[str]:
         with self._lock:
             if self._sock is None:
                 try:
@@ -329,6 +354,19 @@ class RigctldBackend(Backend):
             if code != "0":
                 raise RigError(f"rig returned error {code} for {line!r}")
             return out[1:]
+        return out
+
+    PROBE = ("_", "f", "m", "v", "s", "t", "\\get_vfo_info VFOA",
+             "\\get_vfo_info VFOB", "l STRENGTH", "l RFPOWER_METER", "l SWR",
+             "\\chk_vfo", "\\get_powerstat")
+
+    def probe(self) -> dict:
+        out = {}
+        for line in self.PROBE:
+            try:
+                out[line] = self._cmd(line)
+            except RigError as exc:
+                out[line] = {"error": str(exc)}
         return out
 
     def _maybe(self, line: str) -> list[str]:
@@ -510,6 +548,34 @@ class FlrigBackend(Backend):
         return self._rpc
 
     def _call(self, name: str, *args):
+        call = f"{name}({', '.join(repr(a) for a in args)})"
+        polled = ".get" in name
+        try:
+            out = self._call_raw(name, *args)
+        except RigError as exc:
+            diagnostics.trace(f"flrig {self.where()}", call, error=exc,
+                              repeat=polled)
+            raise
+        diagnostics.trace(f"flrig {self.where()}", call, out, repeat=polled)
+        return out
+
+    PROBE = ("main.get_version", "rig.get_xcvr", "rig.get_modes",
+             "rig.get_mode", "rig.get_bws", "rig.get_bw", "rig.get_AB",
+             "rig.get_vfoA", "rig.get_vfoB", "rig.get_split", "rig.get_ptt",
+             "rig.get_smeter", "rig.get_Sunits", "rig.get_DBM",
+             "rig.get_pwrmeter", "rig.get_swrmeter", "rig.get_power",
+             "rig.get_maxpwr")
+
+    def probe(self) -> dict:
+        out = {}
+        for name in self.PROBE:
+            try:
+                out[name] = self._call(name)
+            except RigError as exc:
+                out[name] = {"error": str(exc)}
+        return out
+
+    def _call_raw(self, name: str, *args):
         import xmlrpc.client
         with self._lock:
             try:
@@ -1370,7 +1436,9 @@ class RigLink:
         if not backend:
             return {**base, "ok": False,
                     "error": "No radio selected. Add one in Settings -> Radio."}
-        out = {**base, **backend.state()}
+        got = backend.state()
+        diagnostics.trace(self.label_for_trace(), "state", got)
+        out = {**base, **got}
         # What the card may offer. A backend says what it can do in
         # general; OmniRig refines it per rig file, because one rig file
         # has two VFOs and the next does not.
@@ -1399,27 +1467,62 @@ class RigLink:
                     out["ptt_known"] = False
         return out
 
-    def _do(self, fn, *a):
+    def _do(self, fn, *a, what: str = ""):
         backend = self._backend             # once - see state()
         if self._error or not backend:
             raise RigError(self._error or "no radio selected")
-        fn(backend, *a)
+        call = f"{what or 'command'}({', '.join(repr(x) for x in a)})"
+        try:
+            fn(backend, *a)
+        except Exception as exc:
+            diagnostics.trace(self.label_for_trace(), call, error=exc,
+                              repeat=False)
+            raise
+        diagnostics.trace(self.label_for_trace(), call, "done", repeat=False)
         return self.state()
 
+    def probe(self) -> dict:
+        """What a problem report says about this radio. Reads only."""
+        rig = self.entry() or {}
+        out = {"radio": rig.get("name", ""), "backend": rig.get("backend", ""),
+               "settings": {k: v for k, v in rig.items()
+                            if k not in ("name", "id")},
+               "checked": time.strftime("%Y-%m-%d %H:%M:%S")}
+        backend = self._backend
+        if self._error or not backend:
+            out["error"] = self._error or "no radio open"
+            return out
+        out["features"] = sorted(backend.features)
+        steps = (("state", lambda: backend.state()),
+                 ("meters_rx", lambda: backend.meters(False)),
+                 ("raw", lambda: backend.probe()))
+        for name, fn in steps:
+            t0 = time.perf_counter()
+            try:
+                out[name] = fn()
+            except Exception as exc:                # noqa: BLE001 - reported
+                out[name] = {"error": f"{type(exc).__name__}: {exc}"}
+            out[f"{name}_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        return out
+
+    def label_for_trace(self) -> str:
+        rig = self.entry() or {}
+        return f"radio {rig.get('name') or self.id or '?'} [{rig.get('backend', '')}]"
+
     def set_freq(self, hz: int) -> dict:
-        return self._do(lambda b, v: b.set_freq(v), hz)
+        return self._do(lambda b, v: b.set_freq(v), hz, what="set_freq")
 
     def set_mode(self, mode: str, width: int = 0) -> dict:
-        return self._do(lambda b, m, w: b.set_mode(m, w), mode, width)
+        return self._do(lambda b, m, w: b.set_mode(m, w), mode, width, what="set_mode")
 
     def set_vfo(self, which: str) -> dict:
-        return self._do(lambda b, v: b.set_vfo(v), which)
+        return self._do(lambda b, v: b.set_vfo(v), which, what="set_vfo")
 
     def set_split(self, on: bool) -> dict:
-        return self._do(lambda b, v: b.set_split(v), on)
+        return self._do(lambda b, v: b.set_split(v), on, what="set_split")
 
     def swap_vfo(self) -> dict:
-        return self._do(lambda b: b.swap_vfo())
+        return self._do(lambda b: b.swap_vfo(), what="swap_vfo")
 
     def meters(self) -> dict:
         """The needles, for whoever is drawing them.
@@ -1436,6 +1539,7 @@ class RigLink:
                     "error": st.get("error", "the radio is not answering")}
         tx = bool(st.get("ptt"))
         got = backend.meters(tx)
+        diagnostics.trace(self.label_for_trace(), f"meters(tx={tx})", got)
         return {"ok": "error" not in got, "tx": tx, **got}
 
     def set_ptt(self, on: bool) -> dict:
@@ -1448,7 +1552,7 @@ class RigLink:
         if on and self._ptt_since:
             self._ptt_seen = now            # a ping, not a fresh key-down
             return self.state()
-        got = self._do(lambda b, v: b.set_ptt(v), on)
+        got = self._do(lambda b, v: b.set_ptt(v), on, what="set_ptt")
         if on:
             self._ptt_since = self._ptt_seen = now
             self._ptt_confirmed = False
@@ -1507,7 +1611,7 @@ class RigLink:
         self._ptt_since = self._ptt_seen = 0.0
         self._ptt_drop, self._ptt_drop_at = why, now
         try:
-            self._do(lambda b: b.set_ptt(False))
+            self._do(lambda b: b.set_ptt(False), what="watchdog unkey: set_ptt")
         except Exception as exc:                        # noqa: BLE001
             # Worth shouting about: the radio may still be transmitting.
             self._ptt_drop = f"{why}, and unkeying it failed: {exc}"
@@ -1658,6 +1762,19 @@ class RigManager:
         link = self._links.pop(rig_id, None)
         if link:
             link.stop()
+
+    def probe(self, rig_id: str | None = "") -> dict:
+        """Test my radio: read-only checks on one radio, for a report."""
+        link = self.link(rig_id)
+        result = link.probe()
+        self.last_probe = result
+        LOG.info("radio check %s: %s", link.label(),
+                 "ok" if (result.get("state") or {}).get("ok")
+                 else result.get("error")
+                 or (result.get("state") or {}).get("error", "no answer"))
+        return result
+
+    last_probe: dict | None = None
 
     def link(self, rig_id: str | None = "") -> RigLink:
         """The radio a request means: by id, or the selected one.

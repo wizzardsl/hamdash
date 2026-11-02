@@ -964,6 +964,103 @@
   ['lotw', 'qrz', 'wrl'].forEach((s) =>
     ['test', 'pull', 'push'].forEach((d) => wireSync(s, d)));
 
+  /* ---- Help: debug logging, the radio check, the problem report -------
+   *
+   * Both buttons save first, like the sync buttons above: a report made
+   * straight after ticking Debug logging should include the debug log,
+   * and that only starts once the setting is stored.
+   */
+  function diagRigs() {
+    const sel = $('#s-diag-rig');
+    if (!sel) return;
+    const keep = sel.value;
+    sel.textContent = '';
+    const add = (value, text) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      sel.append(o);
+    };
+    add('', 'The selected radio');
+    (rigEnv.rigs || []).forEach((r) => add(r.id, r.name || r.id));
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+  }
+
+  function describeCheck(r) {
+    const out = [`${r.radio || 'Radio'} through ${r.backend || '?'}, `
+                 + `checked ${r.checked || ''}`];
+    if (r.error) {
+      out.push(`Could not open it: ${r.error}`);
+      return out.join('\n');
+    }
+    const st = r.state || {};
+    if (st.ok) {
+      const mhz = Number(st.freq) ? `${(st.freq / 1e6).toFixed(6)} MHz` : 'no frequency';
+      out.push(`Answering: ${mhz} ${st.mode || ''}`.trim()
+               + (st.rig_type ? ` · ${st.rig_type}` : '')
+               + ` (${r.state_ms} ms)`);
+    } else {
+      out.push(`Not answering: ${st.error || 'no reply'} (${r.state_ms} ms)`);
+    }
+    const raw = r.raw || {};
+    const asked = Object.keys(raw);
+    if (asked.length) {
+      const refused = asked.filter((k) => raw[k] && raw[k].error);
+      out.push(`${asked.length - refused.length} of ${asked.length} questions `
+               + 'answered' + (refused.length ? `; refused: ${refused.join(', ')}` : ''));
+    }
+    const m = r.meters_rx || {};
+    if (m.error) out.push(`Meters: ${m.error}`);
+    out.push('Kept for the problem report - make one below to send it.');
+    return out.join('\n');
+  }
+
+  $('#s-diag-check').onclick = async () => {
+    const box = $('#s-diag-out');
+    box.hidden = false;
+    box.textContent = 'Asking the radio…';
+    try {
+      await saveSettings({ quiet: true });
+      const r = await HD.post('/api/diag/radio-check', { rig: $('#s-diag-rig').value });
+      box.textContent = describeCheck(r);
+    } catch (e) { box.textContent = e.message; }
+  };
+
+  let lastReport = null;
+  $('#s-report-make').onclick = async () => {
+    const note = $('#s-report-note');
+    note.className = 'sheet-note';
+    note.textContent = 'Gathering logs and settings…';
+    try {
+      await saveSettings({ quiet: true });
+      const r = await HD.post('/api/diag/report', {});
+      lastReport = r;
+      note.textContent = `Saved ${r.name} (${Math.max(1, Math.round(r.size / 1024))} kB) `
+                       + `in ${r.folder}`;
+      $('#s-report-folder').hidden = false;
+      $('#s-report-issue').hidden = false;
+      // A native window has no downloads (pywebview turns them off), so
+      // the folder button is the way there; a browser can save it too.
+      let native = true;
+      try { native = !!(await HD.get('/api/shell')).native; } catch (e) { /* keep */ }
+      const dl = $('#s-report-download');
+      dl.href = `/api/diag/report/${encodeURIComponent(r.name)}`;
+      dl.setAttribute('download', r.name);
+      dl.hidden = native;
+    } catch (e) {
+      note.textContent = e.message;
+      note.className = 'sheet-note warn';
+    }
+  };
+  $('#s-report-folder').onclick = async () => {
+    try { await HD.post('/api/diag/reveal', {}); } catch (e) {
+      $('#s-report-note').textContent = e.message;
+    }
+  };
+  $('#s-report-issue').onclick = () => {
+    if (lastReport) HD.openExternal(lastReport.issue).catch(() => {});
+  };
+
   HD.on('log.sync', (p) => {
     // The job is "<service> <direction>", so its first word names the panel.
     const which = (p.job || '').split(' ')[0] || 'lotw';
@@ -1378,6 +1475,7 @@
       p.hidden = p.dataset.panel !== name;
     });
     $('.tab-body').scrollTop = 0;
+    if (name === 'help') diagRigs();
   }
   document.querySelectorAll('#settings-sheet .tab').forEach((b) => {
     b.onclick = () => showTab(b.dataset.tab);
@@ -1411,6 +1509,7 @@
     $('#s-wx-bind').value = wx.bind || '127.0.0.1';
     $('#s-wx-port').value = wx.port || 2237;
     refreshWsjtx();
+    $('#s-debug').checked = !!(config.debug || {}).enabled;
     gridNote('');
     showTab('station');
   }
@@ -1631,6 +1730,7 @@
         account: $('#s-lk-account').value,
         user: $('#s-lk-user').value.trim(),
       }, 'password', '#s-lk-pass'),
+      debug: { enabled: $('#s-debug').checked },
       wsjtx: {
         enabled: $('#s-wx-enabled').checked,
         bind: $('#s-wx-bind').value.trim() || '127.0.0.1',

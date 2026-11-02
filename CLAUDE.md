@@ -28,6 +28,9 @@ Diagnostics, all cheap to poll while reproducing something:
 
 - `<config dir>/hamdash.log` — versions, every card's stdout, unhandled
   exceptions including in threads. On Windows: `%APPDATA%\hamdash\hamdash.log`
+- `<config dir>/hamdash-debug-YYYY-MM-DD.log` — with Settings → Help →
+  Debug logging on, every exchange with the radio. A user's problem report
+  (`<config dir>/reports/*.zip`) holds both; see "Problem reports"
 - `GET /api/health` — card count, running count, wedged cards, radio state
 - `GET /api/bus/stats` — open event streams vs the limit
 - `GET /api/shell` — whether the page is in the native shell or a browser
@@ -2524,6 +2527,55 @@ arithmetic, because that is where the clock ticks.
   something up immediately afterwards.
 - LoTW has no public per-callsign page, so `links_for` has no lotw entry and
   should not grow one. Its public user-activity list is a separate feature.
+
+## Problem reports
+
+Settings → Help, `services/diagnostics.py`, `/api/diag*`,
+`tests/test_diagnostics.py`. Built so that people running hamdash on
+radios nobody here owns can send what is needed to fix them. **Nothing
+is sent by hamdash**: the report is a zip on disk and the operator drags
+it into the GitHub bug form, which is pre-filled by the button.
+
+- **The stock `RotatingFileHandler` drops every record on Windows while
+  it cannot rename** - something holding the file open, such as
+  `Get-Content -Wait` or a second hamdash. Each record retries the
+  rollover, fails, and goes to `handleError`. `SafeRotatingFileHandler`
+  keeps writing to the current file, says so in it, and tries again
+  `RETRY_S` later; a test shows the stock one losing them. The main log
+  rolls at 1 MB and keeps 5 - it grows about 20 kB a fortnight on a
+  healthy board.
+- **Debug files are named by UTC day, never renamed**, for the same
+  Windows reason: kept 48 hours, 100 MB between them, oldest day dropped
+  first, and a note at the cap. The operator chose "stays on until turned
+  off" over an auto-off timer; the limits are what make that safe.
+- **Two handlers on the root logger stay at INFO** (file and console) so
+  the radio trace, at DEBUG on `hamdash.trace`, reaches only the debug
+  file. Lowering either one floods the main log at two lines a second.
+- **A polled answer that has not changed is counted, not written**
+  (`trace(..., repeat=True)`): naively the trace is ~200 MB a day. A
+  change writes how many times the last answer came; a quiet spell is
+  noted every `REPEAT_NOTE`. Writes (`F`, `set_*`, PTT) are never folded.
+  Traced at the wire for flrig and rigctld (Hamlib shares it) and at
+  `RigLink` for every backend, which is OmniRig's only coverage.
+- **Test my radio reads only, and the tests hold it to that.** Every
+  flrig probe name contains `.get`, no rigctld probe line is a set
+  command, and `\dump_caps` is excluded (it killed a running rigctld
+  here). It runs at somebody else's station; it must not be able to
+  change the radio, let alone key it.
+- **A report is made only on the machine hamdash runs on** - the
+  `/api/shutdown` rule, since it gathers logs and config into one file -
+  and every stored secret, including tile settings of type `secret`, is
+  scrubbed from all of it by value, plus `key=`/`password=` patterns.
+  The callsign and grid stay; the sheet says so.
+- **A native window cannot download** (pywebview turns downloads off), so
+  the report is written under `<home>/reports` and **Open the folder**
+  shows it; a browser also gets a Download link. The newest
+  `REPORT_KEEP` are kept, and the text is capped so the zip stays under
+  GitHub's 25 MB attachment limit.
+- **An issue form takes starting values only for inputs and text boxes**,
+  by field `id`. So the version goes into `version` and the platform and
+  radio go into the `report` box as words; the dropdowns are left for the
+  operator.
 
 ## Open threads
 

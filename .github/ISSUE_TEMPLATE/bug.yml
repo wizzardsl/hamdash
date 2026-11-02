@@ -8,6 +8,21 @@ body:
         Three things answer most questions here: **the log**, **which rig
         backend**, and **what you expected instead**. The form asks for them
         so we do not spend a round trip getting there.
+
+        **The quickest way to send the first two:** in hamdash open
+        **Settings → Help**, press **Make a problem report**, and drag the
+        zip it saves into the box below. If the problem is with a radio,
+        tick **Debug logging** and press **Test my radio** first - that
+        records what the radio said, which is usually the whole answer.
+  - type: textarea
+    id: report
+    attributes:
+      label: Problem report
+      description: >
+        Drag the `hamdash-report-*.zip` from Settings → Help into this box.
+        Passwords and API keys are taken out of it; your callsign and grid
+        are still in the logs.
+      placeholder: Drop the report zip here.
   - type: textarea
     id: what
     attributes:

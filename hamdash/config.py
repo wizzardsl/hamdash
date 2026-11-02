@@ -63,6 +63,10 @@ DEFAULTS = {
     # enough and restarting hamdash is not needed.
     "wsjtx": {"enabled": True, "bind": "127.0.0.1", "port": 2237},
     "units": "km",   # km | mi | nmi
+    # Writes the radio conversation to daily hamdash-debug-*.log files,
+    # kept 48 hours and capped in size, so it can stay on indefinitely.
+    # See services/diagnostics.py.
+    "debug": {"enabled": False},
 }
 
 

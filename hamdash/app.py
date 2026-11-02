@@ -15,7 +15,7 @@ import requests
 from flask import (Flask, Response, abort, jsonify, request,
                    send_from_directory, stream_with_context)
 
-from . import registry
+from . import __version__, registry
 from .bus import BUS, MAX_SUBSCRIBERS, parse_last_id
 from .config import (BUNDLED_STATIC, CREDENTIALS, SECRETS, Config,
                      listen_moves_to_rig, tidy_credential, without_cards)
@@ -33,6 +33,7 @@ from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes, Solar
 from .services import wsjtx as wsjtxsvc
+from .services import diagnostics
 
 LOG = logging.getLogger("hamdash.app")
 
@@ -125,6 +126,9 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         cfg.save_layout(_after)
         LOG.info("layout: removed tiles of retired cards %s",
                  ", ".join(sorted(_retired())))
+    # Before the radios open, so a debug log that was left on records the
+    # first conversation with each of them - often the one that fails.
+    diagnostics.set_debug((cfg.data.get("debug") or {}).get("enabled"))
     rigsvc.ensure_rigs(cfg)
     rig = rigsvc.RigManager(cfg)
     rig.start_polling(hz=2)
@@ -652,7 +656,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         kept = {f"{sec}.{k}": (cfg.data.get(sec, {}) or {}).get(k, "")
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
-                    "callsign_lookup", "logbook_sync", "wsjtx", "units"):
+                    "callsign_lookup", "logbook_sync", "wsjtx", "units",
+                    "debug"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -685,6 +690,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             # ticked this on wants to log the next contact, not the next
             # contact after a restart.
             _apply_wsjtx()
+        if "debug" in body:
+            diagnostics.set_debug((cfg.data.get("debug") or {}).get("enabled"))
         BUS.publish("config.changed", _safe_config(), source="host")
         return jsonify(ok=True)
 
@@ -1397,6 +1404,132 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                        wedged=[w.card.id for w in sup.workers.values()
                                if w.status == "wedged"],
                        radio=(radio or {}).get("ok"))
+
+    # ---- problem reports -------------------------------------------------
+    # Debug logging, the read-only radio check and the report zip. See
+    # services/diagnostics.py. Nothing here sends anything anywhere: the
+    # report is written to disk and the operator attaches it to an issue.
+    def _from_here() -> bool:
+        return (request.remote_addr or "") in _local_addresses()
+
+    def _not_here():
+        # The report is logs and config gathered into one file - the same
+        # rule as /api/shutdown: not something a browser elsewhere on the
+        # network should be able to collect by loading a URL.
+        return jsonify(
+            error="problem reports can only be made on the machine hamdash "
+                  "is running on - open the board there to make one",
+            asked_from=request.remote_addr or ""), 403
+
+    def _known_secrets() -> list[str]:
+        out = [str((cfg.data.get(sec) or {}).get(k) or "") for sec, k in SECRETS]
+        for entry in cfg.entries():
+            card = cards.get(entry.get("card"))
+            if not card:
+                continue
+            for f in card.schema():
+                if f["type"] == "secret":
+                    out.append(str((entry.get("settings") or {})
+                                   .get(f["name"]) or ""))
+        return [x for x in out if x.strip()]
+
+    def _report_info() -> dict:
+        import platform
+        workers = {}
+        for cid, w in sup.workers.items():
+            workers[cid] = {"status": w.status, "restarts": w.restarts,
+                            "output": list(w.log[-60:])}
+        try:
+            sound = audiosvc.devices()
+        except Exception as exc:                    # noqa: BLE001 - reported
+            sound = {"error": str(exc)}
+        try:
+            from importlib.metadata import version
+            pyweb = version("pywebview")
+        except Exception:                           # noqa: BLE001
+            pyweb = "not installed"
+        links = {}
+        for rid in rig.open_ids():
+            try:
+                links[rid] = rig.link(rid).last
+            except Exception as exc:                # noqa: BLE001 - reported
+                links[rid] = {"error": str(exc)}
+        return {
+            "hamdash": __version__,
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "frozen": bool(getattr(sys, "frozen", False)),
+            "pywebview": pyweb,
+            "native_window": native,
+            "listening": host_url,
+            "debug_logging": diagnostics.debug_on(),
+            "radios": {"selected": rig.selected_id(), "open": rig.open_ids(),
+                       "entries": rig.rigs(), "last_state": links,
+                       "last_check": rig.last_probe},
+            "sound_devices": sound,
+            "cards": workers,
+            "board": [{"card": e.get("card")} for e in cfg.entries()],
+            "bus": {"subscribers": BUS.subscribers, "limit": MAX_SUBSCRIBERS},
+            "config": _safe_config(),
+        }
+
+    @app.get("/api/diag")
+    def diag_status():
+        folder = cfg.home / diagnostics.REPORT_DIR
+        reports = sorted(p.name for p in folder.glob("hamdash-report-*.zip")) \
+            if folder.exists() else []
+        return jsonify(debug=diagnostics.debug_on(),
+                       debug_files=[p.name for p in diagnostics.debug_files(cfg.home)],
+                       reports=reports, here=_from_here(),
+                       issues=diagnostics.ISSUES_URL)
+
+    @app.post("/api/diag/radio-check")
+    def diag_radio_check():
+        """Test my radio: reads only. It never sets, and never keys."""
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(rig.probe(body.get("rig") or request.args.get("rig")))
+        except rigsvc.RigError as exc:
+            return jsonify(error=str(exc)), 400
+
+    @app.post("/api/diag/report")
+    def diag_report():
+        if not _from_here():
+            return _not_here()
+        data = diagnostics.build_report(cfg.home, _report_info(),
+                                        secrets=_known_secrets())
+        path = diagnostics.write_report(cfg.home, data)
+        LOG.info("problem report written: %s (%d kB)", path, len(data) // 1024)
+        return jsonify(ok=True, name=path.name, path=str(path),
+                       folder=str(path.parent), size=len(data),
+                       issue=diagnostics.issue_url(
+                           __version__, sys.platform,
+                           (rig.active() or {}).get("backend", "")))
+
+    @app.get("/api/diag/report/<name>")
+    def diag_report_file(name):
+        if not _from_here():
+            return _not_here()
+        folder = cfg.home / diagnostics.REPORT_DIR
+        if not diagnostics.REPORT_NAME.fullmatch(name) or \
+                not (folder / name).is_file():
+            abort(404)
+        return send_from_directory(folder, name, as_attachment=True)
+
+    @app.post("/api/diag/reveal")
+    def diag_reveal():
+        """Open the reports folder in the file manager, on this machine."""
+        if not _from_here():
+            return _not_here()
+        folder = cfg.home / diagnostics.REPORT_DIR
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            diagnostics.reveal(folder)
+        except Exception as exc:                    # noqa: BLE001 - reported
+            return jsonify(error=f"could not open {folder}: {exc}",
+                           folder=str(folder)), 500
+        return jsonify(ok=True, folder=str(folder))
 
     @app.post("/api/shutdown")
     def shutdown_now():

@@ -11,16 +11,41 @@ Where to look first, and the failure modes that are worth knowing about before t
 
 ## If something goes wrong
 
-There is a log: `<config dir>/hamdash.log` (rotated, 4 files). It records the
-Python and pywebview versions, every card's stdout, and any unhandled
-exception including ones in background threads — which is what you want on
-Windows, where the app usually has no console to print to.
+**The quickest way to get help:** open **Settings → Help**, press **Make a
+problem report**, then **Open a GitHub issue** and drag the zip it saved
+into the issue. If the trouble is with a radio, tick **Debug logging**, save,
+and press **Test my radio** before you make the report — that records what
+the radio actually said, which is usually the whole answer.
+
+- **Debug logging** writes everything hamdash says to the radio, and what
+  came back, to `hamdash-debug-YYYY-MM-DD.log` files beside the main log.
+  Only the last 48 hours are kept and never more than 100 MB, so it is fine
+  to leave on. A reading that has not changed is written once rather than
+  twice a second.
+- **Test my radio** asks the radio a fixed list of questions. It only reads:
+  it never changes a setting and never transmits.
+- **The report** is a zip of the last two days of logs plus your versions,
+  radios, sound devices and cards, saved under `<config dir>/reports` (the
+  newest five are kept). Passwords and API keys are taken out; your
+  callsign, grid and the stations you have looked up are still in the logs,
+  so read it first if that matters to you. hamdash sends it nowhere itself,
+  and it can only be made on the machine hamdash runs on.
+
+There is a log: `<config dir>/hamdash.log`. It rolls over at 1 MB and keeps
+the five before it (`hamdash.log.1` to `.5`). It records the Python and
+pywebview versions, every card's stdout, and any unhandled exception
+including ones in background threads — which is what you want on Windows,
+where the app usually has no console to print to.
 
 ```
 %APPDATA%\hamdash\hamdash.log
 ~/Library/Application Support/hamdash/hamdash.log
 ~/.config/hamdash/hamdash.log
 ```
+
+On Windows, if something has the log open while it rolls over (for example
+`Get-Content -Wait`), hamdash keeps writing to the current file, notes that
+in it, and tries again a minute later. Nothing is lost.
 
 `GET /api/bus/stats` shows how many event streams are open, and
 `GET /api/health` lists wedged cards. Both are useful when the UI looks stuck.

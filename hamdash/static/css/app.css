@@ -614,3 +614,14 @@ html, body {
   .rail-left, .rail-right { gap: 8px; min-width: 0; }
   .station { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* Settings -> Help. The check's answer is a few lines of plain text;
+   it scrolls rather than stretching the sheet. */
+.diag-out {
+  background: var(--panel-2, var(--panel)); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 8px 10px; margin: 0 0 12px;
+  font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+  max-height: 220px; overflow: auto;
+}
+.diag-out[hidden], #s-report-download[hidden] { display: none; }
+#s-report-download { text-decoration: none; }

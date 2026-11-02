@@ -35,6 +35,7 @@ from hamdash import __version__
 from hamdash.app import create_app, reachable
 from hamdash.config import Config
 from hamdash import windows as native_windows
+from hamdash.services import diagnostics
 
 
 def ensure_streams() -> None:
@@ -260,18 +261,20 @@ def setup_logging(cfg) -> None:
         except (AttributeError, ValueError):
             pass
 
-    path = cfg.home / "hamdash.log"
-    handler = logging.handlers.RotatingFileHandler(
-        path, maxBytes=1_000_000, backupCount=3, encoding="utf-8",
-        errors="replace")
-    handler.setFormatter(_Truncating(
-        "%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    fmt = _Truncating("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+    # Rolls over by size and keeps diagnostics.MAIN_KEEP old files; it also
+    # keeps writing when Windows will not let it rename (see the handler).
+    handler = diagnostics.main_handler(cfg.home, fmt)
     console = logging.StreamHandler(sys.stdout)
+    console.setLevel(logging.INFO)
     console.setFormatter(_Truncating("%(levelname)-7s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
     root.addHandler(console)
+    # Debug logging has its own daily files; both handlers above stay at
+    # INFO, so the radio trace never reaches the main log or the console.
+    diagnostics.install(cfg.home, fmt)
 
     def hook(exc_type, exc, tb):
         logging.getLogger("hamdash").error(

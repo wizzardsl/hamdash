@@ -19,6 +19,20 @@ versions follow [SemVer](https://semver.org/). The version of record is
   own definition (lines A, B and C, the twelve countries that are Region 1
   wherever they lie, and Iran in Region 3) and Natural Earth's country
   outlines.
+- **Problem reports, in Settings → Help.** **Make a problem report** saves a
+  zip of the last two days of logs with your versions, radios, sound devices
+  and cards, passwords and API keys taken out, and **Open a GitHub issue**
+  opens the bug form ready for it. **Debug logging** records everything
+  hamdash says to the radio in daily files kept 48 hours (100 MB at most),
+  so it can stay on while you chase a problem, and **Test my radio** asks
+  the radio a fixed list of read-only questions for the report. Nothing is
+  sent anywhere by hamdash itself, and a report can only be made on the
+  machine hamdash runs on.
+
+### Changed
+- The log keeps five old files instead of three, and no longer drops
+  records on Windows when something has it open while it rolls over.
+
 
 ## [1.1.0]
 
