@@ -363,12 +363,17 @@ class RigctldBackend(Backend):
 
     kind = "rigctld"
     features = frozenset({F_VFO, F_SPLIT, F_SMETER, F_POWER, F_SWR})
+    # How old the other VFO's frequency may be before it is asked again.
+    OTHER_TTL = 8.0
 
     def __init__(self, host="127.0.0.1", port=4532, timeout=2.0, **_) -> None:
         self.host, self.port, self.timeout = host, int(port), timeout
         self._lock = threading.Lock()
         self._sock: socket.socket | None = None
         self._modes: list[str] | None = None
+        # The other VFO, read rarely: (which, hz or None, when). See state().
+        self._other: tuple[str, int | None, float] | None = None
+        self._keyed = False
 
     def where(self) -> str:
         return f"{self.host}:{self.port}"
@@ -411,7 +416,11 @@ class RigctldBackend(Backend):
                         raise RigError("rigctld closed the connection")
                     buf += chunk
             except OSError as exc:
-                self.close()
+                # The socket only. This was `self.close()`, which in
+                # HamlibBackend also terminates the rigctld it started -
+                # so one slow reply killed the daemon for good and every
+                # later read said "no rigctld".
+                self._drop_sock()
                 raise RigError(f"rigctld I/O failed: {exc}")
         return _extended_values(buf.decode(errors="replace"), line)
 
@@ -471,13 +480,7 @@ class RigctldBackend(Backend):
             # not the other VFO is simply not reported. A missing number is
             # better than the dial's number labelled as the other VFO.
             other = "B" if which == "A" else "A"
-            # Its first value is the frequency - labelled `Freq:` in the
-            # extended protocol this speaks, which the reader strips. Only
-            # the first: scanning the lines for "a number" took the
-            # passband (2200) as the frequency on a build that prints
-            # 14300000.000000, which isdigit() rejects.
-            info = self._maybe(f"\\get_vfo_info VFO{other}")
-            hz = _hz(_LABEL.sub("", info[0].strip(), count=1)) if info else None
+            hz = self._other_vfo(other, keyed=bool(ptt) or self._keyed)
             if hz:
                 out["freq_" + other.lower()] = hz
         else:
@@ -492,6 +495,42 @@ class RigctldBackend(Backend):
             out["split"] = flag
         out["features"] = sorted(can)
         return out
+
+    def _other_vfo(self, other: str, keyed: bool) -> int | None:
+        """The VFO we are not on, from a cache that is refreshed rarely.
+
+        **`\\get_vfo_info` is not a read on every radio.** Where a Hamlib
+        backend cannot address the other VFO directly, it switches to it,
+        reads, and switches back - so asking twice a second, as this did,
+        clicks the relays, flickers the display and on some radios changes
+        VFO under a transmission. So it is asked every `OTHER_TTL`, again
+        at once after anything here that can move it (`_forget_other`),
+        and **never while the radio is on the air**, by its own report or
+        because we keyed it. A refusal is remembered as well, or a radio
+        without the command is asked it twice a second for ever.
+
+        Keyed by which VFO it is: after A/B changes, from here or from the
+        front panel, a number read for B is not shown as A. While keyed a
+        cached value for the right VFO is shown however old - nothing but
+        the knob on the VFO not in use can move it, and it is not in use.
+        """
+        now = time.monotonic()
+        got = self._other
+        fresh = got and got[0] == other and now - got[2] < self.OTHER_TTL
+        if fresh or keyed:
+            return got[1] if got and got[0] == other else None
+        info = self._maybe(f"\\get_vfo_info VFO{other}")
+        # Its first value is the frequency - labelled `Freq:` in the
+        # extended protocol this speaks, which the reader strips. Only the
+        # first: scanning the lines for "a number" took the passband (2200)
+        # as the frequency on a build that prints 14300000.000000, which
+        # isdigit() rejects.
+        hz = _hz(_LABEL.sub("", info[0].strip(), count=1)) if info else None
+        self._other = (other, hz, now)
+        return hz
+
+    def _forget_other(self) -> None:
+        self._other = None
 
     def meters(self, tx: bool) -> dict:
         """Hamlib levels. STRENGTH is dB relative to S9 - a real scale, so
@@ -522,6 +561,7 @@ class RigctldBackend(Backend):
         return out
 
     def set_freq(self, hz: int) -> None:
+        self._forget_other()
         self._cmd(f"F {int(hz)}")
 
     def offered(self) -> list[str]:
@@ -560,9 +600,16 @@ class RigctldBackend(Backend):
             self._cmd(f"M {mode.upper()} -1")
 
     def set_ptt(self, on: bool) -> None:
+        # Set before keying and cleared only once unkeyed: a radio that
+        # cannot report PTT must still not have its VFOs walked mid-over.
+        if on:
+            self._keyed = True
         self._cmd(f"T {1 if on else 0}")
+        if not on:
+            self._keyed = False
 
     def set_vfo(self, which: str) -> None:
+        self._forget_other()
         self._cmd(f"V VFO{_vfo_name(which)}")
 
     def set_split(self, on: bool) -> None:
@@ -573,15 +620,19 @@ class RigctldBackend(Backend):
         other = {"VFOA": "VFOB", "VFOB": "VFOA", "A": "VFOB", "B": "VFOA",
                  "Main": "Sub", "Sub": "Main", "MAIN": "SUB",
                  "SUB": "MAIN"}.get(now, "VFOB")
+        self._forget_other()
         self._cmd(f"S {1 if on else 0} {other}")
 
-    def close(self) -> None:
+    def _drop_sock(self) -> None:
         if self._sock:
             try:
                 self._sock.close()
             except OSError:
                 pass
             self._sock = None
+
+    def close(self) -> None:
+        self._drop_sock()
 
 
 class FlrigBackend(Backend):
@@ -606,6 +657,9 @@ class FlrigBackend(Backend):
 
     kind = "flrig"
     features = frozenset({F_VFO, F_SPLIT, F_SWAP, F_SMETER, F_POWER, F_SWR})
+    # How often to ask flrig which radio it is driving. Not every poll: it
+    # is a question about the operator's setup, not about the dial.
+    XCVR_TTL = 30.0
 
     def __init__(self, host="127.0.0.1", port=FLRIG_PORT,
                  timeout=FLRIG_TIMEOUT, **_) -> None:
@@ -617,6 +671,10 @@ class FlrigBackend(Backend):
         self._lock = threading.Lock()
         self._rpc = None
         self._modes: list[str] = []
+        # Which radio flrig is driving, and when that was last asked. The
+        # mode list belongs to it, so a change of radio drops the list.
+        self._xcvr: str | None = None
+        self._xcvr_at = 0.0
 
     def where(self) -> str:
         return f"{self.host}:{self.port}"
@@ -736,7 +794,36 @@ class FlrigBackend(Backend):
         else:
             out["split"] = split
         out["features"] = sorted(can)
+        # Which radio, so the card re-reads the modes when it changes.
+        # Asked at most every XCVR_TTL, and never fatal.
+        xcvr = self._check_xcvr()
+        if xcvr:
+            out["rig_type"] = xcvr
         return out
+
+    def _check_xcvr(self, force: bool = False) -> str | None:
+        """Which radio flrig drives, asked at most every `XCVR_TTL`.
+
+        **flrig can be switched to another radio while hamdash runs**, and
+        the mode list is that radio's: an IC-7300's USB-D sent to an
+        FT-890 is a mode flrig accepts and silently does not set. So a
+        change of answer drops the cached list.
+        """
+        now = time.monotonic()
+        if not force and self._xcvr is not None \
+                and now - self._xcvr_at < self.XCVR_TTL:
+            return self._xcvr
+        self._xcvr_at = now
+        try:
+            got = str(self._get("rig.get_xcvr", "") or "").strip()
+        except RigError:
+            return self._xcvr
+        if self._xcvr is not None and got != self._xcvr:
+            LOG.info("flrig %s now drives %r (was %r); re-reading its modes",
+                     self.where(), got, self._xcvr)
+            self._modes = []
+        self._xcvr = got
+        return got
 
     def meters(self, tx: bool) -> dict:
         """What the needle says - and only what it can honestly say.
@@ -777,9 +864,18 @@ class FlrigBackend(Backend):
             # anything computed here. `_s_units_for` is the fallback.
             units = str(self._get("rig.get_Sunits", "") or "").strip()
             dbm = _as_float(self._get("rig.get_DBM"))
-            return {"s_pct": pct, "s_dbm": dbm,
-                    "s_units": units or (_s_units_for(pct)
-                                         if pct is not None else "")}
+            out = {"s_pct": pct,
+                   "s_units": units or (_s_units_for(pct)
+                                        if pct is not None else "")}
+            # **0 dBm beside an S-meter is not a reading.** It is S9+73 -
+            # a signal that would be heard across town - and it is what
+            # flrig answers for a radio whose dBm it cannot work out, so it
+            # sat beside a real "S5" as "S5 0 dBm". A dBm of exactly 0 with
+            # any S-meter answer is "not measured", and left out.
+            if dbm is not None and not (dbm == 0 and (pct is not None
+                                                      or units)):
+                out["s_dbm"] = dbm
+            return out
         except RigError as exc:
             return {"error": str(exc)}
 
@@ -800,9 +896,11 @@ class FlrigBackend(Backend):
             st["rig_type"] = got["rig_type"]
         return st
 
-    def modes(self) -> list[str]:
+    def modes(self, check: bool = False) -> list[str]:
         """The radio's own names, for writing. Not cached while empty, so a
-        flrig started after hamdash is asked again."""
+        flrig started after hamdash is asked again, and dropped when flrig
+        is switched to another radio (`_check_xcvr`; `check` asks now)."""
+        self._check_xcvr(force=check)
         if not self._modes:
             try:
                 got = self._call("rig.get_modes")
@@ -828,13 +926,29 @@ class FlrigBackend(Backend):
         self._call("rig.set_frequency", float(int(hz)))
 
     def set_mode(self, mode: str, width: int = 0) -> None:
-        want = radio_mode(mode, self.modes())
+        # A write, so the radio is asked about now rather than up to
+        # XCVR_TTL ago: a stale list is a mode flrig takes and ignores.
+        want = radio_mode(mode, self.modes(check=True))
         if not want:
             offers = ", ".join(self.modes()) or "nothing"
             raise RigError(
                 f"flrig's radio has no mode like {mode!r}. It offers "
                 f"{offers}.")
-        self._call("rig.set_mode", want)
+        try:
+            self._call("rig.set_mode", want)
+        except RigError as exc:
+            if not str(exc).startswith("flrig refused"):
+                raise
+            # Refused a mode the list claims: the list is the suspect.
+            # Read it again and say what the radio has now, if that is
+            # the reason; otherwise flrig's own refusal stands.
+            self._modes = []
+            if radio_mode(mode, self.modes()) == want:
+                raise
+            offers = ", ".join(self.modes()) or "nothing"
+            raise RigError(
+                f"flrig's radio has no mode like {mode!r} any more. It "
+                f"offers {offers}.") from exc
 
     def set_ptt(self, on: bool) -> None:
         # flrig's own help says this "waits for state change", so it is the
@@ -899,6 +1013,7 @@ class HamlibBackend(RigctldBackend):
         self.rigctld_path = rigctld_path
         self.proc: subprocess.Popen | None = None
         self.log: list[str] = []
+        self.open_error = ""
         self._start()
 
     def _start(self) -> None:
@@ -928,8 +1043,9 @@ class HamlibBackend(RigctldBackend):
             extra["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self.proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", **extra)
+                cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", **extra)
         except OSError as exc:
             raise RigError(f"could not start rigctld: {exc}")
         threading.Thread(target=self._drain, daemon=True).start()
@@ -949,13 +1065,110 @@ class HamlibBackend(RigctldBackend):
     def _drain(self) -> None:
         assert self.proc and self.proc.stdout
         for line in self.proc.stdout:
-            line = line.rstrip()
+            self._heard(line)
+
+    # What rigctld prints when it cannot open the radio, most telling first.
+    # Recorded from rigctld 4.7.2 given a port that is not there:
+    #   serial_open: Unable to open /dev/x - No such file or directory
+    #   port_open: serial_open(/dev/x) status=-6, err=No such file ...
+    #   rig.c(1284):rig_open returning2(-6) IO error
+    _OPEN_FAILED = (re.compile(r"Unable to open (.+)"),
+                    re.compile(r"port_open: .*err=(.+)"),
+                    re.compile(r"rig_open returning\S*\((-\d+)\)\s*(.*)"))
+
+    def _heard(self, line: str) -> None:
+        line = line.rstrip()
+        if line.strip():
             self.log.append(line)
             del self.log[:-60]
-            print(f"[rigctld {self.model}] {line}")
+        print(f"[rigctld {self.model}] {line}")
+        # **A rigctld that cannot open the radio goes on listening** (Hamlib
+        # 4.5 and later), so every read fails and nothing says why. Its
+        # reason is printed - but **into a block-buffered pipe**, so on
+        # 4.7.2 it arrives only when the daemon exits (measured: nothing
+        # after two seconds, all 881 bytes the moment it was terminated;
+        # a pty does not help either). It is kept here for the versions
+        # and builds that do flush, and for the reason a dying one gives;
+        # `_explain` works out what it can without it.
+        for rank, pat in enumerate(self._OPEN_FAILED):
+            m = pat.search(line)
+            if not m:
+                continue
+            said = m.group(1).strip() if rank < 2 else \
+                " ".join(x for x in m.groups() if x).strip()
+            if rank == 0:
+                said = f"cannot open {said}"
+            if not self.open_error or rank <= self._open_rank:
+                self.open_error, self._open_rank = said, rank
+            break
+
+    _open_rank = 99
+
+    def _cmd_raw(self, line: str) -> list[str]:
+        try:
+            out = super()._cmd_raw(line)
+        except RigError as exc:
+            raise RigError(self._explain(exc)) from exc
+        # The radio answered, so whatever stopped it opening has passed
+        # (Hamlib retries the open itself). Only the frequency counts:
+        # rigctld answers `_` and `M ?` from its tables with no radio.
+        if line == "f":
+            self.open_error, self._open_rank = "", 99
+        return out
+
+    def _explain(self, exc: RigError) -> str:
+        """A failed command, with what rigctld said about the radio.
+
+        A 4.7.2 rigctld that could not open its port does not even answer
+        `f` with an error code: it tries the open again, gives up after
+        about six seconds and resets the connection. Neither that nor
+        "rig returned error -6" names the port, which is the thing to fix.
+        """
+        if self.proc is not None and self.proc.poll() is not None:
+            return (f"rigctld has stopped (exit {self.proc.returncode}): "
+                    f"{self.why() or 'no output'}")
+        # Only a radio that is not answering. A refusal (-11, "not
+        # available") is a working radio saying it cannot do one thing,
+        # and is passed on as it is.
+        said = str(exc)
+        code = re.search(r"error (-?\d+)", said)
+        if not ("I/O failed" in said or "closed the connection" in said
+                or (code and code.group(1) in ("-5", "-6"))):
+            return said
+        if self.open_error:
+            return f"{exc} - rigctld could not open the radio: {self.open_error}"
+        missing = self._port_missing()
+        if missing:
+            return f"{exc} - rigctld cannot open {self.port_name}: {missing}"
+        return (f"{exc} - rigctld is running, but the radio on "
+                f"{self.port_name} is not answering through it. Check the "
+                f"port, the speed and that the radio is on.")
+
+    def _port_missing(self) -> str:
+        """Why the serial port cannot be the radio, if this side can tell.
+
+        Asked only once a read has failed, so a listing that takes a moment
+        costs nothing on a working radio. A path under /dev that does not
+        exist is certain; a COM port absent from a listing that has others
+        in it is as good. An empty listing proves nothing - pyserial may be
+        missing - so it says nothing.
+        """
+        name = str(self.port_name or "")
+        if not name:
+            return ""
+        if name.startswith("/dev/"):
+            return "" if os.path.exists(name) else f"there is no {name}"
+        ports = serial_ports()
+        if ports and name.upper() not in (p.upper() for p in ports):
+            return (f"this machine has no {name} (it has "
+                    f"{', '.join(ports)}). Plugged into another USB socket, "
+                    f"a USB serial adapter usually gets another number.")
+        return ""
 
     def why(self) -> str:
         """rigctld's own last words, which say far more than a closed socket."""
+        if self.open_error:
+            return self.open_error
         return " / ".join(self.log[-3:])
 
     def close(self) -> None:
@@ -1832,7 +2045,7 @@ class RigLink:
                        st.get("ok"), st.get("rig_id"), st.get("rig"),
                        st.get("audio_in"), st.get("audio_out"),
                        st.get("vfo"), st.get("freq_a"), st.get("freq_b"),
-                       st.get("split"))
+                       st.get("split"), st.get("rig_type"))
                 if key != last:
                     last = key
                     self.publish(st)

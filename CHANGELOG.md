@@ -6,6 +6,23 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **Hamlib radios no longer have their VFOs switched twice a second.**
+  Reading the other VFO's frequency makes some radios switch to it and
+  back, which clicked and flickered; it is now read every few seconds and
+  straight after you change VFO, split or frequency, and never while the
+  radio is transmitting.
+- **A Hamlib radio that cannot be opened says why.** Instead of "rig
+  returned error -6" or a timeout, the rig card names the serial port - for
+  example "there is no /dev/ttyUSB1", or "this machine has no COM13 (it has
+  COM3, COM4)". One slow reply also no longer stops Hamlib for the rest of
+  the session.
+- **flrig switched to another radio brings that radio's modes.** The mode
+  list was read once and kept, so after pointing flrig at a different radio
+  the card offered, and silently failed to set, the old radio's modes.
+- **No more "0 dBm" beside the S-meter** on radios flrig cannot give a dBm
+  for.
+
 ## [1.2.0]
 
 ### Added

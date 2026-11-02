@@ -388,5 +388,294 @@ class TestTheWatchdogRunsWhenTheReadFails(unittest.TestCase):
                       "the watchdog never ran while the read was failing")
 
 
+class Clock:
+    """time.monotonic, moved by hand."""
+
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def other_reads(b):
+    return sum(1 for x in b.sent if x.startswith("\\get_vfo_info"))
+
+
+class TestTheOtherVfoIsNotWalkedEveryPoll(unittest.TestCase):
+    """`\\get_vfo_info VFOB` was asked twice a second. Where Hamlib cannot
+    address the other VFO directly it switches, reads and switches back -
+    relays clicking, the display flickering, and on some radios a VFO
+    change under a transmission."""
+
+    def setUp(self):
+        self.clock = Clock()
+        p = mock.patch.object(rigs.time, "monotonic", self.clock)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_it_is_read_once_and_then_from_the_cache(self):
+        b = a_rigctld(BASIC)
+        for _ in range(6):
+            st = b.state()
+            self.clock.t += 0.5
+        self.assertEqual(st["freq_b"], 14300000)
+        self.assertEqual(other_reads(b), 1)
+
+    def test_it_is_read_again_once_it_is_old(self):
+        b = a_rigctld(BASIC)
+        b.state()
+        self.clock.t += rigs.RigctldBackend.OTHER_TTL + 0.1
+        b.state()
+        self.assertEqual(other_reads(b), 2)
+
+    def test_anything_that_can_move_it_reads_it_at_once(self):
+        answers = {**BASIC, "F 7074000": [], "V VFOA": [], "S 1 VFOB": []}
+        for do in (lambda b: b.set_freq(7074000), lambda b: b.set_vfo("A"),
+                   lambda b: b.set_split(True)):
+            with self.subTest(do=do):
+                b = a_rigctld(answers)
+                b.state()
+                do(b)
+                b.state()
+                self.assertEqual(other_reads(b), 2)
+
+    def test_never_while_the_radio_says_it_is_transmitting(self):
+        b = a_rigctld({**BASIC, "t": ["1"]})
+        for _ in range(4):
+            st = b.state()
+            self.clock.t += 20
+        self.assertEqual(other_reads(b), 0)
+        self.assertNotIn("freq_b", st, "nothing read, nothing shown")
+
+    def test_never_while_we_keyed_a_radio_that_cannot_say(self):
+        b = a_rigctld({**BASIC, "t": REFUSED, "T 1": [], "T 0": []})
+        b.set_ptt(True)
+        b.state()
+        self.assertEqual(other_reads(b), 0)
+        b.set_ptt(False)
+        b.state()
+        self.assertEqual(other_reads(b), 1)
+
+    def test_a_value_read_for_b_is_not_shown_as_a(self):
+        """The front panel's A/B: now on B, keyed, the cache holds B."""
+        answers = dict(BASIC)
+        b = a_rigctld(answers)
+        b.state()                                # caches B = 14300000
+        answers.update({"v": ["VFOB"], "t": ["1"]})
+        st = b.state()
+        self.assertEqual(st["vfo"], "B")
+        self.assertNotIn("freq_a", st)
+
+    def test_a_radio_that_refuses_it_is_not_asked_every_poll(self):
+        b = a_rigctld({**BASIC, "\\get_vfo_info VFOB": REFUSED})
+        for _ in range(6):
+            st = b.state()
+            self.clock.t += 0.5
+        self.assertNotIn("freq_b", st)
+        self.assertEqual(other_reads(b), 1)
+
+
+@unittest.skipUnless(shutil.which("rigctld"), "Hamlib is not installed")
+class TestAgainstHamlibsDummyRadio(unittest.TestCase):
+    """The same, against a real rigctld (`-m 1`), not a table."""
+
+    def test_six_polls_one_other_vfo_read(self):
+        b = rigs.HamlibBackend(model=1, port="/dev/null")
+        self.addCleanup(b.close)
+        b.sent = []
+        real = b._cmd_raw
+
+        def spy(line):
+            b.sent.append(line)
+            return real(line)
+
+        b._cmd_raw = spy
+        for _ in range(6):
+            st = b.state()
+        self.assertTrue(st["ok"])
+        self.assertTrue(st.get("freq_b"))
+        self.assertEqual(other_reads(b), 1)
+
+
+class TestFlrigFollowsTheRadioItDrives(unittest.TestCase):
+    """The mode list was read once for the life of the backend, so flrig
+    switched from an IC-7300 to an FT-890 kept offering USB-D - which
+    flrig's `set_mode` accepts and silently does not set."""
+
+    def setUp(self):
+        self.clock = Clock()
+        p = mock.patch.object(rigs.time, "monotonic", self.clock)
+        p.start()
+        self.addCleanup(p.stop)
+        self.b = a_flrig({**IC7300, "rig.get_xcvr": "IC-7300"})
+        self.flrig = self.b._call
+
+    def switch_to_ft890(self):
+        self.flrig.values.update({
+            "rig.get_xcvr": "FT-890", "rig.get_mode": "USB",
+            "rig.get_modes": ["LSB", "USB", "CW-W", "CW-N", "AM-W", "AM-N",
+                              "FM"]})
+
+    def count(self, name):
+        return sum(1 for n, _ in self.flrig.sent if n == name)
+
+    def test_a_new_radio_brings_its_own_list(self):
+        self.assertIn("PKTUSB", self.b.offered())
+        self.switch_to_ft890()
+        self.clock.t += rigs.FlrigBackend.XCVR_TTL + 1
+        st = self.b.state()
+        self.assertEqual(st["rig_type"], "FT-890",
+                         "the card re-reads the modes on this")
+        self.assertNotIn("PKTUSB", self.b.offered())
+
+    def test_it_is_not_asked_every_poll(self):
+        for _ in range(10):
+            self.b.state()
+            self.clock.t += 0.5
+        self.assertEqual(self.count("rig.get_xcvr"), 1)
+
+    def test_a_write_asks_now_and_refuses_what_the_new_radio_lacks(self):
+        self.b.offered()
+        self.switch_to_ft890()                   # no time has passed
+        with self.assertRaises(rigs.RigError) as got:
+            self.b.set_mode("PKTUSB")
+        self.assertIn("CW-N", str(got.exception))
+        self.assertNotIn(("rig.set_mode", ("USB-D",)), self.flrig.sent)
+
+    def test_a_refused_mode_re_reads_the_list(self):
+        self.b.offered()
+        self.flrig.missing.add("rig.set_mode")
+        self.flrig.values["rig.get_modes"] = ["LSB", "USB"]
+        with self.assertRaises(rigs.RigError) as got:
+            self.b.set_mode("CWR")
+        self.assertIn("any more", str(got.exception))
+        self.assertIn("LSB, USB", str(got.exception))
+        self.assertEqual(self.count("rig.get_modes"), 2)
+
+
+class TestZeroDbmIsNotAReading(unittest.TestCase):
+    """flrig answers `get_DBM` 0 for a radio it cannot convert, and the card
+    drew "S 5 0 dBm" - S9+73 beside an S5."""
+
+    def test_zero_beside_an_s_meter_is_left_out(self):
+        m = a_flrig({**IC7300, "rig.get_DBM": "0"}).meters(False)
+        self.assertEqual(m["s_units"], "S 5")
+        self.assertNotIn("s_dbm", m)
+
+    def test_a_real_dbm_stays(self):
+        m = a_flrig(IC7300).meters(False)
+        self.assertEqual(m["s_dbm"], -97.0)
+
+    def test_the_card_draws_no_dbm_when_it_is_absent(self):
+        page = (Path(__file__).parents[1] / "plugins" / "rig_control"
+                / "index.html").read_text(encoding="utf-8")
+        self.assertIn("if (m.s_dbm !== undefined && m.s_dbm !== null)", page)
+
+
+# What rigctld 4.7.2 printed for `-m 1013 -r /dev/hamdash-nope`, verbatim.
+RIGCTLD_OPEN_FAILED = """\
+rig_open: error = yaesu: initrigs4_yaesu called
+rig.c(1051):rig_open entered
+serial_open: /dev/hamdash-nope
+serial_open(332): open failed#1 No such file or directory
+serial_open: Unable to open /dev/hamdash-nope - No such file or directory
+port_open: serial_open(/dev/hamdash-nope) status=-6, err=No such file or directory
+rig.c(1284):rig_open returning2(-6) IO error
+
+IO error
+ /dev/hamdash-nope No such file or directory
+"""
+
+
+class Alive:
+    returncode = None
+
+    def __init__(self):
+        self.terminated = False
+
+    def poll(self):
+        return None
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def a_hamlib(port="/dev/hamdash-nope"):
+    with mock.patch.object(rigs.HamlibBackend, "_start"):
+        b = rigs.HamlibBackend(model=1013, port=port)
+    b.proc = Alive()
+    return b
+
+
+class TestHamlibSaysWhyItCannotOpen(unittest.TestCase):
+    """A 4.5+ rigctld that cannot open the radio goes on listening, so every
+    read said "rig returned error -6" and nothing named the port."""
+
+    def fail_with(self, b, msg):
+        return mock.patch.object(rigs.RigctldBackend, "_cmd_raw",
+                                 side_effect=rigs.RigError(msg))
+
+    def test_its_own_words_are_kept(self):
+        b = a_hamlib()
+        with mock.patch("builtins.print"):
+            for line in RIGCTLD_OPEN_FAILED.splitlines():
+                b._heard(line)
+        self.assertEqual(b.open_error, "cannot open /dev/hamdash-nope - "
+                                       "No such file or directory")
+        with self.fail_with(b, "rig returned error -6 for 'f'"):
+            st = b.state()
+        self.assertIn("cannot open /dev/hamdash-nope", st["error"])
+
+    def test_without_them_a_missing_device_is_named(self):
+        b = a_hamlib("/dev/hamdash-not-here")
+        with self.fail_with(b, "rigctld I/O failed: timed out"):
+            st = b.state()
+        self.assertIn("there is no /dev/hamdash-not-here", st["error"])
+
+    def test_a_com_port_the_machine_does_not_have(self):
+        b = a_hamlib("COM13")
+        with self.fail_with(b, "rig returned error -5 for 'f'"), \
+                mock.patch.object(rigs, "serial_ports",
+                                  return_value=["COM3", "COM4"]):
+            st = b.state()
+        self.assertIn("no COM13 (it has COM3, COM4)", st["error"])
+
+    def test_a_refusal_is_passed_on_as_it_is(self):
+        b = a_hamlib()
+        b.open_error = "cannot open /dev/x"
+        with self.fail_with(b, "rig returned error -11 for 't'"):
+            with self.assertRaises(rigs.RigError) as got:
+                b._cmd_raw("t")
+        self.assertEqual(str(got.exception), "rig returned error -11 for 't'")
+
+    def test_a_slow_reply_does_not_kill_the_daemon(self):
+        """`_cmd_raw` called `self.close()` on a timeout, and HamlibBackend's
+        close terminates the rigctld it started."""
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        self.addCleanup(server.close)
+        b = a_hamlib()
+        b.port, b.timeout = server.getsockname()[1], 0.2
+        self.assertFalse(b.state()["ok"])
+        self.assertFalse(b.proc.terminated)
+
+    @unittest.skipUnless(shutil.which("rigctld") and rigs.os.name != "nt",
+                         "needs Hamlib, and a /dev path")
+    def test_against_a_real_rigctld(self):
+        """4.7.2 holds its reason in a buffered pipe until it exits, and
+        answers `f` by timing out - so this is the port check's job."""
+        b = rigs.HamlibBackend(model=1013, port="/dev/hamdash-not-here")
+        self.addCleanup(b.close)
+        st = b.state()
+        self.assertFalse(st["ok"])
+        self.assertIn("/dev/hamdash-not-here", st["error"])
+        self.assertIsNone(b.proc.poll(), "and rigctld is still running")
+
+
 if __name__ == "__main__":
     unittest.main()
