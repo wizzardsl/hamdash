@@ -2,9 +2,9 @@
   "id": "decoder",
   "name": "Decoder",
   "kind": "python",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "HamDash",
-  "description": "Decode digital modes from the radio's audio. CW for now",
+  "description": "Decode digital modes from the radio's audio: CW and RTTY",
   "entry": "card.py",
   "view": "index.html",
   "w": 5,
@@ -22,16 +22,45 @@
       "type": "select",
       "label": "Mode",
       "options": [
-        "cw"
+        "cw",
+        "rtty"
       ],
       "default": "cw",
-      "help": "Only CW decodes so far. The card's own dropdown lists what else is planned."
+      "help": "CW or amateur RTTY (45.45 baud, 170 Hz shift). The card's own dropdown lists what else is planned. Either way the signal is found anywhere in the passband; nothing needs tuning to a set audio frequency."
+    },
+    "reverse": {
+      "type": "select",
+      "label": "RTTY polarity",
+      "options": [
+        "auto",
+        "normal",
+        "reversed"
+      ],
+      "default": "auto",
+      "help": "Mark is the higher radio frequency, so it is the higher audio tone in USB and the lower in LSB. Auto asks the radio which sideband it is in. If the lamp is lit and nothing prints, this is the first thing to flip - the Rev button on the tile does the same."
+    },
+    "usos": {
+      "type": "bool",
+      "label": "RTTY unshift on space",
+      "default": true,
+      "help": "A space returns to letters, which nearly every station assumes. If numbers after a space come out as letters (599 TOO), the station is not doing it: turn this off."
+    },
+    "stop_bits": {
+      "type": "select",
+      "label": "RTTY stop bits",
+      "options": [
+        "1.5",
+        "1",
+        "2"
+      ],
+      "default": "1.5",
+      "help": "1.5 is the amateur standard. The decoder checks the whole stop bit to stay in step, so a station sending 1 reads as rubbish until this matches it."
     },
     "source": {
       "type": "string",
       "label": "Audio input",
       "default": "mock",
-      "help": "'radio' uses whatever sound device the radio in use is set to in Settings -> Radio, so it follows you between rigs. 'mock' synthesises Morse so the card works with no radio attached. Anything else is matched against the input's name, e.g. 'USB Audio CODEC'."
+      "help": "'radio' uses whatever sound device the radio in use is set to in Settings -> Radio, so it follows you between rigs. 'mock' synthesises a signal in the chosen mode so the card works with no radio attached. Anything else is matched against the input's name, e.g. 'USB Audio CODEC'."
     },
     "wrap": {
       "type": "bool",

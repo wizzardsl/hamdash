@@ -27,6 +27,9 @@
      must not look the same as one that is listening to silence. */
   .ear.off { background: var(--alert); opacity: .55; }
   button.run { min-width: 4.4em; }
+  /* Lit when RTTY is being read reversed. */
+  #rev.on { color: var(--accent); border-color: var(--accent); }
+  #rev[hidden] { display: none; }
   button.run.on { color: var(--accent); border-color: var(--accent); }
   body.stopped #out { opacity: .5; }
 
@@ -54,6 +57,8 @@
   <select id="source" aria-label="Audio input" title="Where the audio comes from"></select>
   <span class="spacer"></span>
   <span class="read" id="read"></span>
+  <button id="rev" type="button" hidden
+          title="Read RTTY the other way up: mark as the lower tone (LSB) or the higher (USB)">Rev</button>
   <button class="run" id="run" type="button">Stop</button>
   <button id="clear" type="button" title="Empty the window. The speed estimate is kept.">Clear</button>
 </div>
@@ -88,6 +93,7 @@ const WHO = (() => {
 })();
 
 let conf = {};
+let revNow = false;       // whether RTTY is being read reversed, as reported
 let seq = 0;              // the next character we have not seen
 let fading = [];          // spans recently added, to un-highlight
 
@@ -130,11 +136,28 @@ setInterval(() => {
 function readout(d) {
   $('#ear').classList.toggle('on', !!d.hearing);
   const bits = [];
-  if (d.wpm) bits.push(`<b>${d.wpm}</b> wpm`);
-  if (d.tone_hz) bits.push(`${Math.round(d.tone_hz)} Hz`);
+  if (d.mode === 'rtty') {
+    if (d.mark_hz) bits.push(`M <b>${Math.round(d.mark_hz)}</b>`
+                             + ` S ${Math.round(d.space_hz)} Hz`);
+  } else {
+    if (d.wpm) bits.push(`<b>${d.wpm}</b> wpm`);
+    if (d.tone_hz) bits.push(`${Math.round(d.tone_hz)} Hz`);
+  }
   if (d.snr_db) bits.push(`${Math.round(d.snr_db)} dB`);
   $('#read').innerHTML = bits.join(' · ');
-  $('#err').textContent = d.error || '';
+  const rev = $('#rev');
+  rev.hidden = d.mode !== 'rtty';
+  rev.classList.toggle('on', !!d.reverse);
+  revNow = !!d.reverse;
+  // A pair found and nothing printing is nearly always the polarity: read
+  // the wrong way up, mark is the start bit and nothing frames. Saying so
+  // beats a lit lamp over an empty window.
+  let hint = '';
+  if (d.mode === 'rtty' && d.hearing && running
+      && (d.quiet_for === null || d.quiet_for > 8)) {
+    hint = 'Hearing RTTY but nothing frames - try Rev, or the stop bits.';
+  }
+  $('#err').textContent = d.error || hint;
 }
 
 function paintRun() {
@@ -248,9 +271,32 @@ $('#clear').onclick = async () => {
   } catch (e) { $('#err').textContent = e.message; }
 };
 
+function decoderOf(c) {
+  return [c.mode || 'cw', c.reverse || 'auto', c.usos !== false,
+          c.stop_bits || '1.5'].join('|');
+}
+
+// Each mode has its own text on the card, counted from its own zero, so the
+// window starts again rather than splicing two decoders' output together.
+function restartText() {
+  $('#out').textContent = '';
+  fading = [];
+  seq = 0;
+}
+
 $('#mode').onchange = async () => {
   conf = { ...conf, mode: $('#mode').value };
-  try { await HD.saveSettings(conf); } catch { /* it applies now anyway */ }
+  restartText();
+  try { await HD.saveSettings({ mode: conf.mode }); } catch { /* it applies now anyway */ }
+};
+
+// The quickest fix there is for RTTY that will not read, so it is on the
+// tile rather than in the settings sheet. Explicit, not auto: pressing it
+// means "the other way from what you are doing now".
+$('#rev').onclick = async () => {
+  conf = { ...conf, reverse: revNow ? 'normal' : 'reversed' };
+  restartText();
+  try { await HD.saveSettings({ reverse: conf.reverse }); } catch { /* as above */ }
 };
 
 $('#source').onchange = async () => {
@@ -284,7 +330,10 @@ HD.on('radio.state', (s) => {
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
   HD.onSettings((v) => {
+    // A different decoder is a different text, whichever control chose it.
+    const was = decoderOf(conf);
     conf = v || {};
+    if (decoderOf(conf) !== was) restartText();
     applyWrap();
     fillLists();
     // The settings sheet can turn it off too, and the tile has to follow.

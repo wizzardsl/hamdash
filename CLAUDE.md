@@ -1397,6 +1397,80 @@ QRM or fading.
   starts to quantise a 25 ms dot, which is documented rather than pretended
   about.
 
+### RTTY
+
+`plugins/decoder/rtty.py`, the same shape as `cw.py`; `tests/test_rtty.py`
+drives it with synthesised FSK (`rtty.rtty_audio`, continuous phase, bit
+edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
+
+- **The pair is found by keying, not by level.** Two tones 170 Hz apart
+  take turns, so at every bit edge one rises as the other falls. Pairs are
+  scored by the correlation of their *changes in level* (`pair_scores`);
+  among those below `LOCK_CORR` the strongest wins. A louder carrier is the
+  loudest pair in the passband and never qualifies - the mutation test
+  builds a loudest-pair tracker from the same scores and shows it choosing
+  the carrier. `MIN_SWING_DB` is there because correlation does not care how
+  small a wobble is: in clean audio a carrier's level is moved slightly by
+  the RTTY leaking into it, and that once took the lock.
+- **Changes over one whole frame, not one hop.** The frames overlap by
+  half, so a one-hop change sees half an edge: a clean signal correlated at
+  -0.45 that way, right on the threshold, and at -0.78 over two hops. Noise
+  reaches -0.22 at worst either way.
+- **Digital silence is not a floor.** Before the 40 dB clamp, the step from
+  -120 dB into a synthetic signal was one huge *common* change in both bins
+  and outweighed every edge after it; a short over never locked. Real audio
+  never has that floor, but every test does, so the clamp matters. Level
+  correlation works too with the clamp - changes were kept because they
+  separate a little better (-0.58 against -0.49 at -6 dB), not because
+  levels fail.
+- **A few seconds of raw audio are replayed at lock**, like the CW ring,
+  but of samples rather than levels, because the demodulator needs the
+  waveform. Not from before the last character printed, or moving to a new
+  station prints the end of the old one twice.
+- **Drift is retuned in place; a far pair is a new station.** Within
+  `DRIFT_HZ` the mixer frequencies move and the bit timing is kept; further
+  needs `MOVE_MARGIN_DB` unless the current pair has stopped keying. 5 Hz/s
+  across a 19 s message is tested, about 90 Hz - twice the matched
+  filter's width.
+- **The UART slides past an edge that does not frame**, rather than
+  skipping a whole character, and **checks the whole 1.5-bit stop and the
+  1.5 bits before the start**. Any edge has *some* mark before it, so a
+  one-bit check is nearly vacuous; the extra half bit is what a data
+  transition usually lacks. Swept over 40 cut points into one message, a
+  one-bit check framed on data edges once (inside RYRY, the classic case)
+  and the full check never did. The cost is `stop_bits` being a real
+  setting: a 1-stop sender read at 1.5 is rubbish, not merely lossy.
+- **Once locked the UART reads the noise between overs**, and noise passes
+  the framing checks now and then. One character's quality (mean
+  |discriminator| at its seven sample points) cannot separate a -6 dB
+  signal from noise: the signal's median is 0.57, which is also the worst
+  noise scored in four minutes. A neighbourhood can - noise's
+  three-character mean never passed 0.45. So a character prints if it is sure alone
+  (`SURE_QUALITY`) or vouched for by a neighbour that is not itself noisy.
+  Each one waits for the next, about 165 ms; `flush()` settles the last one
+  of a recording.
+- **The character in front of an over.** A noise edge 2-3 bits before a
+  transmitter comes up on idle mark has its last data bits and the stop in
+  clean mark and scored as a decisive character: a V before the over. Its
+  start bit is noise, well below the rest - but HF fades one tone under the
+  other all the time, so that is grounds only for not being *sure alone*,
+  never for dropping. A noise neighbour next door must not vouch for it
+  either, which was the second half of that bug.
+- **Polarity is not guessed from the audio.** Normal is mark-high (USB),
+  reversed mark-low (LSB); the card's `auto` reads the radio's mode, and
+  treats the mock as USB whatever the simulated radio says. Read the wrong
+  way up mostly nothing prints while the lamp is lit, so the tile says to
+  try Rev after eight quiet seconds.
+- **Figures are US TTY**, what North American amateur RTTY and fldigi use:
+  no `=`, so the mock's exchange avoids it.
+- **The card holds a decoder per mode on one input** (`Stream`), because a
+  sound card opens once and two tiles may want CW and RTTY from one radio.
+  The mock is a listener per mode instead (`listen_key`): CW tracks
+  whichever bin is keyed, and an RTTY tone is a keyed bin.
+- **numpy float32 is not JSON.** The refined tone frequencies were float32
+  and made every poll of an RTTY tile a 500 - found only on the scratch
+  instance, with the module's tests all green. `TestTheReadouts` holds it.
+
 ## Logbook sync
 
 - **A button in Settings acts on what is on screen, so it saves first.**
@@ -2696,10 +2770,12 @@ it into the GitHub bug form, which is pre-filled by the button.
   watched doing each job on one radio. What is still unproven anywhere is a
   *second* rig model - everything here is one FT-890/900 - so anything that
   looks like a rig quirk should be suspected of being this rig's quirk.
-- The decoder's other modes. RTTY and PSK31 are the next two and are a
-  different shape of problem - both are continuous rather than keyed, so the
-  tone tracking and the speed estimate here do not carry over, but the card,
-  the polling and the text window do.
+- The decoder's other modes. PSK31 is next, and is a different shape of
+  problem again - phase rather than tones, so neither the CW tracker nor
+  RTTY's pair search carries over, but the card's per-mode streams, the
+  polling and the text window do. RTTY at other speeds and shifts (50 and
+  75 baud, 425 and 850 Hz) is a constructor argument away in `rtty.py` and
+  untested.
 - The decoder publishes nothing. A callsign it has copied would be worth
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"
