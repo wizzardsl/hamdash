@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.2.0]
+
 ### Added
 - **ITU and CQ zone layers on the maps.** Tick **ITU zones** or **CQ
   zones** in the layer control on the Map or the PSK Reporter card to
