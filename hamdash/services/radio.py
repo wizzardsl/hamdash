@@ -17,7 +17,65 @@ import time
 from ..bus import BUS
 from .bands import for_hz as band_for
 
-MODES = ["LSB", "USB", "CW", "CWR", "AM", "FM", "RTTY", "PKTUSB", "DATA-U"]
+# hamdash's names for modes, which are Hamlib's. A radio that cannot say
+# what it offers is offered these; one that can (flrig's `rig.get_modes`,
+# rigctld's `M ?`) is offered its own list, in these names.
+MODES = ["LSB", "USB", "CW", "CWR", "AM", "FM", "RTTY", "RTTYR",
+         "PKTUSB", "PKTLSB"]
+
+# **Every radio spells a mode its own way**, and the same radio spells it
+# differently through each backend: an IC-7300 through flrig says USB-D,
+# a Yaesu says DATA-U, Hamlib says PKTUSB, and a memory saved under one
+# was refused by the next. Every name maps to one of ours here, once, and
+# both directions go through it - reading (`canon_mode`) and writing
+# (`radio_mode`) - so they cannot disagree.
+_ALIASES = {
+    "CWR": ("CW-R", "CWR"),
+    "RTTY": ("RTTY-L", "RTTY-LSB", "FSK", "RTTY"),
+    "RTTYR": ("RTTY-R", "RTTY-U", "RTTY-USB", "FSK-R", "RTTYR"),
+    "PKTUSB": ("PKTUSB", "PKT-U", "USB-D", "DATA-U", "DATA-USB", "DIG-U",
+               "DIGU", "USB-DATA", "D-USB"),
+    "PKTLSB": ("PKTLSB", "PKT-L", "LSB-D", "DATA-L", "DATA-LSB", "DIG-L",
+               "DIGL", "LSB-DATA", "D-LSB"),
+    "PKTFM": ("PKTFM", "PKT-FM", "FM-D", "DATA-FM", "D-FM"),
+    "FM": ("FM", "FM-N", "NFM", "FMN"),
+    "CW": ("CW", "CW-U", "CW-L", "CWU", "CWL"),
+}
+_TO_CANON = {alias: canon for canon, names in _ALIASES.items()
+             for alias in names}
+# A filter width welded onto a mode name: an FT-890 offers CW-W and CW-N,
+# which are one mode and two filters.
+_WIDTHS = ("-W", "-N", "-WIDE", "-NARR", "-NAR")
+
+
+def canon_mode(name) -> str:
+    """A radio's name for a mode, in ours. Unknown names come back as they
+    are, upper-cased - shown to the operator rather than guessed at."""
+    raw = str(name or "").strip().upper()
+    if raw in _TO_CANON:
+        return _TO_CANON[raw]
+    for suffix in _WIDTHS:
+        if raw.endswith(suffix) and len(raw) > len(suffix):
+            base = raw[:-len(suffix)]
+            return _TO_CANON.get(base, base)
+    return raw
+
+
+def radio_mode(want, offered) -> str:
+    """The name in `offered` (a radio's own list) for the mode `want`, or ""
+    if the radio has no such mode. An exact name wins; otherwise the first
+    that means the same thing, so CW picks CW-W on an FT-890."""
+    w = str(want or "").strip().upper()
+    if not w:
+        return ""
+    for name in offered:
+        if str(name).upper() == w:
+            return str(name)
+    target = canon_mode(w)
+    for name in offered:
+        if canon_mode(name) == target:
+            return str(name)
+    return ""
 
 
 class RigError(RuntimeError):

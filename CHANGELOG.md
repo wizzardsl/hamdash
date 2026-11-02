@@ -33,6 +33,31 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - The log keeps five old files instead of three, and no longer drops
   records on Windows when something has it open while it rolls over.
 
+### Fixed
+- **Radios other than the one hamdash was built on.** A deep pass over
+  flrig, Hamlib and OmniRig with other radios' replies:
+  - The PTT watchdog now runs even when reading the radio fails. Before,
+    a radio whose read kept failing also kept the watchdog from taking an
+    unheld transmission off the air.
+  - Hamlib replies are read whole. A reply that arrived in two pieces over
+    a network could leave its tail for the next question, so the passband
+    was read as the transmit state.
+  - Mode names are one set across every radio and backend: an IC-7300's
+    USB-D, a Yaesu's DATA-U and Hamlib's PKTUSB are the same mode, CW-R is
+    CWR, and the rig card offers the radio's own list. A mode the list did
+    not have used to show as LSB.
+  - An older flrig, or a radio without a split or A/B, is no longer shown
+    as offline; buttons for what the radio cannot do are not offered.
+  - Split through Hamlib names the VFO you are not on (it always named
+    VFO B, which on VFO B is not split at all).
+  - A memory whose mode the radio does not have still tunes the frequency.
+  - Spotted digital modes (FT8, PSK31...) set the radio's data mode, or USB
+    if it has none, and a refused mode is said rather than silently ignored.
+  - A frequency of 0, "nan" or "inf" from a radio is not shown as a reading,
+    and an unexpected error reading one is "not answering" rather than a
+    server error.
+  - The logbook no longer writes a radio's data mode or CWR into a contact.
+
 
 ## [1.1.0]
 

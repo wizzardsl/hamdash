@@ -869,6 +869,42 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   carried as `sideband` on the row) beats the 10 MHz rule. A CW or FT8
   read from a comment, and anything from the frequency, still tunes
   without touching the mode.
+- **Every radio names its modes its own way, so there is one table.**
+  `radio.canon_mode` reads any radio's name into Hamlib's (USB-D, DATA-U,
+  PKT-U -> PKTUSB; CW-R -> CWR; CW-W/CW-N -> CW) and `radio.radio_mode`
+  finds the radio's own spelling to write, through the same table, so
+  reading and writing cannot disagree. flrig keeps `rig_mode` beside it.
+  The card's list is `Backend.offered()` - flrig's `rig.get_modes`,
+  rigctld's `M ?` (Hamlib's own list for that model) - and a mode the
+  radio is in but the list lacks is shown as itself, disabled: showing
+  the first option, LSB, was a wrong answer the operator then could not
+  correct, because LSB already appeared selected. Hamlib's dummy radio
+  (`rigctld -m 1`) accepts *any* mode name, FOO included, so refusals
+  can only be tested with a fake.
+- **rigctld is spoken in its extended protocol** (`+f`), because only
+  that one marks where a reply ends (`RPRT n`). Plain replies end at
+  "whatever newline came last", and a reply in two TCP segments left its
+  tail for the next command - never on loopback, which is why one FT-900
+  could not show it. `_extended_values` strips the labels so callers see
+  the plain values they always did. Hamlib's `\\get_modes` omits the
+  newline before `RPRT`; the reader matches it at the end of the buffer.
+- **Only the frequency is fatal to a read.** flrig's six reads were all
+  or nothing, so a flrig without `rig.get_AB` showed a working radio as
+  offline; a Fault ("flrig refused") is now one missing value, and only
+  losing flrig itself is "offline". rigctld's `t` is optional too
+  (`ptt_known: False`). `features` is worked out per read from what
+  actually answered, so a Main/Sub radio or one without split gets no
+  buttons that cannot work.
+- **The watchdog runs whether or not the read worked.** It sat in the
+  same `try` as `state()`, so a read that kept raising kept it from ever
+  running. `tests/test_rig_variants.py` holds it, checked against the old
+  loop - and the first version of that test passed against the old loop
+  too, because closing a keyed radio unkeys it: snapshot before `stop()`.
+- **Mode names from spots are not radio modes.** FT8 or PSK31 from a
+  spot's mode field asks for the data mode (PKTUSB), then USB; a refusal
+  is shown. The swallowed `.catch(() => {})` was the SSB bug again.
+
+## Meters and VFOs
 ## Meters and VFOs
 
 - **A radio has one meter, so the power meter reads the S-meter while

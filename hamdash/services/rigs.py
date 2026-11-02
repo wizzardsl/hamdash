@@ -36,7 +36,8 @@ import uuid
 from ..bus import BUS
 from . import audio
 from . import diagnostics
-from .radio import MODES, RigError, band_for         # noqa: F401 - re-exported
+from .radio import (MODES, RigError, band_for,     # noqa: F401 - re-exported
+                    canon_mode, radio_mode)
 
 # OmniRig's own enums, read from its type library rather than assumed. Worth
 # saying out loud: ST_ONLINE is 4, and Status 3 is "not responding" - an
@@ -129,9 +130,35 @@ def _as_float(v):
     a radio that cannot measure answers something that is neither - None is
     "it did not say", which a card draws as nothing rather than as zero."""
     try:
-        return float(str(v).strip())
+        got = float(str(v).strip())
     except (TypeError, ValueError):
         return None
+    # "nan" and "inf" parse, and then break everything downstream: NaN is
+    # not valid JSON, and int(round(nan)) raises. A radio saying that is a
+    # radio saying nothing.
+    return got if math.isfinite(got) else None
+
+
+def _hz(v) -> int | None:
+    """A frequency, from whatever a backend sent: flrig sends a string of
+    hertz, Hamlib a decimal on some builds ("14300000.000000"). None for
+    anything that is not a positive, finite number."""
+    got = _as_float(v)
+    return int(got) if got and got > 0 else None
+
+
+def _flag(v) -> bool | None:
+    """On or off, from 1/0, "1"/"0", True/False or "true"/"off". None when
+    it is none of those - unknown, which is different from off."""
+    if isinstance(v, bool):
+        return v
+    text = str(v if v is not None else "").strip().lower()
+    if text in ("1", "true", "on", "yes"):
+        return True
+    if text in ("0", "false", "off", "no"):
+        return False
+    got = _as_float(text)
+    return None if got is None else bool(got)
 
 
 # ---- the S-meter scale -------------------------------------------------
@@ -220,6 +247,11 @@ class Backend:
     def swap_vfo(self) -> None:
         raise RigError(f"{self.kind} cannot swap the VFOs")
 
+    def offered(self) -> list[str]:
+        """The modes this radio has, in hamdash's names. [] means "it will
+        not say", and the card then offers the usual list."""
+        return []
+
     def probe(self) -> dict:
         """Read-only questions for a problem report: name -> answer.
 
@@ -302,6 +334,30 @@ class MockBackend(Backend):
         self._freq["A"], self._freq["B"] = self._freq["B"], self._freq["A"]
 
 
+_RPRT_END = re.compile(rb"RPRT (-?\d+)\r?\n$")
+_LABEL = re.compile(r"^[A-Za-z][A-Za-z0-9 _/()-]*: ")
+
+
+def _extended_values(text: str, line: str) -> list[str]:
+    """The values in an extended-protocol reply, labels taken off.
+
+    `get_freq:` / `Frequency: 14074000` / `RPRT 0` becomes ['14074000'],
+    so callers see what the plain protocol gave them. The first line
+    echoes the command; a value line may or may not carry a label
+    (`get_level` answers a bare number), and both come out bare. Hamlib's
+    `\\get_modes` even omits the newline before RPRT, hence the regex.
+    """
+    m = re.search(r"RPRT (-?\d+)\s*$", text)
+    code = m.group(1) if m else "0"
+    body = text[:m.start()] if m else text
+    lines = [x.strip() for x in body.splitlines() if x.strip()]
+    if lines and (lines[0].endswith(":") or ":" in lines[0].split()[0]):
+        lines = lines[1:]
+    if code != "0":
+        raise RigError(f"rig returned error {code} for {line!r}")
+    return [_LABEL.sub("", x, count=1) for x in lines]
+
+
 class RigctldBackend(Backend):
     """The rigctld text protocol over TCP, for a daemon already running."""
 
@@ -312,6 +368,7 @@ class RigctldBackend(Backend):
         self.host, self.port, self.timeout = host, int(port), timeout
         self._lock = threading.Lock()
         self._sock: socket.socket | None = None
+        self._modes: list[str] | None = None
 
     def where(self) -> str:
         return f"{self.host}:{self.port}"
@@ -338,9 +395,17 @@ class RigctldBackend(Backend):
                 except OSError as exc:
                     raise RigError(f"no rigctld at {self.where()} ({exc})")
             try:
-                self._sock.sendall((line + "\n").encode())
+                # **The extended protocol, so a reply has an end.** Plain
+                # rigctld ends a reply at whatever newline arrives last, and
+                # a multi-line reply (`m`, `s`, `\\get_vfo_info`) that
+                # crosses two TCP segments left its tail in the socket for
+                # the next command - which then read a passband as the PTT.
+                # Never seen on loopback, where a reply is one segment; it
+                # is what a rigctld on a Pi across the network does. With
+                # `+` every reply ends in `RPRT n`, so read up to that.
+                self._sock.sendall(("+" + line + "\n").encode())
                 buf = b""
-                while not buf.endswith(b"\n"):
+                while not _RPRT_END.search(buf):
                     chunk = self._sock.recv(4096)
                     if not chunk:
                         raise RigError("rigctld closed the connection")
@@ -348,13 +413,7 @@ class RigctldBackend(Backend):
             except OSError as exc:
                 self.close()
                 raise RigError(f"rigctld I/O failed: {exc}")
-        out = [x for x in buf.decode(errors="replace").splitlines() if x]
-        if out and out[0].startswith("RPRT "):
-            code = out[0][5:].strip()
-            if code != "0":
-                raise RigError(f"rig returned error {code} for {line!r}")
-            return out[1:]
-        return out
+        return _extended_values(buf.decode(errors="replace"), line)
 
     PROBE = ("_", "f", "m", "v", "s", "t", "\\get_vfo_info VFOA",
              "\\get_vfo_info VFOB", "l STRENGTH", "l RFPOWER_METER", "l SWR",
@@ -379,14 +438,26 @@ class RigctldBackend(Backend):
 
     def state(self) -> dict:
         try:
-            freq = int(float(self._cmd("f")[0]))
-            m = self._cmd("m")
-            ptt = int(float(self._cmd("t")[0]))
-        except (RigError, IndexError, ValueError) as exc:
+            got = self._cmd("f")
+        except RigError as exc:
             return {"ok": False, "error": str(exc)}
-        out = {"ok": True, "freq": freq, "mode": m[0] if m else "?",
-               "width": int(float(m[1])) if len(m) > 1 else 0,
-               "ptt": bool(ptt), "band": band_for(freq)}
+        freq = _hz(got[0] if got else None)
+        if freq is None:
+            return {"ok": False,
+                    "error": f"rigctld gave no frequency ({got!r})"}
+        # Mode and PTT are asked, not assumed: some Hamlib backends (and
+        # some PTT types) refuse `t` with RPRT -11, and that is a radio
+        # that cannot say, not a radio that is not there.
+        m = self._maybe("m")
+        ptt = _flag((self._maybe("t") or [None])[0])
+        width = _as_float(m[1]) if len(m) > 1 else None
+        out = {"ok": True, "freq": freq,
+               "mode": canon_mode(m[0]) if m else "?",
+               "rig_mode": m[0] if m else "",
+               "width": int(width) if width and width > 0 else 0,
+               "ptt": bool(ptt), "ptt_known": ptt is not None,
+               "band": band_for(freq)}
+        can = set(self.features)
 
         vfo = self._maybe("v")
         which = (vfo[0] if vfo else "").strip().upper()
@@ -400,29 +471,26 @@ class RigctldBackend(Backend):
             # not the other VFO is simply not reported. A missing number is
             # better than the dial's number labelled as the other VFO.
             other = "B" if which == "A" else "A"
-            # `\get_vfo_info VFOB` answers with bare values, one per line -
-            # measured against rigctld 4.7.2 on an FT-900:
-            # ['14300000', 'USB', '2200', '0', '0']. Looking for a "Freq:"
-            # label (which other versions and the -b modes do print) found
-            # nothing and dropped the second VFO silently, with the number
-            # sitting right there in the reply.
-            for line in self._maybe(f"\\get_vfo_info VFO{other}"):
-                line = line.strip()
-                if line.lower().startswith("freq") and ":" in line:
-                    line = line.split(":", 1)[1].strip()
-                elif not line.isdigit():
-                    continue
-                try:
-                    out["freq_" + other.lower()] = int(float(line))
-                    break
-                except ValueError:
-                    continue
+            # Its first value is the frequency - labelled `Freq:` in the
+            # extended protocol this speaks, which the reader strips. Only
+            # the first: scanning the lines for "a number" took the
+            # passband (2200) as the frequency on a build that prints
+            # 14300000.000000, which isdigit() rejects.
+            info = self._maybe(f"\\get_vfo_info VFO{other}")
+            hz = _hz(_LABEL.sub("", info[0].strip(), count=1)) if info else None
+            if hz:
+                out["freq_" + other.lower()] = hz
+        else:
+            # Main/Sub, currVFO, MEM, or nothing: there is no A and B to
+            # offer buttons for, whatever the backend could do in general.
+            can.discard(F_VFO)
         split = self._maybe("s")
-        if split:
-            try:
-                out["split"] = bool(int(float(split[0])))
-            except ValueError:
-                pass
+        flag = _flag(split[0]) if split else None
+        if flag is None:
+            can.discard(F_SPLIT)
+        else:
+            out["split"] = flag
+        out["features"] = sorted(can)
         return out
 
     def meters(self, tx: bool) -> dict:
@@ -434,13 +502,16 @@ class RigctldBackend(Backend):
             # Hamlib 4.x and not every rig has it.
             pwr = _as_float((self._maybe("l RFPOWER_METER") or [""])[0])
             if pwr is not None:
-                out["power_pct"] = round(pwr * 100.0, 1)
+                # 0..1 of full scale - but older rig backends hand back raw
+                # counts. Clamped, so a bar never runs off its track.
+                out["power_pct"] = round(max(0.0, min(1.0, pwr)) * 100.0, 1)
             watts = _as_float(
                 (self._maybe("l RFPOWER_METER_WATTS") or [""])[0])
             if watts:
                 out["power_w"] = round(watts, 1)
             swr = _as_float((self._maybe("l SWR") or [""])[0])
-            if swr:
+            # 1.0 is the floor of the scale; below it is not a reading.
+            if swr is not None and swr >= 1.0:
                 out["swr"] = round(swr, 2)
             return out
         db = _as_float((self._maybe("l STRENGTH") or [""])[0])
@@ -453,7 +524,26 @@ class RigctldBackend(Backend):
     def set_freq(self, hz: int) -> None:
         self._cmd(f"F {int(hz)}")
 
+    def offered(self) -> list[str]:
+        """What this radio has, from `M ?` - Hamlib's own list for it, in
+        Hamlib's names, which are ours. Cached; [] if it will not say."""
+        if self._modes is None:
+            try:
+                got = " ".join(self._cmd("M ?")).split()
+            except RigError:
+                got = []
+            self._modes = [canon_mode(m) for m in got if m != "?"]
+        return list(self._modes)
+
     def set_mode(self, mode: str, width: int = 0) -> None:
+        name = canon_mode(mode)
+        if not name or name == "?":
+            raise RigError("no mode to set")
+        offers = self.offered()
+        if offers and name not in offers:
+            raise RigError(f"this radio has no mode like {mode!r} through "
+                           f"Hamlib. It offers {', '.join(offers)}.")
+        mode = name
         try:
             self._cmd(f"M {mode.upper()} {int(width)}")
         except RigError:
@@ -476,8 +566,14 @@ class RigctldBackend(Backend):
         self._cmd(f"V VFO{_vfo_name(which)}")
 
     def set_split(self, on: bool) -> None:
-        # Hamlib wants to be told which VFO transmits, not just "on".
-        self._cmd(f"S {1 if on else 0} VFOB")
+        # Hamlib wants to be told which VFO transmits, not just "on" - and
+        # it is the one we are *not* on. Always naming VFOB made "split" on
+        # VFO B transmit where it receives, which is not split at all.
+        now = ((self._maybe("v") or [""])[0]).strip()
+        other = {"VFOA": "VFOB", "VFOB": "VFOA", "A": "VFOB", "B": "VFOA",
+                 "Main": "Sub", "Sub": "Main", "MAIN": "SUB",
+                 "SUB": "MAIN"}.get(now, "VFOB")
+        self._cmd(f"S {1 if on else 0} {other}")
 
     def close(self) -> None:
         if self._sock:
@@ -592,26 +688,55 @@ class FlrigBackend(Backend):
                     f"check its Config -> Xcvr -> XML port.")
 
     # -- reading -----------------------------------------------------------
-    def state(self) -> dict:
+    def _get(self, name: str, default=None):
+        """A read that this radio, or this flrig, may not have.
+
+        flrig answers a method it does not know - an older flrig, or a
+        radio without a split - with a Fault, which is a fact about that
+        one value. Losing flrig itself is not, and still raises.
+        """
         try:
-            a = int(float(self._call("rig.get_vfoA")))
-            b = int(float(self._call("rig.get_vfoB")))
-            which = str(self._call("rig.get_AB") or "A").strip().upper()[:1]
-            split = bool(int(self._call("rig.get_split") or 0))
-            mode = str(self._call("rig.get_mode") or "")
-            ptt = bool(int(self._call("rig.get_ptt") or 0))
-        except (RigError, TypeError, ValueError) as exc:
+            return self._call(name)
+        except RigError as exc:
+            if str(exc).startswith("flrig refused"):
+                return default
+            raise
+
+    def state(self) -> dict:
+        # Only the frequency is fatal. It used to be all six or nothing, so
+        # an older flrig without `rig.get_AB` - or a split answered "false"
+        # rather than 0 - showed a perfectly good radio as offline.
+        try:
+            raw_a = self._call("rig.get_vfoA")
+            b = _hz(self._get("rig.get_vfoB"))
+            ab = str(self._get("rig.get_AB", "") or "").strip().upper()
+            split = _flag(self._get("rig.get_split"))
+            mode = str(self._get("rig.get_mode", "") or "")
+            ptt = _flag(self._get("rig.get_ptt"))
+        except RigError as exc:
             return {"ok": False, "error": str(exc)}
-        if which not in ("A", "B"):
-            which = "A"
-        # The dial is whichever VFO is in use, so it is read off A and B
-        # rather than asked for separately - `rig.get_vfo` would be a
-        # seventh call for a number we already have.
-        freq = a if which == "A" else b
-        return {"ok": True, "freq": freq, "mode": _adif_mode(mode),
-                "rig_mode": mode, "width": 0, "ptt": ptt,
-                "band": band_for(freq), "vfo": which,
-                "freq_a": a, "freq_b": b, "split": split}
+        a = _hz(raw_a)
+        if a is None:
+            return {"ok": False, "error": f"flrig gave no frequency ({raw_a!r})"}
+        which = {"A": "A", "VFOA": "A", "B": "B", "VFOB": "B"}.get(ab, "")
+        freq = b if which == "B" and b else a
+        can = set(self.features)
+        out = {"ok": True, "freq": freq, "mode": canon_mode(mode) or "?",
+               "rig_mode": mode, "width": 0, "ptt": bool(ptt),
+               "ptt_known": ptt is not None, "band": band_for(freq),
+               "freq_a": a}
+        if b:
+            out["freq_b"] = b
+        if which:
+            out["vfo"] = which
+        else:
+            can -= {F_VFO, F_SWAP}
+        if split is None:
+            can.discard(F_SPLIT)
+        else:
+            out["split"] = split
+        out["features"] = sorted(can)
+        return out
 
     def meters(self, tx: bool) -> dict:
         """What the needle says - and only what it can honestly say.
@@ -626,30 +751,36 @@ class FlrigBackend(Backend):
         """
         try:
             if tx:
-                out = {"power_pct": _as_float(self._call("rig.get_pwrmeter"))}
+                # Each its own question: a radio or flrig without one of
+                # these used to lose the readings it did have along with it.
+                pwr = _as_float(self._get("rig.get_pwrmeter"))
+                out = {"power_pct": None if pwr is None
+                       else max(0.0, min(100.0, pwr))}
                 # An SWR below 1 is not a reading. It is physically the
                 # floor of the scale, so a radio answering 0 is saying it
                 # does not measure it - the FT-890 does exactly that, with
                 # 78% showing on the power meter beside it. Drawn as "SWR
                 # 0" that is a perfect match into an open circuit.
-                swr = _as_float(self._call("rig.get_swrmeter"))
+                swr = _as_float(self._get("rig.get_swrmeter"))
                 if swr is not None and swr >= 1.0:
                     out["swr"] = round(swr, 2)
                 # Watts only where the radio says what full scale is; the
                 # FT-890 answers 0, so it gets a bar and no false number.
-                top = _as_float(self._call("rig.get_maxpwr"))
+                top = _as_float(self._get("rig.get_maxpwr"))
                 if top and out.get("power_pct") is not None:
                     out["power_w"] = round(out["power_pct"] * top / 100.0, 1)
                 return out
-            pct = _as_float(self._call("rig.get_smeter"))
+            pct = _as_float(self._get("rig.get_smeter"))
+            if pct is not None:
+                pct = max(0.0, min(100.0, pct))
             # flrig knows its own radio's meter curve, so its S-units beat
             # anything computed here. `_s_units_for` is the fallback.
-            units = str(self._call("rig.get_Sunits") or "").strip()
-            dbm = _as_float(self._call("rig.get_DBM"))
+            units = str(self._get("rig.get_Sunits", "") or "").strip()
+            dbm = _as_float(self._get("rig.get_DBM"))
             return {"s_pct": pct, "s_dbm": dbm,
                     "s_units": units or (_s_units_for(pct)
                                          if pct is not None else "")}
-        except (RigError, TypeError, ValueError) as exc:
+        except RigError as exc:
             return {"error": str(exc)}
 
     def info(self) -> dict:
@@ -670,20 +801,34 @@ class FlrigBackend(Backend):
         return st
 
     def modes(self) -> list[str]:
+        """The radio's own names, for writing. Not cached while empty, so a
+        flrig started after hamdash is asked again."""
         if not self._modes:
             try:
                 got = self._call("rig.get_modes")
             except RigError:
                 return []
-            self._modes = [str(m) for m in (got or [])]
+            # A list, as flrig 2.x sends - but a single string would have
+            # been split into its letters by iterating it.
+            if isinstance(got, str):
+                got = re.split(r"[\s,|]+", got)
+            self._modes = [str(m) for m in (got or []) if str(m).strip()]
         return self._modes
+
+    def offered(self) -> list[str]:
+        out: list[str] = []
+        for m in self.modes():
+            name = canon_mode(m)
+            if name and name not in out:
+                out.append(name)
+        return out
 
     # -- writing -----------------------------------------------------------
     def set_freq(self, hz: int) -> None:
         self._call("rig.set_frequency", float(int(hz)))
 
     def set_mode(self, mode: str, width: int = 0) -> None:
-        want = _rig_mode(mode, self.modes())
+        want = radio_mode(mode, self.modes())
         if not want:
             offers = ", ".join(self.modes()) or "nothing"
             raise RigError(
@@ -721,17 +866,9 @@ class FlrigBackend(Backend):
 
 
 def _adif_mode(mode: str) -> str:
-    """A radio's mode name as the rest of hamdash spells it.
-
-    An FT-890 calls its two CW filters CW-W and CW-N, and the log wants CW:
-    the width is a filter setting, not a different mode, and writing CW-N
-    into a QSO record would make it fail to match anybody else's log.
-    """
-    name = str(mode or "").strip().upper()
-    for suffix in ("-W", "-N", "-WIDE", "-NARR", "-U", "-L"):
-        if name.endswith(suffix) and name[:-len(suffix)] in MODES:
-            return name[:-len(suffix)]
-    return name
+    """A radio's mode name as the rest of hamdash spells it. Kept as a name
+    for the callers and tests that use it; the table is `radio.canon_mode`."""
+    return canon_mode(mode)
 
 
 def _rig_mode(mode: str, offered: list[str]) -> str:
@@ -741,18 +878,7 @@ def _rig_mode(mode: str, offered: list[str]) -> str:
     answers success and changes nothing, so the only way the operator finds
     out is by looking at the radio.
     """
-    want = str(mode or "").strip().upper()
-    if not want:
-        return ""
-    for name in offered:
-        if name.upper() == want:
-            return name
-    # CW -> CW-W: the first filter width the radio offers for that mode.
-    for name in offered:
-        base = name.upper().split("-")[0]
-        if base == want:
-            return name
-    return ""
+    return radio_mode(mode, offered)
 
 
 class HamlibBackend(RigctldBackend):
@@ -1028,6 +1154,20 @@ class OmniRigBackend(Backend):
                     "error": f"OmniRig rig {self.slot}: {got['status']}",
                     "status": got["status"], "rig_type": got["rig_type"]}
         tx = got["tx"]
+        # Some rig files fill FreqA/FreqB and leave Freq at 0. Drawn as
+        # "0.000000" with ok: True that is a reading of nothing, and the
+        # dial buttons would tune to 1 kHz. The VFO it is on, if it says.
+        freq = got["freq"]
+        if not freq:
+            on_b = got["vfo_known"] and OMNI_VFO.get(got["vfo"]) == "B"
+            freq = (got["freq_b"] if on_b else got["freq_a"]) \
+                or got["freq_a"] or got["freq_b"]
+        if not freq:
+            return {"ok": False, "status": got["status"],
+                    "rig_type": got["rig_type"],
+                    "error": f"OmniRig rig {self.slot} is on line but has not "
+                             f"reported a frequency yet"}
+        got["freq"] = freq
         # PM_UNKNOWN means OmniRig has not read it back yet. Calling that
         # "receiving" would be inventing an answer.
         out = {"ok": True, "freq": got["freq"],
@@ -1078,11 +1218,14 @@ class OmniRigBackend(Backend):
         self._set("Freq", int(hz))
 
     def set_mode(self, mode: str, width: int = 0) -> None:
-        flag = MODE_TO_OMNI.get((mode or "").upper())
+        flag = MODE_TO_OMNI.get(canon_mode(mode))
         if not flag:
             raise RigError(f"OmniRig has no mode called {mode!r}. It knows "
                            + ", ".join(sorted(MODE_TO_OMNI)) + ".")
         self._set("Mode", flag)
+
+    def offered(self) -> list[str]:
+        return list(MODE_TO_OMNI)
 
     def set_ptt(self, on: bool) -> None:
         self._set("Tx", PM_TX if on else PM_RX)
@@ -1436,7 +1579,17 @@ class RigLink:
         if not backend:
             return {**base, "ok": False,
                     "error": "No radio selected. Add one in Settings -> Radio."}
-        got = backend.state()
+        try:
+            got = backend.state()
+        except Exception as exc:                    # noqa: BLE001 - reported
+            # Backends catch what they expect; this is for what nobody
+            # expected from a radio nobody here owns. A 500 from a route,
+            # or a poll that never reaches the watchdog, is worse than
+            # "not answering" with the reason.
+            LOG.warning("%s: reading the radio failed: %r", self.label(), exc)
+            got = {"ok": False,
+                   "error": f"reading the radio failed: "
+                            f"{type(exc).__name__}: {exc}"}
         diagnostics.trace(self.label_for_trace(), "state", got)
         out = {**base, **got}
         # What the card may offer. A backend says what it can do in
@@ -1505,6 +1658,16 @@ class RigLink:
             out[f"{name}_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         return out
 
+    def offered(self) -> list[str]:
+        """The modes this radio has, in hamdash's names: its own list where
+        the backend can ask for one, else the usual list."""
+        backend = self._backend
+        try:
+            got = backend.offered() if backend and not self._error else []
+        except Exception:                           # noqa: BLE001
+            got = []
+        return got or list(MODES)
+
     def label_for_trace(self) -> str:
         rig = self.entry() or {}
         return f"radio {rig.get('name') or self.id or '?'} [{rig.get('backend', '')}]"
@@ -1533,12 +1696,16 @@ class RigLink:
         backend = self._backend
         if self._error or not backend:
             return {"ok": False, "error": self._error or "no radio selected"}
-        st = backend.state()
-        if not st.get("ok"):
-            return {"ok": False,
-                    "error": st.get("error", "the radio is not answering")}
-        tx = bool(st.get("ptt"))
-        got = backend.meters(tx)
+        try:
+            st = backend.state()
+            if not st.get("ok"):
+                return {"ok": False,
+                        "error": st.get("error", "the radio is not answering")}
+            tx = bool(st.get("ptt"))
+            got = backend.meters(tx)
+        except Exception as exc:                    # noqa: BLE001 - reported
+            return {"ok": False, "error": f"reading the meters failed: "
+                                          f"{type(exc).__name__}: {exc}"}
         diagnostics.trace(self.label_for_trace(), f"meters(tx={tx})", got)
         return {"ok": "error" not in got, "tx": tx, **got}
 
@@ -1646,11 +1813,20 @@ class RigLink:
                 # one session. That particular race is fixed, but the
                 # guard is the point - the next surprise comes from
                 # somebody else's serial port or COM object.
+                # **The watchdog runs whether or not the read worked.** It
+                # used to sit in the same `try` as the read, so a radio
+                # whose read kept raising also kept the watchdog from ever
+                # running - and a transmission hamdash keyed stayed on the
+                # air. A failed read is exactly when the hold matters.
                 try:
-                    st = self._watch_ptt(self.state())
+                    st = self.state()
                 except Exception as exc:                # noqa: BLE001
                     LOG.exception("rig poll failed: %s", exc)
-                    continue
+                    st = {"ok": False, "error": f"poll failed: {exc}"}
+                try:
+                    st = self._watch_ptt(st)
+                except Exception as exc:                # noqa: BLE001
+                    LOG.exception("PTT watchdog failed: %s", exc)
                 self.last = st
                 key = (st.get("freq"), st.get("mode"), st.get("ptt"),
                        st.get("ok"), st.get("rig_id"), st.get("rig"),

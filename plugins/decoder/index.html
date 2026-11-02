@@ -269,7 +269,17 @@ $('#source').onchange = async () => {
 // The radio's audio input can change without this tile being touched -
 // another card switching rigs, or the setting being edited - and "Radio's
 // audio in" has to follow it rather than keep the device it started with.
-HD.on('radio.state', () => { fillLists(); });
+// Only when what the lists show could have changed - which radio, or its
+// sound card. Every tuning step is a radio.state, and rebuilding both
+// selects on each one cost a host round trip and closed a select the
+// operator had open.
+let listsFor = null;
+HD.on('radio.state', (s) => {
+  const key = `${s && s.rig_id}|${s && s.audio_in}`;
+  if (key === listsFor) return;
+  listsFor = key;
+  fillLists();
+});
 
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }

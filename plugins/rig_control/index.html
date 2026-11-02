@@ -7,6 +7,8 @@
   body { padding: 10px; overflow: auto; }
   .dial { font-family: var(--mono); font-size: clamp(20px, 6vw, 34px); letter-spacing: -0.01em; }
   .dial .frac { color: var(--muted); }
+  /* Where the radio *was*, once it stops answering - not a live reading. */
+  .dial.stale { opacity: 0.4; }
   .line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .band { color: var(--accent); font-family: var(--mono); font-size: 13px; }
   /* Not an error - plenty of listening happens outside the ham bands. */
@@ -388,10 +390,74 @@ async function nudge(dir) {
   }
 }
 
+// ---- the mode list -------------------------------------------------------
+// The radio's own modes, in hamdash's names, from the radio this tile
+// drives. It was a fixed list from the *selected* radio, built once: it
+// offered modes some radios refuse (CWR and PKTUSB through flrig, RTTY
+// through OmniRig), and a mode the radio was in but the list lacked
+// (USB-D on an IC-7300, WFM) showed as the first entry, LSB - a wrong
+// answer that looks right, and one the operator could not then pick.
+let modeList = [];
+let modesFor = null;          // the rig_id the list was read for
+
+async function loadModes(rigId) {
+  modesFor = rigId;
+  try { modeList = await radio.modes(); } catch { modeList = []; }
+  const sel = $('#mode');
+  sel.textContent = '';
+  for (const m of modeList) {
+    const o = document.createElement('option');
+    o.value = o.textContent = m;
+    sel.append(o);
+  }
+  syncMode(live);
+}
+
+// Show the radio's mode, whatever it is. One it has that the list does not
+// is shown as itself, disabled, rather than silently as some other entry.
+function syncMode(s) {
+  const sel = $('#mode');
+  const mode = s && s.ok ? String(s.mode || '') : '';
+  const listed = [...sel.options].some((o) => !o.dataset.odd && o.value === mode);
+  let odd = sel.querySelector('option[data-odd]');
+  if (listed) {
+    if (odd) odd.remove();
+    sel.value = mode;
+    return;
+  }
+  if (!odd) {
+    odd = document.createElement('option');
+    odd.dataset.odd = '1';
+    odd.disabled = true;
+    sel.prepend(odd);
+  }
+  odd.value = mode;
+  odd.textContent = mode && mode !== '?' ? `${mode} (set on the radio)` : '—';
+  sel.value = mode;
+}
+
 function paint(s) {
+  // A reading with no frequency is not a reading. Every backend now says
+  // so itself, but a dial drawn as 0.000000 with the step buttons live -
+  // which tune to 1 kHz - is the failure this guards against.
+  if (s && s.ok && !(Number(s.freq) > 0)) {
+    s = { ...s, ok: false, error: 'the radio has not reported a frequency' };
+  }
   live = s;
   paintWhich(s);
+  if (s.ok && s.rig_id !== modesFor) loadModes(s.rig_id);
+  // Metering follows what this radio can do now, not what the first
+  // state said: a tile that booted offline, or a plain tile whose
+  // selected radio changed from OmniRig to flrig, never drew its meter.
+  const meterable = !!s.ok && (can('smeter') || can('power'));
+  if (meterable !== !!metering && !HD.hidden) {
+    if (meterable) startMetering();
+    else { clearInterval(metering); metering = null; $('#meter').hidden = true; }
+  }
   $('#up').disabled = $('#down').disabled = !s.ok;
+  // What is on the dial when the radio stops answering is where it *was*:
+  // dimmed, so it does not read as a live frequency.
+  $('#dial').classList.toggle('stale', !s.ok);
   if (!s.ok) {
     $('#err').textContent = s.error || 'rig unavailable';
     $('#state').textContent = 'offline';
@@ -412,7 +478,13 @@ function paint(s) {
   // prevented - where the dial goes is the operator's business.
   $('#band').textContent = s.band || (s.freq ? 'out of band' : '');
   $('#band').classList.toggle('off-band', !s.band && !!s.freq);
-  $('#state').textContent = s.ptt ? 'transmitting' : `${s.mode}${s.mock ? ' · simulated' : ''}`;
+  // A radio that cannot say whether it is transmitting says so, rather
+  // than reading as receiving - unless hamdash keyed it, when the host
+  // already substitutes its own key-down (ptt_ours).
+  const txUnknown = s.ptt_known === false && !s.ptt;
+  $('#state').textContent = s.ptt ? 'transmitting'
+    : `${s.mode && s.mode !== '?' ? s.mode : 'mode unknown'}`
+      + `${txUnknown ? ' · TX not reported' : ''}${s.mock ? ' · simulated' : ''}`;
   $('#state').className = s.ptt ? 'state tx' : 'state';
   // The Transmit button follows the radio, not a flag of its own. It used
   // to keep `tx` in the page: reload while transmitting and the button read
@@ -422,9 +494,7 @@ function paint(s) {
   // the button, because `radio.state` is what moves it.
   setPtt(!!s.ptt);
   paintVfos(s);
-  if ($('#mode').value !== s.mode && [...$('#mode').options].some(o => o.value === s.mode)) {
-    $('#mode').value = s.mode;
-  }
+  syncMode(s);
 }
 
 // ---- memories -----------------------------------------------------------
@@ -461,13 +531,22 @@ function renderMems() {
 }
 
 async function recall(m) {
+  // Mode before frequency: a radio applies its CW offset on entering CW,
+  // so the other order leaves the dial that offset away from where the
+  // memory said.
+  // **A refused mode must not stop the tune.** A memory saved on one radio
+  // and recalled on another can name a mode this one lacks; that used to
+  // throw before the frequency was sent, so the button did nothing but
+  // show an error. And a memory with no mode ("" or "?") asks for none.
+  const mode = String(m.mode || '');
+  let refused = null;
+  if (mode && mode !== '?') {
+    try { await radio.mode(mode); } catch (e) { refused = e; }
+  }
   try {
-    // Mode before frequency: a radio applies its CW offset on entering CW,
-    // so the other order leaves the dial that offset away from where the
-    // memory said.
-    await radio.mode(m.mode);
     paint(await radio.freq(m.hz));
-  } catch (e) { fail(e); }
+  } catch (e) { fail(e); return; }
+  if (refused) $('#err').textContent = `Tuned; the mode was left as it was: ${refused.message}`;
 }
 
 /* Name a memory: a new one from the dial, or an existing one renamed.
@@ -497,7 +576,7 @@ async function saveCurrent() {
     $('#err').textContent = `That is ${HDMem.MAX} memories - delete one to make room.`;
     return;
   }
-  const m = { hz: live.freq, mode: live.mode || '' };
+  const m = { hz: live.freq, mode: live.mode && live.mode !== '?' ? live.mode : '' };
   const label = await askName('Name this memory', describe(m),
                               HDMem.suggest(m.hz, m.mode));
   if (label) saveMems([...mems, { ...m, label: label.slice(0, HDMem.MAX_LABEL) }]);
@@ -723,9 +802,10 @@ async function boot() {
     if (e.key === 'ArrowDown') { e.preventDefault(); nudge(-1); }
   });
 
-  const modes = await HD.radio.modes();
-  $('#mode').innerHTML = modes.map(m => `<option>${m}</option>`).join('');
-  $('#mode').onchange = (e) => radio.mode(e.target.value).then(paint).catch(fail);
+  // Refused, the select goes back to what the radio is actually in; it
+  // used to keep showing the mode the radio had just said no to.
+  $('#mode').onchange = (e) => radio.mode(e.target.value).then(paint)
+    .catch((err) => { fail(err); syncMode(live); });
 
   $('#tune').onclick = () => {
     const hz = parseFreq($('#freq-in').value);

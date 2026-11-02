@@ -539,6 +539,30 @@ function radioMode(mode, hz, sideband) {
   return mhz < 10 ? 'LSB' : 'USB';
 }
 
+// A spot's mode as a radio knows it. FT8, PSK31 and friends are not modes
+// a radio has - they run in its data mode (USB-D, DATA-U; PKTUSB to
+// hamdash) - and every backend refused them, which this card swallowed:
+// the radio tuned and stayed in whatever mode it was in, with nothing on
+// screen. So digital spots ask for the data mode, a radio without one gets
+// USB, and anything still refused is said rather than dropped.
+const DIGITAL = /^(FT8|FT4|JS8|JT65|JT9|FST4W?|Q65|MSK144|WSPR|PSK\d*|QPSK\d*|OLIVIA|CONTESTIA|MFSK\d*|VARA|DATA|DIGI(TAL)?)$/;
+
+async function setRadioMode(mode) {
+  const want = DIGITAL.test(String(mode).toUpperCase()) ? 'PKTUSB' : mode;
+  try {
+    await HD.radio.mode(want);
+    return '';
+  } catch (first) {
+    if (want !== 'PKTUSB') return `Tuned; the mode was left as it was: ${first.message}`;
+    try {
+      await HD.radio.mode('USB');
+      return `Tuned in USB - this radio has no data mode for ${mode}.`;
+    } catch (second) {
+      return `Tuned; the mode was left as it was: ${second.message}`;
+    }
+  }
+}
+
 // Tuning is deliberately the frequency itself rather than the whole row: a
 // row-wide click would put the radio somewhere else on a mis-click.
 $('#pane').addEventListener('click', async (e) => {
@@ -552,9 +576,9 @@ $('#pane').addEventListener('click', async (e) => {
     // which is a different signal, and reads as the spot being wrong rather
     // than as hamdash tuning wrong.
     const mode = radioMode(b.dataset.mode, hz, b.dataset.sideband);
-    if (mode) await HD.radio.mode(mode).catch(() => {});
+    const note = mode ? await setRadioMode(mode) : '';
     await HD.radio.freq(hz);
-    $('#err').textContent = '';
+    $('#err').textContent = note;
   } catch (err) { $('#err').textContent = err.message; }
   // Anything else that wants to know what we are looking at. Within this
   // card's own namespace; it is a pick, not a lookup result.

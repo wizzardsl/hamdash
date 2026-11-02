@@ -97,6 +97,16 @@ all — an FT-890 has CW-W and CW-N rather than CW. hamdash logs that as CW and
 asks for CW-W when you pick CW, and if the radio has no mode resembling the
 one you asked for it says so rather than appearing to work.
 
+**Every radio names its modes its own way**, and hamdash shows them all in
+one set of names, Hamlib's: an IC-7300's USB-D, a Yaesu's DATA-U and Hamlib's
+PKTUSB are all **PKTUSB**; CW-R is **CWR**; RTTY-R is **RTTYR**. The rig
+card's mode list is the radio's own list in those names, through flrig and
+Hamlib (which can both say what the radio has); OmniRig offers what OmniRig
+knows. A mode the radio is in but hamdash has no name for is shown as the
+radio calls it, greyed out, rather than as some other mode. The logbook does
+not copy a data mode (PKTUSB) into a contact - FT8, PSK31 and RTTY all run
+in it, so which one it was is yours to say.
+
 The **Hamlib** radio list comes from `rigctl -l`, so it is whatever your
 Hamlib supports rather than a copy here that would go stale. Without Hamlib
 installed the tab says so and takes a model number instead.

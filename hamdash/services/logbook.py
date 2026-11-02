@@ -450,6 +450,10 @@ PHONE = ("SSB", "USB", "LSB", "AM", "FM")
 # logged and pushed as MODE=USB, which ADIF does not have: it is SSB with
 # a USB submode, and that is the form LoTW reads.
 _AS_SUBMODE = {"USB": "SSB", "LSB": "SSB"}
+# A radio's reverse-sideband modes, as Hamlib names them, are the same mode
+# to a log: CWR is not an ADIF mode, and a QSO stored as one matches
+# nobody else's record of it.
+_RADIO_ONLY = {"CWR": "CW", "RTTYR": "RTTY"}
 
 
 def adif_mode(qso: dict) -> dict:
@@ -460,6 +464,7 @@ def adif_mode(qso: dict) -> dict:
     """
     mode = str(qso.get("mode") or "").strip().upper()
     sub = str(qso.get("submode") or "").strip().upper()
+    mode = _RADIO_ONLY.get(mode, mode)
     if mode in _AS_SUBMODE and not sub:
         return {"mode": _AS_SUBMODE[mode], "submode": mode}
     return {"mode": mode, "submode": sub}

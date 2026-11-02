@@ -299,8 +299,13 @@ function follow() {
       $('#f-band').value = rig.band || '';
     }
     // '?' is a backend saying it has not read the mode back yet, not a mode.
-    if (!mine.has('mode') && rig.mode && rig.mode !== '?') {
-      $('#f-mode').value = rig.mode;
+    // A radio's reverse modes are the same ADIF mode; its data modes
+    // (PKTUSB - USB-D, DATA-U) are not a mode at all to a log: FT8, PSK31
+    // and RTTY all run in them, so the box is left for the operator rather
+    // than filled with something no logbook will match.
+    const m = String(rig.mode || '');
+    if (!mine.has('mode') && m && m !== '?' && !m.startsWith('PKT')) {
+      $('#f-mode').value = { CWR: 'CW', RTTYR: 'RTTY' }[m] || m;
     }
   }
   sayFollowing();

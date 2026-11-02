@@ -279,6 +279,12 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def asked(b):
+    """What a rigctld backend sent, without the `M ?` it asks first to learn
+    the radio's modes - that question is not what these tests are about."""
+    return [x for x in b.sent if x != "M ?"]
+
+
 class TestRigctldModeWidth(unittest.TestCase):
     """Measured against an FT-900 on COM13 through rigctld 4.7.2, and the
     same on Hamlib's FT-890 backend: `M USB 0` is refused. 0 is the
@@ -300,12 +306,12 @@ class TestRigctldModeWidth(unittest.TestCase):
     def test_a_refused_default_width_falls_back_to_no_change(self):
         b = self.a_rig({"M USB 0"})
         b.set_mode("USB")
-        self.assertEqual(b.sent, ["M USB 0", "M USB -1"])
+        self.assertEqual(asked(b), ["M USB 0", "M USB -1"])
 
     def test_a_rig_that_takes_it_is_asked_once(self):
         b = self.a_rig(set())
         b.set_mode("USB")
-        self.assertEqual(b.sent, ["M USB 0"])
+        self.assertEqual(asked(b), ["M USB 0"])
 
     def test_a_width_we_were_given_is_not_second_guessed(self):
         """A refused *explicit* width is a real error - the operator asked
@@ -313,7 +319,7 @@ class TestRigctldModeWidth(unittest.TestCase):
         b = self.a_rig({"M CW 500"})
         with self.assertRaises(rigs.RigError):
             b.set_mode("CW", 500)
-        self.assertEqual(b.sent, ["M CW 500"])
+        self.assertEqual(asked(b), ["M CW 500"])
 
 
 class TestRigctldSecondVfo(unittest.TestCase):

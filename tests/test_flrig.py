@@ -96,10 +96,12 @@ class TestModeNames(unittest.TestCase):
             with self.subTest(mode=name):
                 self.assertEqual(rigs._adif_mode(name), want)
 
-    def test_a_suffix_that_is_not_a_width_is_left_alone(self):
-        """PKT-U is not PKT with a filter on it."""
-        self.assertEqual(rigs._adif_mode("PKT-U"), "PKT-U")
-        self.assertEqual(rigs._adif_mode("DATA-U"), "DATA-U")
+    def test_a_suffix_that_is_not_a_width_is_the_data_mode(self):
+        """PKT-U is not PKT with a filter on it: it is upper-sideband data,
+        which Hamlib calls PKTUSB, an IC-7300 USB-D and a Yaesu DATA-U."""
+        for name in ("PKT-U", "DATA-U", "USB-D", "DATA-USB"):
+            with self.subTest(mode=name):
+                self.assertEqual(rigs._adif_mode(name), "PKTUSB")
 
     def test_asking_for_cw_picks_a_filter_the_radio_has(self):
         self.assertEqual(rigs._rig_mode("CW", FT890_MODES), "CW-W")

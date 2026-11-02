@@ -912,7 +912,13 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     @app.get("/api/radio/modes")
     @guard("radio")
     def radio_modes():
-        return jsonify(MODES)
+        # The radio's own list where it can say: a fixed list offered
+        # modes some radios refuse (CWR and PKTUSB through flrig, RTTY
+        # through OmniRig) and none of the ones they do have.
+        try:
+            return jsonify(_radio().offered())
+        except rigsvc.RigError:
+            return jsonify(MODES)
 
     @app.get("/api/lookup/<call>")
     @guard("lookup")

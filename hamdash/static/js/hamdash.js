@@ -244,7 +244,9 @@
       freq: (hz) => HD.post('/api/radio/freq', b({ hz })),
       mode: (mode, width) => HD.post('/api/radio/mode', b({ mode, width: width || 0 })),
       ptt: (on) => HD.post('/api/radio/ptt', b({ on: !!on })),
-      modes: () => HD.get('/api/radio/modes'),
+      // What this radio has, in hamdash's names - its own list where the
+      // backend can ask for one (flrig, rigctld), the usual one otherwise.
+      modes: () => HD.get(q('/api/radio/modes')),
       // The needles. Their own call rather than part of the state, because
       // a meter changes on every read and `radio.state` is published on
       // change - whoever draws one polls for it.
