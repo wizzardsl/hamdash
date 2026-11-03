@@ -6,7 +6,7 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
-## [1.3.0]
+## [1.3.1]
 
 ### Added
 - **`AudioFeed` in the card SDK** reads the radio's audio from the shared
@@ -62,6 +62,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   the card offered, and silently failed to set, the old radio's modes.
 - **No more "0 dBm" beside the S-meter** on radios flrig cannot give a dBm
   for.
+- The PSK31 and sound-card rescan tests skip, as the other audio tests do,
+  where numpy is not installed.
+
+## [1.3.0]
+
+Tagged but never released: two new test files needed numpy, which the
+release's host-only test run deliberately does not install, so the build
+stopped before anything was published. Everything it held is in 1.3.1.
 
 ## [1.2.0]
 
