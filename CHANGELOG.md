@@ -10,6 +10,15 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - **`AudioFeed` in the card SDK** reads the radio's audio from the shared
   capture instead of opening a sound card, with `"uses": ["rx_audio"]` in
   `card.json`. See `docs/cards.md`.
+- **RTTY in the Decoder card.** Amateur RTTY (45.45 baud, 170 Hz shift,
+  ITA2 with letters and figures) decodes alongside CW. It finds the tone
+  pair anywhere in the passband by itself, follows drift, and is not pulled
+  off by a louder carrier. Polarity follows the radio's sideband or is set
+  by hand (a **Rev** button on the tile), and unshift-on-space and the
+  number of stop bits are tile settings. Clean copy to about -3 dB SNR in
+  2.5 kHz, mostly readable at -6 dB, and nothing printed from noise. The
+  mock input now plays an RTTY exchange when the tile is in RTTY. Two tiles
+  on one sound card can decode different modes at once.
 
 ### Fixed
 - **Listen, the waterfall and the decoder can share the radio's audio

@@ -3,7 +3,7 @@
 What each bundled card does, and the decisions inside the ones that have a few.
 
 - [Spectrum and waterfall](#spectrum-and-waterfall)
-- [Decoding CW](#decoding-cw)
+- [Decoding CW and RTTY](#decoding-cw-and-rtty)
 - [PSK Reporter](#psk-reporter)
 - [Spots](#spots)
 
@@ -133,17 +133,18 @@ next coffee shop's. Naming one address is the better habit.
 Transmitting from the browser is not supported. A microphone needs a
 secure context, which means HTTPS with a certificate; receiving has no
 such restriction.
-## Decoding CW
+## Decoding CW and RTTY
 
-The `decoder` card reads digital modes out of the radio's audio. CW works;
-RTTY, PSK31 and FT8 are in the dropdown, disabled, so the card says what it
+The `decoder` card reads digital modes out of the radio's audio. CW and RTTY
+work; PSK31 and FT8 are in the dropdown, disabled, so the card says what it
 is rather than looking finished.
 
 Pick the input at the top of the tile. **Radio's audio in** uses whatever
 sound device the rig in use is set to in Settings → Radio, which is the one
 worth choosing: it follows you when you switch radios. **Mock** synthesises
-Morse, so the card works with no radio attached. Anything else is a sound
-card by name.
+a signal in the chosen mode - Morse, or an RTTY exchange - so the card works
+with no radio attached. Anything else is a sound card by name. Two tiles on
+one input can decode different modes at once.
 
 **Stop** gives the sound card back, rather than only going quiet: the usual
 reason to stop decoding is to let WSJT-X or fldigi have the input. The
@@ -169,6 +170,35 @@ which is deliberate: a decoder that fills the screen with letters taken out
 of a dead band teaches you to ignore it. An unknown pattern is printed as the
 dots and dashes that were heard, `<-.-.-.>`, because a silent drop looks
 exactly like a quiet band.
+
+### RTTY
+
+Amateur RTTY: 45.45 baud, 170 Hz shift, Baudot (ITA2) with the US figures.
+There is nothing to tune - the decoder finds the pair of tones anywhere in
+the receiver's passband, and follows it if your radio or theirs drifts. It
+picks the pair that is *keying*, so a louder carrier elsewhere in the
+passband does not pull it away. Beside the lamp are the mark and space
+frequencies it is reading and how cleanly the two tones are separating.
+
+Three tile settings, in the card's own settings sheet:
+
+- **RTTY polarity.** Mark is the higher radio frequency, so in USB it is the
+  higher audio tone and in LSB the lower. **Auto** asks the radio which
+  sideband it is in. The **Rev** button on the tile flips it; if the lamp is
+  lit and nothing prints, that is the first thing to try, and the tile says
+  so.
+- **Unshift on space.** On by default, which is what nearly every station
+  expects: a space returns to letters. If numbers after a space come out as
+  letters - `599 TOO` - the station is not doing it, so turn this off.
+- **Stop bits.** 1.5 is the amateur standard. The decoder checks the whole
+  stop bit to stay in step, so a station sending 1 stop bit reads as
+  rubbish until this matches it.
+
+What to expect of it: clean copy down to about -3 dB signal-to-noise in a
+2.5 kHz bandwidth, and mostly readable at -6 dB with the odd character lost
+or wrong. Tuning onto a station mid-over costs the first few characters, not
+a line of rubbish. Like the CW decoder it prints nothing from a dead band,
+and nothing from the noise after a transmission ends.
 
 ## PSK Reporter
 
