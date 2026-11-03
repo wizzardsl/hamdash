@@ -26,7 +26,12 @@ import sys
 import unittest
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:                                     # pragma: no cover
+    # CI's host-only job runs without the audio cards' packages, on
+    # purpose; this whole file is about a card's DSP.
+    raise unittest.SkipTest("numpy is not installed")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent
                        / "plugins" / "decoder"))

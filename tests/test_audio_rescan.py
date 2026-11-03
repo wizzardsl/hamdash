@@ -23,9 +23,17 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent.parent / "plugins" / "rx_audio"
 sys.path.insert(0, str(HERE))
 
-import capture                                          # noqa: E402
+try:
+    import numpy                                        # noqa: F401
+    import capture                                      # noqa: E402
+except ImportError:                                     # pragma: no cover
+    # CI's host-only job runs without the audio cards' packages, on
+    # purpose. The host's half below needs none of them.
+    capture = None
 
 from hamdash.services import audio                      # noqa: E402
+
+needs_capture = unittest.skipIf(capture is None, "numpy is not installed")
 
 USB = {"name": "alsa_input.usb-GeneralPlus_USB_Audio_Device-00.mono-fallback",
        "max_input_channels": 1, "max_output_channels": 0, "hostapi": 0,
@@ -61,6 +69,7 @@ class FakeSd:
         self.listed = list(self.after_restart)
 
 
+@needs_capture
 class TestTheCaptureLooksAgain(unittest.TestCase):
     def setUp(self):
         self.addCleanup(setattr, capture, "_open_streams", 0)
@@ -153,6 +162,7 @@ def _decoder():
     return mod
 
 
+@needs_capture
 class TestTheDecoderHearsTheSimulatedRadio(unittest.TestCase):
     """Listen played the simulated radio's audio and the decoder refused
     the same radio with "no audio input set". One answer for both."""
