@@ -19,6 +19,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   five seconds a slot. The mock plays an FT8 or FT4 QSO on the UTC clock.
 - **`decoder.decoded` on the bus**: each slot's FT8/FT4 decodes with
   callsign, grid, report, SNR and the radio frequency, for other cards.
+- **PSK Reporter spotting**, as WSJT-X's "Enable PSK Reporter Spotting":
+  stations the Decoder copies on FT8 and FT4 are reported to
+  pskreporter.info with your callsign and locator. Off until ticked in
+  Settings → Integrations, with a status line saying when it last sent and
+  how many. Only FT8 and FT4, only with the radio's frequency known, never
+  your own call, and on PSK Reporter's own terms: batched, one report every
+  five minutes, each station once in five minutes and once an hour per
+  band.
 
 ## [1.3.1]
 

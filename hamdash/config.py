@@ -62,6 +62,11 @@ DEFAULTS = {
     # taken it retries rather than giving up, so closing JTAlert is
     # enough and restarting hamdash is not needed.
     "wsjtx": {"enabled": True, "bind": "127.0.0.1", "port": 2237},
+    # Report FT8/FT4 stations heard to pskreporter.info, as WSJT-X's
+    # "Enable PSK Reporter Spotting" does. Off: it sends the operator's
+    # callsign, locator and what they heard to a third party, so it is
+    # ticked on deliberately. See services/pskreporter.py.
+    "pskreporter": {"enabled": False},
     "units": "km",   # km | mi | nmi
     # Writes the radio conversation to daily hamdash-debug-*.log files,
     # kept 48 hours and capped in size, so it can stay on indefinitely.

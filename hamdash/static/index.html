@@ -261,6 +261,18 @@
       GridTracker &mdash; point them all at a multicast address such as
       <span class="mono">239.255.0.1</span> and put that here instead, and
       they can all listen at once.</p>
+    <h3>PSK Reporter</h3>
+    <label class="row"><input type="checkbox" id="s-pskr-enabled"> Report the
+      stations I hear on FT8 and FT4 to PSK Reporter</label>
+    <p class="sheet-note" id="s-pskr-status"></p>
+    <p class="sheet-note">What the Decoder card copies on FT8 or FT4 is sent to
+      <a href="https://pskreporter.info/" target="_blank" rel="noopener">pskreporter.info</a>
+      with your callsign and locator, so the stations you hear can see where
+      they were heard &mdash; WSJT-X's <em>Enable PSK Reporter Spotting</em>.
+      Batched, at most one report every five minutes and each station at most
+      once in five. Only FT8 and FT4, whose checksum means the callsign is
+      real; only with the radio's frequency known; never your own call. If
+      WSJT-X spots the same radio too, turn one of them off.</p>
   </section>
 
   <section class="tab-panel" data-panel="radio" role="tabpanel" hidden>

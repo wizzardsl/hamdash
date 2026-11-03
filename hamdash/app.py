@@ -32,6 +32,7 @@ from .services import audio as audiosvc
 from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes, Solar
+from .services import pskreporter as pskrsvc
 from .services import wsjtx as wsjtxsvc
 from .services import diagnostics
 
@@ -207,6 +208,21 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 LOG.warning("wsjtx: %s (still trying)", wsjtx.error)
 
     _apply_wsjtx()
+
+    # PSK Reporter: what the Decoder card copies on FT8/FT4, reported as
+    # WSJT-X would. A host service so it outlives any tile; it hears the
+    # card's events in-process rather than holding a stream for them.
+    pskr = pskrsvc.Reporter(lambda: cfg.data.get("station") or {},
+                            __version__).start()
+    BUS.listen("decoder.decoded", pskr.offer)
+
+    def _apply_pskr():
+        on = bool((cfg.data.get("pskreporter") or {}).get("enabled"))
+        if on != pskr.enabled:
+            LOG.info("pskreporter: %s", "on" if on else "off")
+        pskr.set_enabled(on)
+
+    _apply_pskr()
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -657,7 +673,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
                     "callsign_lookup", "logbook_sync", "wsjtx", "units",
-                    "debug"):
+                    "debug", "pskreporter"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -690,6 +706,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             # ticked this on wants to log the next contact, not the next
             # contact after a restart.
             _apply_wsjtx()
+        if "pskreporter" in body:
+            _apply_pskr()
         if "debug" in body:
             diagnostics.set_debug((cfg.data.get("debug") or {}).get("enabled"))
         BUS.publish("config.changed", _safe_config(), source="host")
@@ -708,6 +726,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         """
         c = cfg.data.get("wsjtx", {}) or {}
         return jsonify({"enabled": bool(c.get("enabled")), **wsjtx.status()})
+
+    @app.get("/api/pskreporter")
+    def pskreporter_status():
+        """When it last sent, how many, and if it cannot, why not."""
+        return jsonify(pskr.status())
 
     @app.get("/api/themes")
     def themes():
@@ -1585,6 +1608,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         sup.stop_all()
         rig.stop()
         wsjtx.stop()
+        pskr.stop()
 
     return app, shutdown
 

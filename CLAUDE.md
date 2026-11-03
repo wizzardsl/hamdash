@@ -48,7 +48,8 @@ hamdash/proc.py     one OS process per python card, health, restart, reap
 hamdash/registry.py reads card.json from plugins/ and <home>/cards/
 hamdash/windows.py  native pop-out windows (pywebview js_api bridge)
 hamdash/config.py   config.json, layout.json, tile settings, search paths
-hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math
+hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math,
+                    wsjtx (UDP in), pskreporter (UDP out)
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
@@ -1915,6 +1916,59 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   **Look for the traffic before declaring something unverifiable**: the
   port was being broadcast to the whole time.
 
+## PSK Reporter uploads
+
+`hamdash/services/pskreporter.py`, `tests/test_pskreporter.py`. What
+WSJT-X's "Enable PSK Reporter Spotting" does, from the Decoder card's
+`decoder.decoded`. The spec is https://pskreporter.info/pskdev.html.
+
+- **A host service, not part of the card.** It is the host's outward
+  traffic, it has to outlive any one tile, and its timers and de-dup must
+  span every decoder tile on every radio. It hears the bus in-process
+  (`Bus.listen`), because an SSE stream would hold a server thread for it
+  (invariant 4). A listener runs on the publishing thread, so `offer` only
+  appends; a listener that raises is printed and dropped, never raised into
+  `publish`.
+- **Off by default**, the "nothing new widens the surface unasked" rule:
+  it sends the operator's call, locator and what they heard to a third
+  party. No callsign or no grid in the Station tab is a refusal with a
+  reason (`blocked`), shown in Settings.
+- **FT8 and FT4 only, and that is a decision.** CRC-14 makes a decoded
+  callsign one that was sent. CW, RTTY and PSK31 are never reported - a
+  garbled call is a station on somebody else's map that does not exist -
+  and the decoder does not even publish them.
+- **No dial, no report; simulated, no report.** The reported frequency is
+  the dial plus the audio offset; the card sends `rf_hz` only when the
+  input is the radio's own audio and the radio was on one frequency at the
+  slot's start and end. `simulated` (mock input or simulated radio) is
+  refused here as well as marked there. Own call refused by `base_call`
+  (EA8/G4ABC/P is G4ABC); hashed calls refused; OSD decodes beyond
+  `OSD_TRUST` refused. `source` must be `decoder` - a page posting the
+  topic as `ui` is not the decoder.
+- **Their rules, as written**: one datagram per five minutes, timed from
+  when it was switched on, never the wall clock; a full datagram goes at
+  once; templates in the first three datagrams and hourly; one socket for
+  the session so every datagram has the same source port (the server
+  caches templates per address and port); a call once per five minutes
+  and once an hour unless it changes band; informationSource 1; the
+  sequence counts reports. `MAX_DATAGRAM` is 1400 so nothing fragments.
+- **Byte-exact against the page's own example datagram** - the one
+  complete packet the spec gives, and its later form without templates.
+  Note the page's *partial* example has "PSL" (`50 53 4C`) where the
+  complete one has "PSK" (`4B`); the complete one is what the test uses.
+- **No SNR in the reports, deliberately for now.** The documented sender
+  templates with an SNR also carry iMD, which FT8 does not measure, and the
+  page asks a program that does not fit to write to its author for a
+  template rather than invent one. IPFIX is self-describing and a template
+  without iMD would very likely be accepted, but "very likely" is a guess
+  about somebody else's server. Asking is the way to add it.
+- **Never sent to the live server from development.** The tests send to a
+  list and once to a local socket. PSK Reporter has a test listener on
+  pskreporter.info port 14739 with a packet-analysis page; it was not
+  used either, so the first real datagram is the operator's.
+- **What is queued is kept across a failed send** and sent when hamdash
+  stops properly (`stop()`); turning it off drops it.
+
 ## The log tells the board it changed
 
 - **`Logbook.add` publishes `log.qso_added`, and always has** - and
@@ -2986,7 +3040,8 @@ it into the GitHub bug form, which is pre-filled by the button.
   others would be worth putting on the bus only once it can say how sure
   it is: `lookup.result` is the "what are we looking at" event and feeding
   it guesses would be worse than silence. Nothing subscribes to
-  `decoder.decoded` yet but the PSK Reporter uploader: clicking a decode to
+  `decoder.decoded` yet but the PSK Reporter uploader (see "PSK Reporter
+  uploads"): clicking a decode to
   look the station up, and the map plotting the band, are the obvious next
   uses. FT8/FT4 also have no a-priori decoding (WSJT-X's `aN` decodes, from
   the calls in the operator's QSO), which is jt9's last decibel or two.

@@ -1509,6 +1509,8 @@
     $('#s-wx-bind').value = wx.bind || '127.0.0.1';
     $('#s-wx-port').value = wx.port || 2237;
     refreshWsjtx();
+    $('#s-pskr-enabled').checked = !!(config.pskreporter || {}).enabled;
+    refreshPskr();
     $('#s-debug').checked = !!(config.debug || {}).enabled;
     gridNote('');
     showTab('station');
@@ -1566,6 +1568,57 @@
     el.className = 'sheet-note' + (kind ? ` ${kind}` : '');
   }
 
+  /* ---- PSK Reporter --------------------------------------------------
+   *
+   * The same question as WSJT-X: is it actually sending? A tick in the box
+   * cannot say, because the commonest reason it is not - no callsign or
+   * locator in the Station tab - is somewhere else in the sheet.
+   */
+  async function refreshPskr() {
+    const el = $('#s-pskr-status');
+    if (!el) return;
+    let s;
+    try { s = await HD.get('/api/pskreporter'); } catch (e) { return; }
+    let msg;
+    let kind = '';
+    const ago = (t) => {
+      const sec = Math.max(0, Math.round(Date.now() / 1000 - t));
+      return sec < 90 ? `${sec} s ago` : `${Math.round(sec / 60)} min ago`;
+    };
+    if (!s.enabled) {
+      msg = 'Off. Nothing is sent.';
+    } else if (s.blocked === 'no callsign') {
+      msg = 'On, but nothing can be sent: there is no callsign in the Station tab.';
+      kind = 'bad';
+    } else if (s.blocked === 'no locator') {
+      msg = 'On, but nothing can be sent: there is no grid locator in the Station tab.';
+      kind = 'bad';
+    } else {
+      const next = s.next_send_in === null ? ''
+        : ` · next in ${Math.floor(s.next_send_in / 60)}:${String(s.next_send_in % 60).padStart(2, '0')}`;
+      msg = s.last_sent_at
+        ? `Sent ${s.last_sent_count} spot${s.last_sent_count === 1 ? '' : 's'} ${ago(s.last_sent_at)}`
+          + ` · ${s.total_sent} since start`
+        : 'On. Nothing sent yet';
+      msg += ` · ${s.queued} waiting${next}`;
+      if (s.error) { msg += ` · ${s.error}`; kind = 'bad'; }
+      const skipped = s.skipped || {};
+      if (!s.total_sent && !s.queued) {
+        // Heard and not sent is the case that looks broken, so say why.
+        if (skipped['no dial frequency']) {
+          msg += ` · ${skipped['no dial frequency']} heard but not reportable: `
+               + "the Decoder is not on the radio's own audio, or the "
+               + "radio's frequency is unknown";
+        } else if (skipped.simulated) {
+          msg += ' · only the mock or the simulated radio heard so far, '
+               + 'which are never reported';
+        }
+      }
+    }
+    el.textContent = msg;
+    el.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
   // Polled only while the sheet is open: a heartbeat is every 15 s and
   // there is nothing to show when nobody is looking at it.
   function watchWsjtx(on) {
@@ -1573,7 +1626,8 @@
     wsjtxTimer = null;
     if (on) {
       refreshWsjtx();
-      wsjtxTimer = setInterval(refreshWsjtx, 5000);
+      refreshPskr();
+      wsjtxTimer = setInterval(() => { refreshWsjtx(); refreshPskr(); }, 5000);
     }
   }
 
@@ -1731,6 +1785,7 @@
         user: $('#s-lk-user').value.trim(),
       }, 'password', '#s-lk-pass'),
       debug: { enabled: $('#s-debug').checked },
+      pskreporter: { enabled: $('#s-pskr-enabled').checked },
       wsjtx: {
         enabled: $('#s-wx-enabled').checked,
         bind: $('#s-wx-bind').value.trim() || '127.0.0.1',
