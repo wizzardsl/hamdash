@@ -56,6 +56,35 @@
   #out .row.osd .t { font-style: italic; }
   #out .slot-rule { display: block; border-top: 1px solid var(--rule);
                     margin: 2px 0; height: 0; }
+  /* FT8/FT4 columns, with a heading row above that says what each is.
+     The heading and the rows share one template, so they cannot drift. */
+  .cols, #out.slots .row {
+    display: grid; column-gap: 1ch; align-items: baseline;
+    grid-template-columns: 6ch 3.5ch 4.5ch 4.5ch minmax(0, 1fr) 15ch 8ch;
+  }
+  /* The widths are in `ch`, which is the element's own font: so the
+     heading row has the rows' font and size, and only its labels are made
+     small - an 11px heading over 13px rows put "Hz" 14px left of its
+     numbers, worse with every column. */
+  .cols { font-family: var(--mono); font-size: 13px; color: var(--muted);
+          padding: 0 9px 2px; }
+  .cols > span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cols[hidden] { display: none; }
+  .cols .num, #out.slots .num { text-align: right; }
+  #out.slots .row > span { overflow: hidden; text-overflow: ellipsis; }
+  #out.slots .where { color: var(--muted); white-space: nowrap; }
+  #out.slots .where img.flag { height: 0.8em; margin-right: 0.4ch;
+                               vertical-align: baseline; }
+  #out.slots .dist { color: var(--muted); }
+  #out.slots .row.pending .where { font-style: italic; }
+  /* A narrow tile - or a phone - keeps the decode and where it came from,
+     and drops the timing column and the country's name. */
+  @media (max-width: 520px) {
+    .cols, #out.slots .row {
+      grid-template-columns: 6ch 3.5ch 4.5ch minmax(0, 1fr) 7ch 7ch;
+    }
+    .cols .dt, #out.slots .dt, #out.slots .where .country { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -72,6 +101,15 @@
   <button id="clear" type="button" title="Empty the window. The speed estimate is kept.">Clear</button>
 </div>
 
+<div class="cols" id="cols" hidden aria-hidden="true">
+  <span title="Start of the slot, UTC">UTC</span>
+  <span class="num" title="Signal to noise, in a 2.5 kHz bandwidth">dB</span>
+  <span class="num dt" title="Time offset: how late the signal started, seconds. Most stations near one figure means your clock is that far out.">DT</span>
+  <span class="num" title="Audio frequency in the receiver's passband, Hz">Hz</span>
+  <span title="The message as sent">Message</span>
+  <span title="Where the sending station is: state or province, and country">Where</span>
+  <span class="num" title="Distance from your station; ~ means only the country is known">Dist</span>
+</div>
 <div id="out" data-empty="Listening&#8230;"></div>
 <p class="err" id="err"></p>
 
@@ -146,6 +184,46 @@ setInterval(() => {
   });
 }, 500);
 
+function cell(cls, text) {
+  const c = document.createElement('span');
+  if (cls) c.className = cls;
+  if (text !== undefined) c.textContent = text;
+  return c;
+}
+
+// The Where and Dist cells, from what the card knows of the station. Asked
+// again later for a US call whose state was still being looked up.
+function paintWhere(row, w) {
+  const where = row.querySelector('.where');
+  const dist = row.querySelector('.dist');
+  where.textContent = '';
+  dist.textContent = '';
+  row.classList.toggle('pending', !!(w && w.pending));
+  if (!w) return;
+  if (w.iso) where.insertAdjacentHTML('beforeend', HD.flag(w.iso, w.country));
+  const place = w.state ? `${w.state}` : '';
+  if (place) where.append(place);
+  if (w.country) {
+    where.append(cell('country', `${place ? ', ' : ''}${w.country}`));
+  }
+  const hint = [w.state_name && w.state_name !== w.state ? w.state_name : '',
+                w.country, w.grid ? `grid ${w.grid}${w.approx ? ' (country centre)' : ''}` : '',
+                w.bearing !== null && w.bearing !== undefined ? `beam ${w.bearing}°` : '',
+                w.pending ? 'state still being looked up' : '']
+    .filter(Boolean).join(' · ');
+  where.title = hint;
+  dist.dataset.km = w.dist_km === null || w.dist_km === undefined ? '' : String(w.dist_km);
+  dist.dataset.approx = w.approx ? '1' : '';
+  paintDist(dist);
+  row.dataset.call = w.pending ? w.call : '';
+}
+
+function paintDist(dist) {
+  const km = dist.dataset.km;
+  dist.textContent = km === '' || km === undefined ? ''
+    : (dist.dataset.approx ? '~' : '') + HD.fmtDistance(Number(km));
+}
+
 function appendRows(rows) {
   const el = $('#out');
   for (const r of rows) {
@@ -159,17 +237,14 @@ function appendRows(rows) {
                   + (r.osd ? ' osd' : '');
     const t = new Date(r.slot * 1000).toISOString();
     const hms = t.slice(11, 13) + t.slice(14, 16) + t.slice(17, 19);
-    const num = (v, w) => String(v).padStart(w);
-    const sign = (v, w) => (v >= 0 ? '+' : '') + v;
-    const meta = document.createElement('span');
-    meta.className = 'm';
-    meta.textContent = `${hms} ${num(sign(r.snr), 3)} ${num(sign(r.dt.toFixed(1)), 4)}`
-                     + ` ${num(Math.round(r.freq), 4)}  `;
-    const txt = document.createElement('span');
-    txt.className = 't';
-    txt.textContent = r.text;
+    const sign = (v) => (v >= 0 ? '+' : '') + v;
+    const txt = cell('t', r.text);
     if (r.osd) txt.title = 'Found by the slower, less certain decoder (OSD)';
-    row.append(meta, txt);
+    row.append(cell('m', hms), cell('m num', sign(r.snr)),
+               cell('m num dt', sign(r.dt.toFixed(1))),
+               cell('m num', String(Math.round(r.freq))), txt,
+               cell('where'), cell('dist num'));
+    paintWhere(row, r.where);
     el.appendChild(row);
     fading.push([row, Date.now()]);
   }
@@ -295,6 +370,31 @@ async function tickSlots() {
   }
 }
 
+// US states arrive a little after their rows: the card looks them up one
+// at a time so as not to lean on a free lookup service. Every few seconds
+// the rows still waiting are asked about again.
+async function refreshPlaces() {
+  if (!slotMode() || HD.hidden) return;
+  const waiting = [...document.querySelectorAll('#out .row.pending')];
+  const calls = [...new Set(waiting.map((r) => r.dataset.call).filter(Boolean))];
+  if (!calls.length) return;
+  let got;
+  try {
+    got = await HD.card('decoder', `/api/places?calls=${encodeURIComponent(calls.slice(0, 60).join(','))}`);
+  } catch { return; }
+  for (const row of waiting) {
+    const w = (got.places || {})[row.dataset.call];
+    if (w && !w.pending) paintWhere(row, w);
+  }
+}
+setInterval(refreshPlaces, 4000);
+
+// Distances are formatted in the operator's units; when those change, the
+// rows already on screen change with them.
+document.addEventListener('hamdash:units', () => {
+  document.querySelectorAll('#out .dist').forEach(paintDist);
+});
+
 async function tick() {
   if (!running || HD.hidden) return;
   if (slotMode()) return tickSlots();
@@ -349,6 +449,7 @@ async function fillLists() {
 function applyWrap() {
   $('#out').classList.toggle('nowrap', conf.wrap === false);
   $('#out').classList.toggle('slots', slotMode());
+  $('#cols').hidden = !slotMode();
   $('#out').dataset.empty = !running ? 'Stopped'
     : slotMode() ? `Listening - decodes appear as each ${conf.mode === 'ft4' ? '7.5' : '15'} s slot ends`
     : 'Listening…';

@@ -1609,6 +1609,29 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
 
 ### FT8 and FT4 (`plugins/decoder/ftx.py`, `tests/test_ftx.py`)
 
+- **Where a station is (`plugins/decoder/where.py`) is cheapest first, and
+  only the US needs the network.** Country and Canadian province come from
+  the prefix (`dxcc.province_for`); a US state cannot - a W7 may live
+  anywhere - so it is the host's lookup, asked one call every `LOOKUP_GAP`
+  seconds, US calls only, once per process, never for the mock's invented
+  calls (K1ABC is the textbook call; asking callook about it every start
+  is a waste of somebody else's server), and a failure is remembered as
+  "no state" so the row stops waiting. The card needs the `lookup`
+  permission for it. The grid for a distance is, in order: sent in this
+  message, last sent by that call (`heard_grid`, fed from every slot),
+  the lookup's, the province's population centre, the country's. The
+  last two are `approx` and drawn with "~". The province centre is where
+  the people are, not the geographic middle: the country centre this
+  replaced put a VE7 3,500 km from a VE7 listening to them.
+- **Column widths are in `ch`, which is the element's own font.** The
+  heading row had 11px labels over 13px rows, and "Hz" sat 14px left of
+  its numbers, worse with every column. The heading row has the rows' font
+  size; only the labels inside it are small. Measured with
+  `getBoundingClientRect` at both widths, not eyeballed.
+- **`hamdash:units` is fired on `document`.** A listener on `window` never
+  hears it, because a CustomEvent does not bubble by default.
+
+
 - **WSJT-X is the referee, and it is installed on the station.**
   `ft8code`/`ft4code` print the bits, CRC, parity and symbols of a message
   (`fixtures/ftx/codes.json`), `ft8sim` makes WSJT-X's own waveforms, and

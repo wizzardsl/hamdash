@@ -220,7 +220,25 @@ Every signal in the passband, decoded a slot at a time: FT8 every 15
 seconds, FT4 every 7.5, on the UTC clock. Each decode is one line, the way
 WSJT-X's band activity reads - the slot's time, SNR, DT, the audio
 frequency and the message - with CQs in the signal colour and a thin rule
-between slots. There is nothing to set.
+between slots, under column headings. There is nothing to set.
+
+Two more columns say where each sending station is:
+
+- **Where**: the flag, then the state or province and the country. The
+  country and a Canadian province come from the callsign prefix, at once.
+  A US state cannot be read off a call - a W7 may live anywhere - so it is
+  looked up with your callsign lookup provider (Settings → Integrations),
+  slowly, one station every two seconds, and shown in italics until it
+  arrives. Each station is asked about once; other countries are not
+  looked up.
+- **Dist**: how far, in the units chosen in Settings. Exact when the
+  station has sent its grid square - in this message or an earlier one -
+  or the lookup gave its address; otherwise drawn with a "~" from the
+  middle of their province or country. Hover over Where for the grid and
+  the beam heading.
+
+On a narrow tile the DT column and the country name are dropped to leave
+room for the message.
 
 Above the window: how many the last slot gave, how long it took to decode,
 and the **median DT**. That last one is the clock. Stations' own clocks

@@ -60,8 +60,15 @@ import cw
 import ftx
 import psk
 import rtty
+import where
 
 card = Card(__file__)
+
+# Where each FT8/FT4 station is: country and Canadian province from the
+# prefix, a US state from the host's lookup (slowly), and the distance
+# from the operator's grid. See where.py.
+PLACES = where.Places(lookup=lambda call: card.host.lookup(call),
+                      station=lambda: card.host.station())
 
 BLOCK = 2048                    # samples per mock block, ~43 ms at 48 kHz
 # What the decoder asks the shared engine for. The passband is 250-2700
@@ -512,6 +519,10 @@ def on_slot(stream: "Stream", t: float, rows: list) -> None:
     dial, simulated, rig = dial_for(stream, t, now)
     out = []
     for r in rows:
+        # A grid sent on the air is the best answer to where that station
+        # is; remembered, so their later messages (which carry a report,
+        # not a grid) still get a real distance.
+        PLACES.heard_grid(r.get("call", ""), r.get("grid", ""))
         d = {k: r[k] for k in ("text", "call", "to", "grid", "report",
                                "ack", "snr", "dt", "freq", "kind", "osd")
              if k in r}
@@ -656,9 +667,24 @@ def decodes():
     except ValueError:
         seq = 0
     out = li.info(st)
-    out.update({"decodes": st.decoder.since(seq), "mode": spec["mode"],
+    rows = []
+    for r in st.decoder.since(seq):
+        r = dict(r)
+        r["where"] = PLACES.place(r.get("call", ""), r.get("grid", ""),
+                                  may_look_up=not device.startswith("mock"))
+        rows.append(r)
+    out.update({"decodes": rows, "mode": spec["mode"],
                 "source": str(conf.get("source") or "mock")})
     return out
+
+
+@card.get("/places")
+def places():
+    """Where these calls are, now. The page asks again for rows whose US
+    state was still being looked up when they arrived."""
+    calls = [c for c in (request.args.get("calls") or "").upper().split(",")
+             if c][:60]
+    return {"places": {c: PLACES.place(c) for c in calls}}
 
 
 @card.post("/clear")

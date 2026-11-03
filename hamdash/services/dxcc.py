@@ -387,3 +387,47 @@ def for_call(call: str) -> dict:
 def iso_for(call: str) -> str:
     """Just the flag code, which is what the UI usually wants."""
     return for_call(call)["iso"]
+
+
+# Canadian prefixes say the province: the digit, and for a few the letters,
+# are allocated by province (ISED's call sign policy, RIC-9). A US call does
+# not say its state - a W7 may live anywhere - so that needs a lookup.
+# Portable operation ("VE7ABC/VE3") is decided by `strip_call`'s choice of
+# token, the same as the country.
+_CA_PROVINCES = {
+    "VE1": ("NS", "Nova Scotia"), "VA1": ("NS", "Nova Scotia"),
+    "VE2": ("QC", "Quebec"), "VA2": ("QC", "Quebec"),
+    "VE3": ("ON", "Ontario"), "VA3": ("ON", "Ontario"),
+    "VE4": ("MB", "Manitoba"), "VA4": ("MB", "Manitoba"),
+    "VE5": ("SK", "Saskatchewan"), "VA5": ("SK", "Saskatchewan"),
+    "VE6": ("AB", "Alberta"), "VA6": ("AB", "Alberta"),
+    "VE7": ("BC", "British Columbia"), "VA7": ("BC", "British Columbia"),
+    "VE8": ("NT", "Northwest Territories"),
+    "VE9": ("NB", "New Brunswick"),
+    "VO1": ("NL", "Newfoundland and Labrador"),
+    "VO2": ("NL", "Newfoundland and Labrador"),
+    "VY0": ("NU", "Nunavut"), "VY1": ("YT", "Yukon"),
+    "VY2": ("PE", "Prince Edward Island"),
+}
+
+# Where most of a province's people - and so its hams - live, for a rough
+# distance when a station has not sent its grid. Not the middle of the
+# province: the middle of BC is a long way from Vancouver, and the country
+# centre this replaced put a VE7 3,500 km from a VE7 listening to them.
+# Still approximate, and drawn as such.
+_CA_PROVINCE_GRIDS = {
+    "NS": "FN84", "QC": "FN35", "ON": "FN03", "MB": "EN19", "SK": "DO61",
+    "AB": "DO21", "BC": "CN89", "NT": "DP22", "NB": "FN65", "NL": "GN37",
+    "NU": "FP53", "YT": "CP20", "PE": "FN86",
+}
+
+
+def province_for(call: str) -> tuple[str, str]:
+    """(code, name) of a Canadian callsign's province, or ("", "")."""
+    token = strip_call(call)
+    return _CA_PROVINCES.get(token[:3].upper(), ("", ""))
+
+
+def province_grid(code: str) -> str:
+    """A rough grid for a Canadian province code: where most people live."""
+    return _CA_PROVINCE_GRIDS.get(code or "", "")

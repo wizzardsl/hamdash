@@ -17,6 +17,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   `ft8sim` waveforms, and its `jt9` on the same audio - 119 of jt9's 122
   decodes over eight busy slots of 40 m, nothing jt9 did not find, about
   five seconds a slot. The mock plays an FT8 or FT4 QSO on the UTC clock.
+- **Where each FT8/FT4 station is, and how far.** Column headings over the
+  decodes, and two new columns: the flag with the state or province and
+  country, and the distance in your chosen units. Canadian provinces come
+  from the callsign; US states from your lookup provider, one station every
+  two seconds. Exact from a sent grid, approximate ("~") otherwise.
 - **`decoder.decoded` on the bus**: each slot's FT8/FT4 decodes with
   callsign, grid, report, SNR and the radio frequency, for other cards.
 - **PSK Reporter spotting**, as WSJT-X's "Enable PSK Reporter Spotting":
