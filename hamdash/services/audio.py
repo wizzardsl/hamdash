@@ -92,8 +92,16 @@ def _fold_truncated(rows: dict[str, dict]) -> list[dict]:
     return out
 
 
-def _probe() -> dict:
-    """Ask PortAudio. Runs on the worker thread, never on a request."""
+def _probe(fresh: bool = False) -> dict:
+    """Ask PortAudio. Runs on the worker thread, never on a request.
+
+    `fresh` starts PortAudio again first. It reads the device list once,
+    when it starts, so a sound card plugged in - or handed back by
+    PipeWire after another program let it go - since then is not in it,
+    and Rescan used to rescan the same old list. Safe here because the host
+    never opens a stream; a card process that does checks before it does
+    the same (plugins/rx_audio/capture.py).
+    """
     try:
         import sounddevice as sd
     except Exception as exc:                            # noqa: BLE001
@@ -102,6 +110,9 @@ def _probe() -> dict:
                          "Install it with: pip install sounddevice"}
     try:
         with _LOCK:
+            if fresh:
+                sd._terminate()
+                sd._initialize()
             found = list(enumerate(sd.query_devices()))
             apis = {i: a["name"] for i, a in enumerate(sd.query_hostapis())}
             default_in, default_out = (list(sd.default.device) + [-1, -1])[:2]
@@ -135,7 +146,7 @@ def _probe() -> dict:
             "outputs": collect("output"), "error": ""}
 
 
-def _refresh_in_background() -> bool:
+def _refresh_in_background(fresh: bool = False) -> bool:
     """Start a probe unless one is already running. True if this call did.
 
     A probe that has not come back is wedged inside PortAudio holding
@@ -150,7 +161,7 @@ def _refresh_in_background() -> bool:
 
     def run():
         global _cache, _cached_at
-        got = _probe()
+        got = _probe(fresh) if fresh else _probe()
         # A probe that timed out is still running and may land after a later
         # one has already answered. Older news must neither overwrite newer
         # nor release a caller that is waiting on the newer one.
@@ -174,7 +185,7 @@ def devices(refresh: bool = False) -> dict:
     if _cache and not refresh and (time.time() - _cached_at) < CACHE_SECONDS:
         return dict(_cache)
 
-    started = _refresh_in_background()
+    started = _refresh_in_background(fresh=refresh)
     if not _done.wait(ENUM_TIMEOUT) or not _cache:
         if _cache:
             # Stale beats empty: these are device names, and they were right

@@ -54,10 +54,8 @@ _wanted: dict[str, float] = {}      # device -> last time a tile asked for it
 IDLE_SECONDS = 30.0
 RETRY_SECONDS = 5.0
 
-# PortAudio does not enjoy having its device list enumerated on one thread
-# while another opens a stream. Nothing here opens one any more - the engine
-# does - but the /devices list still enumerates, so it keeps its lock.
-_pa_lock = threading.Lock()
+# No PortAudio in this process at all now: the engine opens the sound card
+# and the host lists them.
 
 
 def _to_u8(db: np.ndarray) -> np.ndarray:
@@ -303,16 +301,20 @@ def _publish_peaks() -> None:
 @card.get("/devices")
 def devices():
     out = [{"id": "mock", "name": "mock - synthesised test signal"}]
+    # The host's list, not this process's own look at PortAudio: this card
+    # no longer opens a sound card (the shared capture does), and its own
+    # PortAudio read the list once at start - so a device that came back
+    # never appeared here until the board was restarted. The host's is
+    # cached, folded one row per device, and freshly read on a Rescan.
+    fresh = request.args.get("refresh") in ("1", "true", "yes")
     try:
-        import sounddevice as sd
-        with _pa_lock:
-            found = list(enumerate(sd.query_devices()))
-        for i, d in found:
-            if d["max_input_channels"] > 0:
-                out.append({"id": d["name"], "name": f"{i}: {d['name']}"})
+        got = card.host.audio_devices(refresh=fresh) or {}
     except Exception as exc:                            # noqa: BLE001
         return {"devices": out, "error": str(exc)}
-    return {"devices": out}
+    for d in got.get("inputs") or []:
+        out.append({"id": d.get("id"), "name": d.get("name") or d.get("id")})
+    return {"devices": out, **({"error": got["error"]}
+                               if got.get("error") else {})}
 
 
 @card.get("/state")

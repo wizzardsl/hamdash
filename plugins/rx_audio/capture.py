@@ -26,6 +26,7 @@ Three layers, each with one job:
 """
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections import deque
@@ -57,6 +58,15 @@ SYSTEM_DEFAULT = "<system default>"
 # PortAudio is not thread-safe across enumerate/open: one lock for both.
 # Only this process opens inputs now, so this one lock covers every open.
 _pa_lock = threading.Lock()
+# Streams this process has open, guarded by `_pa_lock`. PortAudio can only
+# be re-initialised - which is the only way it notices a device that has
+# appeared since it started - with none open: re-initialising invalidates
+# every stream it has.
+_open_streams = 0
+
+
+class Missing(RuntimeError):
+    """The device is not in PortAudio's list, even after a fresh look."""
 
 
 class Capture:
@@ -134,6 +144,7 @@ class Capture:
                         samplerate=self.in_rate,
                         blocksize=int(self.in_rate * BLOCK_MS / 1000),
                         callback=self._on_audio)
+                    _count_stream(+1)
                     stream.start()
                 self.status = "running"
                 while not self._stop.wait(0.25):
@@ -157,7 +168,10 @@ class Capture:
                             except Exception as exc:    # noqa: BLE001
                                 print(f"rx_audio: {self.device or 'default'}:"
                                       f" {shut.__name__} failed: {exc}")
+                        _count_stream(-1)
             self.status = "stopped"
+        except Missing as exc:
+            self._fail(str(exc), _missing_hint())
         except Exception as exc:                        # noqa: BLE001
             # Naming the likely cause matters more here than anywhere: a
             # sound card can only be held by one program at a time on
@@ -480,6 +494,19 @@ class Hub:
         self._close(closing, "shutting down")
 
 
+def _count_stream(step: int) -> None:
+    """Called under `_pa_lock`."""
+    global _open_streams
+    _open_streams = max(0, _open_streams + step)
+
+
+def _find(sd, low: str):
+    for i, d in enumerate(sd.query_devices()):
+        if d["max_input_channels"] > 0 and low in d["name"].lower():
+            return i
+    return None
+
+
 def _resolve_device(sd, wanted: str):
     """By name, never by index.
 
@@ -487,11 +514,41 @@ def _resolve_device(sd, wanted: str):
     Bluetooth headset wakes, so a saved index silently becomes a
     different device - which presents as the card being deaf rather than
     as a settings problem.
+
+    **PortAudio reads the device list once, when it starts.** A sound card
+    that was missing then - unplugged, or dropped by PipeWire because some
+    other program opened its raw hardware device - and has come back is
+    not in that list, so every retry failed until the card process was
+    restarted, which meant restarting the board. Not found, it looks
+    again with a fresh PortAudio, when nothing else in this process has a
+    stream open for that to break. Called under `_pa_lock`.
     """
     if not wanted:
         return None                                 # the system default
     low = wanted.lower()
-    for i, d in enumerate(sd.query_devices()):
-        if d["max_input_channels"] > 0 and low in d["name"].lower():
-            return i
-    raise RuntimeError(f"no input device whose name contains {wanted!r}")
+    index = _find(sd, low)
+    if index is None and _open_streams == 0:
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception as exc:                    # noqa: BLE001
+            print(f"rx_audio: could not look for devices again: {exc}")
+        index = _find(sd, low)
+    if index is None:
+        raise Missing(f"there is no input called {wanted!r} right now")
+    return index
+
+
+def _missing_hint() -> str:
+    if sys.platform.startswith("linux"):
+        # Found the hard way: an SDR program set to the sound card's raw
+        # hardware device opened it out from under PipeWire, which then
+        # dropped the input and did not take it back.
+        return ("The sound system has lost this input. If another program "
+                "opened the sound card directly - an SDR program set to its "
+                "hardware device does this - close it, then run "
+                "`systemctl --user restart wireplumber`. This picks the "
+                "input up again by itself within a few seconds.")
+    return ("Is it plugged in? This picks it up again by itself within a "
+            "few seconds of it coming back; or choose another input in "
+            "Settings -> Radio.")

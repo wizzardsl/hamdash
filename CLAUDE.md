@@ -1193,6 +1193,20 @@ follows it):
   Verified live on both halves, two browsers on one board: A's tile goes
   to the background, B keeps decoding and nothing closes; B follows and
   the input closes with exactly one line.
+- **PortAudio reads the device list once, when it starts**, so a sound
+  card that appears later - plugged in, or handed back by PipeWire after
+  `systemctl --user restart wireplumber` - is invisible to every process
+  that had already started it. On this station an SDR program opening the
+  USB card's raw hardware device made PipeWire drop the input; after it
+  came back, the timed retry kept searching the old list and only a board
+  restart helped. The shared capture's `_resolve_device` now looks again
+  with `sd._terminate()`/`sd._initialize()` when a name is missing - **only
+  with no stream open in that process** (`_open_streams`), because
+  re-initialising invalidates every open stream - and the host's Rescan
+  does the same unconditionally, since the host never opens one. The
+  spectrum and decoder list inputs from the host (`card.host.
+  audio_devices`) now, not from a PortAudio of their own.
+  `tests/test_audio_rescan.py`.
 - **Don't respin a failed resource on every request.** Doing so means the
   caller only ever sees a brand new object in its "starting" state and never
   the error saying what is wrong. Retry on a timer instead.

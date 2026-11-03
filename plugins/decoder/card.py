@@ -90,10 +90,8 @@ _listeners: dict[str, "Listener"] = {}
 # device -> {tile uid: when it last asked}. Per tile, not per device: the
 # question "may this input be closed" is "has every tile finished with it".
 _wanted: dict[str, dict[str, float]] = {}
-# PortAudio does not enjoy having its device list enumerated on one thread
-# while another opens a stream: on Windows that can block for a long time or
-# never come back. Everything touching the library goes through here.
-_pa_lock = threading.Lock()
+# No PortAudio in this process at all now: the engine opens the sound card
+# and the host lists them.
 
 
 class Stream:
@@ -360,9 +358,18 @@ def resolve_source(conf: dict, state: dict | None = None
     source = str(conf.get("source") or "mock")
     if source != "radio":
         return source, ""
-    device = radio_audio(state)
+    st = radio_state() if state is None else state
+    device = radio_audio(st)
     if device:
         return device, ""
+    # The simulated radio with no input set is heard as the simulated
+    # signal - what Listen does with it too (rx_audio's `_device_for`).
+    # This card refused instead, so the same radio read "no audio input
+    # set" here and played a tone there. A real radio with none set
+    # still refuses: the alternative is the system default input, which
+    # is usually a microphone.
+    if st.get("mock") is True:
+        return "mock", ""
     return "", ("The radio in use has no audio input set. "
                 "Settings → Radio, or pick an input below.")
 
@@ -449,7 +456,10 @@ def _tile() -> tuple[dict, str, str, dict]:
     conf = card.settings()
     state = radio_state()
     device, note = resolve_source(conf, state)
-    spec = decoder_spec(conf, str(conf.get("source") or "mock"), state)
+    # What is actually heard decides the polarity: the mock is a USB
+    # signal whatever the simulated radio's sideband says.
+    heard = "mock" if device == "mock" else str(conf.get("source") or "mock")
+    spec = decoder_spec(conf, heard, state)
     return conf, listen_key(device, spec["mode"]), note, spec
 
 
@@ -515,19 +525,18 @@ def inputs():
     """
     out = [{"id": "radio", "name": f"Radio's audio in{_radio_suffix()}"},
            {"id": "mock", "name": "Mock — a synthesised signal"}]
+    # The host's list, for the reason given at spectrum's /devices: this
+    # card no longer opens a sound card, and its own PortAudio never saw a
+    # device that appeared after it started.
+    fresh = request.args.get("refresh") in ("1", "true", "yes")
     try:
-        import sounddevice as sd
-        with _pa_lock:
-            found = list(enumerate(sd.query_devices()))
-        seen = set()
-        for _, d in found:
-            if d["max_input_channels"] > 0 and d["name"] not in seen:
-                seen.add(d["name"])
-                out.append({"id": d["name"],
-                            "name": " ".join(str(d["name"]).split())})
+        got = card.host.audio_devices(refresh=fresh) or {}
     except Exception as exc:                            # noqa: BLE001
         return {"inputs": out, "modes": MODES, "error": str(exc)}
-    return {"inputs": out, "modes": MODES}
+    for d in got.get("inputs") or []:
+        out.append({"id": d.get("id"), "name": d.get("name") or d.get("id")})
+    return {"inputs": out, "modes": MODES,
+            **({"error": got["error"]} if got.get("error") else {})}
 
 
 def _radio_suffix() -> str:

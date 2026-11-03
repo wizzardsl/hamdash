@@ -21,6 +21,17 @@ versions follow [SemVer](https://semver.org/). The version of record is
   on one sound card can decode different modes at once.
 
 ### Fixed
+- **A sound card that comes back is found without restarting hamdash.**
+  When the radio's USB input disappears - unplugged, or dropped by the
+  sound system because another program opened it directly - and returns,
+  Listen, the waterfall and the decoder now pick it up again by themselves
+  within a few seconds, and **Rescan** in Settings really looks again.
+  Before, nothing short of restarting hamdash would see it. While it is
+  missing, the message on Linux says what usually causes it and the one
+  command that brings it back.
+- **The decoder's "radio" input works with the simulated radio**, playing
+  its test signal the way Listen does, instead of saying the radio has no
+  audio input.
 - **Listen, the waterfall and the decoder can share the radio's audio
   input.** Whichever opened it first used to lock the others out - on
   Windows a sound card input will not reliably open twice - and the error
