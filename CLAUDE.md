@@ -903,6 +903,41 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
 - **Mode names from spots are not radio modes.** FT8 or PSK31 from a
   spot's mode field asks for the data mode (PKTUSB), then USB; a refusal
   is shown. The swallowed `.catch(() => {})` was the SSB bug again.
+- **The other VFO is not a read on every radio.** Where a Hamlib backend
+  cannot address it directly, `\get_vfo_info VFOB` switches VFO, reads
+  and switches back - and it was asked twice a second: relays clicking,
+  the display flickering, a VFO change under a transmission. It is
+  cached (`OTHER_TTL`, 8 s), dropped by anything here that can move it
+  (set_freq, set_vfo, set_split), **never asked while the radio is on the
+  air** - by its own `t`, or because we keyed it, for a radio whose `t`
+  cannot say - and keyed by *which* VFO, so after the front panel's A/B a
+  number read for B is never shown as A. A refusal is cached too, or a
+  radio without the command is asked it twice a second for ever. Proven
+  on the dummy rigctld: six polls, one read. The meters poll calls
+  `state()` as well, which is the other half of why it was so often.
+- **flrig can be pointed at another radio mid-session**, and the mode list
+  is that radio's: an IC-7300's USB-D sent to an FT-890 is a name flrig's
+  `set_mode` accepts and silently ignores. `rig.get_xcvr` is asked at most
+  every `XCVR_TTL` (30 s) on the poll and at once before any `set_mode`;
+  a change drops the list, and `rig_type` rides on the state (and in the
+  publish key) so the card re-reads its dropdown. A Fault from `set_mode`
+  re-reads the list too, and says "any more" if that was why.
+- **A rigctld that cannot open the radio goes on listening (4.5+), and
+  keeps its reason to itself.** 4.7.2 prints `Unable to open /dev/x - No
+  such file or directory` - **into a block-buffered pipe**, so it arrives
+  only when the daemon exits; a pty did not change that, measured. And
+  `f` is not answered with an error code: it tries the open again, and
+  resets the connection after ~6 s. So `HamlibBackend._explain` keeps
+  what rigctld said if a build flushes it, says so when the daemon has
+  died, and otherwise checks the port from this side (`_port_missing`: a
+  `/dev` path that does not exist, a COM port absent from a listing with
+  others in it) - only for not-answering failures (I/O, -5, -6), never a
+  -11 refusal from a working radio.
+  **A timeout used to kill the daemon.** `RigctldBackend._cmd_raw` called
+  `self.close()` on any socket error, and `HamlibBackend.close` terminates
+  the rigctld it spawned - so one slow reply ended Hamlib for the session
+  and every later read said "no rigctld". It drops the socket only now
+  (`_drop_sock`).
 
 ## Meters and VFOs
 ## Meters and VFOs
@@ -928,6 +963,10 @@ naming the live one; `services/rigs.py` holds the backends and the manager.
   for "it did not say", and the card draws nothing rather than a flat bar -
   a bar pinned at the bottom reads as a dead band, which sends you looking
   at the antenna rather than at the rig that never answered.
+- **0 dBm beside an S-meter is not a reading.** It is S9+73, and it is
+  what flrig's `rig.get_DBM` answers for a radio it cannot convert, so the
+  card drew "S 5 0 dBm". Exactly 0 with any S-meter answer is left out of
+  the payload, and the card draws dBm only when the key is there.
 - **An SWR below 1 is not a reading.** 1.0 is the floor of the scale, so a
   radio answering 0 is saying it does not measure it - the FT-890 does
   exactly that, measured with 78% showing on the power meter beside it.

@@ -399,9 +399,11 @@ async function nudge(dir) {
 // answer that looks right, and one the operator could not then pick.
 let modeList = [];
 let modesFor = null;          // the rig_id the list was read for
+let modesType = null;         // and which radio that rig said it was
 
-async function loadModes(rigId) {
+async function loadModes(rigId, rigType) {
   modesFor = rigId;
+  modesType = rigType || '';
   try { modeList = await radio.modes(); } catch { modeList = []; }
   const sel = $('#mode');
   sel.textContent = '';
@@ -445,7 +447,11 @@ function paint(s) {
   }
   live = s;
   paintWhich(s);
-  if (s.ok && s.rig_id !== modesFor) loadModes(s.rig_id);
+  // flrig (and OmniRig) can be pointed at another radio without the
+  // rig_id changing, and the modes are that radio's.
+  if (s.ok && (s.rig_id !== modesFor || (s.rig_type || '') !== modesType)) {
+    loadModes(s.rig_id, s.rig_type);
+  }
   // Metering follows what this radio can do now, not what the first
   // state said: a tile that booted offline, or a plain tile whose
   // selected radio changed from OmniRig to flrig, never drew its meter.
