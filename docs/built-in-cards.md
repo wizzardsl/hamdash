@@ -280,6 +280,18 @@ that square and watches it. The box commits on Enter or when you click away.
 **Reset filters** puts every filter back to everything and leaves the place
 being watched alone.
 
+**Stations your own radio decodes are on the map too.** Every FT8 and FT4
+station the Decoder card copies is a report of you hearing them, so it is
+added straight away - no internet needed, and whether or not you send
+reports to PSK Reporter - under your callsign and your grid square, marked
+**heard here** in the dot's tooltip and popup. If PSK Reporter spotting is
+on, PSK Reporter sends those same reports back on its feed; the card keeps
+yours and drops the echo, so nothing is counted twice and your copy keeps
+the signal report the upload does not carry. They need the radio's
+frequency, so nothing is added from the simulated radio or the mock. They
+carry no country number of PSK Reporter's, so with a **country** filter set
+they drop out until it is cleared.
+
 **The dot colours are signal strength**, and the legend in the corner says so
 with a live count per band of signal. They are not band colours, which is the
 usual guess: a map is a form where any two marks can sit side by side, and

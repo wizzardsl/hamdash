@@ -402,13 +402,16 @@ function dB(v) {
 function tipFor(st) {
   const SEP = ' · ';
   const latest = st.reports.reduce((a, b) => (b.at > a.at ? b : a), st.reports[0]);
+  // Decoded by this radio, rather than reported to PSK Reporter by
+  // somebody: said, because it is the one report you can be sure of.
+  const here = st.reports.some((r) => r.local) ? 'heard here' : '';
   if (st.reports.length === 1) {
     return [st.call, dB(latest.snr),
             [latest.band, latest.mode].filter(Boolean).join(' '),
-            ago(latest.at)].filter(Boolean).join(SEP);
+            ago(latest.at), here].filter(Boolean).join(SEP);
   }
   return [st.call, st.best === null ? '' : `best ${dB(st.best)}`,
-          `${st.reports.length} reports`].filter(Boolean).join(SEP);
+          `${st.reports.length} reports`, here].filter(Boolean).join(SEP);
 }
 
 function popupFor(st) {
@@ -417,7 +420,7 @@ function popupFor(st) {
     const dir = r.tx === st.call ? `→ ${esc(r.rx)}` : `← ${esc(r.tx)}`;
     return `<dt>${dir}</dt><dd>${esc(r.band || r.mhz)} ${esc(r.mode)}`
          + `${r.snr === null ? '' : ` ${r.snr > 0 ? '+' : ''}${r.snr} dB`}`
-         + ` <span class="muted">${ago(r.at)}</span></dd>`;
+         + ` <span class="muted">${ago(r.at)}${r.local ? ' · heard here' : ''}</span></dd>`;
   }).join('');
   const where = [st.region, st.dxcc].filter(Boolean).join(' · ');
   return `<h3>${esc(st.call)}</h3>`

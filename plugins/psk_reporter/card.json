@@ -20,7 +20,8 @@
     "lookup"
   ],
   "subscribes": [
-    "config.changed"
+    "config.changed",
+    "decoder.decoded"
   ],
   "settings": {
     "watch": {

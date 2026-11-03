@@ -41,7 +41,17 @@ from hamdash.services.bands import for_mhz as band_for
 RETAIN = 24 * 3600
 COLUMNS = ("target", "tx", "rx", "tx_grid", "rx_grid", "hz", "mode", "snr",
            "at", "is_tx", "is_rx", "tx_dxcc", "rx_dxcc", "tx_region",
-           "rx_region")
+           "rx_region", "source")
+
+# Our own FT8/FT4 decodes go in beside the feed's, as "heard here" - and if
+# PSK Reporter spotting is on, the feed then sends the same report back.
+# The uploader sends the slot start and the radio frequency to the hertz, so
+# the echo usually lands on the same key; these are the slack for when it
+# does not. Our copy wins either way: it has the SNR, which the upload does
+# not carry.
+SAME_SECONDS = 30
+SAME_HZ = 10
+LOCAL = "local"
 
 
 class Store:
@@ -53,8 +63,15 @@ class Store:
             db.execute(f"""CREATE TABLE IF NOT EXISTS report (
                 {', '.join(f'{c} TEXT' for c in COLUMNS)},
                 PRIMARY KEY (target, tx, rx, at, hz))""")
+            have = {r[1] for r in db.execute("PRAGMA table_info(report)")}
+            if "source" not in have:
+                # A store from before our own decodes went in: every row
+                # in it came from the feed.
+                db.execute("ALTER TABLE report ADD COLUMN source TEXT")
             db.execute("CREATE INDEX IF NOT EXISTS report_when "
                        "ON report(target, at)")
+            db.execute("CREATE INDEX IF NOT EXISTS report_pair "
+                       "ON report(target, tx, rx)")
             db.execute("""CREATE TABLE IF NOT EXISTS fetch (
                 target TEXT PRIMARY KEY, as_grid INTEGER, last_seq TEXT,
                 at REAL, wait REAL, error TEXT, failed INTEGER,
@@ -108,6 +125,10 @@ class Store:
         if not rows:
             return 0
         with self._conn() as db:
+            # The feed echoing a report we decoded ourselves: ours is kept.
+            rows = [r for r in rows if not self._match(db, target, r, LOCAL)]
+            if not rows:
+                return 0
             before = db.execute("SELECT COUNT(*) FROM report WHERE target=?",
                                 (target,)).fetchone()[0]
             db.executemany(
@@ -119,6 +140,47 @@ class Store:
                                (target,)).fetchone()[0]
             db.commit()
         return after - before
+
+    def add_local(self, target: str, rows: list[dict]) -> int:
+        """Store stations this radio decoded, as `source` "local".
+
+        A matching report already in from the feed - the echo of our own
+        upload arriving first - is replaced by ours, which carries the SNR.
+        """
+        if not rows:
+            return 0
+        rows = [{**r, "source": LOCAL} for r in rows]
+        with self._conn() as db:
+            for r in rows:
+                for key in self._match(db, target, r, None, all_=True):
+                    db.execute("DELETE FROM report WHERE rowid=?", (key,))
+        return self.add(target, rows)
+
+    @staticmethod
+    def _match(db, target: str, r: dict, source, all_: bool = False):
+        """Rows for the same two stations and mode within the slack.
+
+        `source` "local" looks only for our own rows; None for the feed's
+        (anything not ours). Returns a rowid, or every rowid with `all_`.
+        """
+        try:
+            at, hz = int(r.get("at") or 0), int(r.get("hz") or 0)
+        except (TypeError, ValueError):
+            return [] if all_ else None
+        mine = "IFNULL(source,'') = ?" if source == LOCAL \
+            else "IFNULL(source,'') <> ?"
+        got = db.execute(
+            "SELECT rowid FROM report WHERE target=? AND tx=? AND rx=? "
+            "AND UPPER(mode)=UPPER(?) "
+            f"AND {mine} "
+            "AND ABS(CAST(at AS INTEGER) - ?) <= ? "
+            "AND ABS(CAST(hz AS INTEGER) - ?) <= ?",
+            (target, str(r.get("tx") or "").upper(),
+             str(r.get("rx") or "").upper(), str(r.get("mode") or ""),
+             LOCAL, at, SAME_SECONDS, hz, SAME_HZ)).fetchall()
+        if all_:
+            return [g[0] for g in got]
+        return got[0][0] if got else None
 
     def since(self, target: str, seconds: float) -> list[dict]:
         cut = int(time.time() - seconds)
@@ -178,7 +240,8 @@ def _row(r: sqlite3.Row) -> dict:
             "at": _int(r["at"]) or 0,
             "is_tx": r["is_tx"] == "1", "is_rx": r["is_rx"] == "1",
             "tx_dxcc": r["tx_dxcc"], "rx_dxcc": r["rx_dxcc"],
-            "tx_region": r["tx_region"], "rx_region": r["rx_region"]}
+            "tx_region": r["tx_region"], "rx_region": r["rx_region"],
+            "local": (r["source"] or "") == LOCAL}
 
 
 def _int(v):

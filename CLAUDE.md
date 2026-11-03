@@ -2242,6 +2242,24 @@ WSJT-X's "Enable PSK Reporter Spotting" does, from the Decoder card's
   band, mode, signal, country, direction, the time window - and none of
   them reaches the network. `spots` and `satellites` still hold the floor
   the original way.
+- **Our own FT8/FT4 decodes are reports too, and they go in the same
+  store** (`Heard` in `plugins/psk_reporter/card.py`, `tests/test_psk_heard.py`).
+  The card subscribes to `decoder.decoded` and stores each decode as heard
+  by the operator, under their callsign *and* their four-character square -
+  the card watches the square by default, and the operator is a receiver
+  in it. With PSK Reporter spotting on, the feed sends our own uploads
+  back. The uploader sends the slot start and the frequency to the hertz,
+  so the echo usually lands on the store's key `(target, tx, rx, at, hz)`
+  - but `INSERT OR REPLACE` would then have **wiped our SNR**, since the
+  upload carries none. So the store keeps a `source` column ("local" for
+  ours), `add` drops a feed row matching one of ours within `SAME_SECONDS`
+  and `SAME_HZ` (same two calls and mode), and `add_local` removes a feed
+  row that got there first. Mode is not in the key: the same second and
+  hertz in two modes would collide, which on the air cannot happen (FT8
+  and FT4 slots never share a start). Same exclusions as the uploader:
+  hashed calls, our own call, OSD decodes, and nothing without a real
+  radio frequency (mock, simulator). Our rows have no PSK Reporter DXCC
+  number, so a country filter hides them.
 - **`psk_reporter` listens now; it does not ask.** PSK Reporter publish a
   live MQTT feed, so the five minute floor, the `lastseqno` marker and the
   back-off after a rate limit are all gone with the thing they protected.

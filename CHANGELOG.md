@@ -22,6 +22,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
   country, and the distance in your chosen units. Canadian provinces come
   from the callsign; US states from your lookup provider, one station every
   two seconds. Exact from a sent grid, approximate ("~") otherwise.
+- **Stations you decode appear on the PSK Reporter map.** Every FT8/FT4
+  station the Decoder card copies is added as heard by you, at once and
+  without the internet, marked "heard here". With PSK Reporter spotting on,
+  the feed's echo of the same report is dropped and your copy - with its
+  SNR - is kept.
 - **`decoder.decoded` on the bus**: each slot's FT8/FT4 decodes with
   callsign, grid, report, SNR and the radio frequency, for other cards.
 - **PSK Reporter spotting**, as WSJT-X's "Enable PSK Reporter Spotting":

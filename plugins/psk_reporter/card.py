@@ -199,6 +199,95 @@ STORE = Store(card.store / "reports.sqlite3")
 LIVE = Live(STORE)
 
 
+class Heard:
+    """Stations this radio decoded on FT8/FT4, stored as reports heard here.
+
+    The decoder publishes every slot's decodes on `decoder.decoded`; each
+    one is a reception report with the operator as receiver, already in
+    hand and needing no internet at all. They go into the same store as the
+    feed's, under the operator's callsign and under their four-character
+    square - the card watches the square by default, and the operator is a
+    receiver in it. `Store.add_local` keeps ours over the feed's echo of the
+    same report when PSK Reporter spotting is on.
+
+    Left out, for the reasons the uploader leaves them out: hashed calls,
+    the operator's own call, the second-stage (OSD) decodes, and anything
+    without a real radio frequency - the mock and the simulated radio.
+    """
+
+    STATION_TTL = 60.0
+
+    def __init__(self, store: Store, station=None, clock=time.time) -> None:
+        self.store = store
+        self._station = station
+        self._clock = clock
+        self._mine = ({}, 0.0)
+        self.grids: dict[str, str] = {}      # call -> last grid it sent
+
+    def station(self) -> dict:
+        got, at = self._mine
+        if self._station is not None and self._clock() - at > self.STATION_TTL:
+            try:
+                got = self._station() or {}
+            except Exception:                       # noqa: BLE001
+                pass                                # keep what we had
+            self._mine = (got, self._clock())
+        return got
+
+    def offer(self, payload: dict) -> int:
+        """One slot's decodes. Returns how many reports were stored."""
+        p = payload or {}
+        if p.get("simulated") or str(p.get("source") or "").startswith("mock"):
+            return 0
+        me = self.station()
+        my_call = str(me.get("callsign") or "").strip().upper()
+        my_grid = str(me.get("grid") or "").strip()
+        if not my_call:
+            return 0
+        mode = str(p.get("mode") or "").upper()
+        try:
+            at = int(float(p.get("slot_ts") or 0))
+        except (TypeError, ValueError):
+            return 0
+        rows = []
+        for d in p.get("decodes") or []:
+            call = str(d.get("call") or "").strip().upper()
+            grid = str(d.get("grid") or "").strip()
+            if call and grid:
+                self.grids[call] = grid
+            if (not call or call.startswith("<") or call == my_call
+                    or d.get("osd") or not d.get("rf_hz") or not at):
+                continue
+            rows.append({
+                "tx": call, "rx": my_call,
+                "tx_grid": grid or self.grids.get(call, ""),
+                "rx_grid": my_grid, "hz": int(d["rf_hz"]), "mode": mode,
+                "snr": d.get("snr"), "at": at,
+                "tx_dxcc": "", "rx_dxcc": "", "tx_region": "",
+                "rx_region": ""})
+        if not rows:
+            return 0
+        stored = 0
+        targets = [my_call] + ([my_grid[:4].upper()] if len(my_grid) >= 4 else [])
+        for target in targets:
+            for r in rows:
+                r["is_tx"] = r["tx"] == target
+                r["is_rx"] = r["rx"] == target
+            try:
+                stored += self.store.add_local(target, [dict(r) for r in rows])
+            except Exception as exc:                # noqa: BLE001
+                print(f"storing decodes heard here failed: {exc}")
+        return stored
+
+
+HEARD = Heard(STORE, station=lambda: card.host.station())
+
+
+@card.on("decoder.decoded")
+def heard_here(_topic, payload):
+    HEARD.offer(payload)
+
+
 @card.get("/reports")
 def reports():
     """What is in the store for this target, and how the feed is doing.
