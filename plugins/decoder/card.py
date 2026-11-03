@@ -1,8 +1,9 @@
-"""Decode digital modes from the radio's audio: CW and RTTY.
+"""Decode digital modes from the radio's audio: CW, RTTY and PSK31.
 
-The decoding itself is in `cw.py` and `rtty.py`, which take samples and
-return text and know nothing about audio devices or HTTP - that is what lets
-`tests/test_cw.py` and `tests/test_rtty.py` drive them with synthesised
+The decoding itself is in `cw.py`, `rtty.py` and `psk.py`, which take
+samples and return text and know nothing about audio devices or HTTP - that
+is what lets `tests/test_cw.py`, `tests/test_rtty.py` and `tests/test_psk.py`
+drive them with synthesised
 signals at known speeds, offsets and signal-to-noise ratios. This file is
 the part that owns a sound card.
 
@@ -50,6 +51,7 @@ from flask import request
 from hamdash.sdk import AudioFeed, Card
 
 import cw
+import psk
 import rtty
 
 card = Card(__file__)
@@ -75,13 +77,19 @@ MOCK_RTTY = ("RYRYRY CQ CQ CQ DE VA7HDX VA7HDX PSE K\n"
              "VE7XYZ DE VA7HDX UR RST 599 599 QTH VANCOUVER BC BK\n")
 MOCK_RTTY_MARK = 2295.0
 
+# And PSK31: a QSO as it is usually typed - lower case, with a newline -
+# off the usual 1 kHz so finding the carrier is part of what is shown.
+MOCK_PSK = ("cq cq cq de va7hdx va7hdx pse k\n"
+            "ve7xyz de va7hdx - name steve, qth vancouver. 599 599 btu\n")
+MOCK_PSK_HZ = 1180.0
+
 # Modes the dropdown offers. The ones not built yet are listed because
 # leaving them out makes the card look finished when it is not. They are
 # offered disabled, so nobody picks one and waits for text that never comes.
 MODES = [
     {"id": "cw", "name": "CW (Morse)", "ready": True},
     {"id": "rtty", "name": "RTTY 45.45", "ready": True},
-    {"id": "psk31", "name": "PSK31", "ready": False},
+    {"id": "psk31", "name": "PSK31", "ready": True},
     {"id": "ft8", "name": "FT8", "ready": False},
 ]
 
@@ -139,6 +147,9 @@ class Listener:
             return
         if self.device == "mock:rtty":
             self._run_mock(_mock_rtty(self.samplerate))
+            return
+        if self.device == "mock:psk31":
+            self._run_mock(_mock_psk(self.samplerate))
             return
         # Not opened here. The radio's input is opened once, by the
         # rx_audio engine, and read from it - so the decoder, the
@@ -249,6 +260,8 @@ class Listener:
             out.update({"baud": d.baud, "reverse": d.reverse,
                         "mark_hz": round(d.mark_hz, 1),
                         "space_hz": round(d.space_hz, 1)})
+        elif isinstance(d, psk.PskDecoder):
+            out["quality"] = d.quality
         else:
             out["wpm"] = d.wpm
         return out
@@ -280,7 +293,14 @@ def _mock_rtty(rate: int) -> np.ndarray:
                            tail_seconds=1.0)
 
 
+def _mock_psk(rate: int) -> np.ndarray:
+    return psk.psk_audio(MOCK_PSK, carrier_hz=MOCK_PSK_HZ, samplerate=rate,
+                         amplitude=0.3, lead_seconds=1.5, tail_seconds=1.0)
+
+
 def make_decoder(spec: dict, samplerate: int):
+    if spec.get("mode") == "psk31":
+        return psk.PskDecoder(samplerate)
     if spec.get("mode") == "rtty":
         return rtty.RttyDecoder(samplerate, reverse=spec["reverse"],
                                 usos=spec["usos"],
@@ -289,6 +309,8 @@ def make_decoder(spec: dict, samplerate: int):
 
 
 def spec_key(spec: dict) -> str:
+    if spec.get("mode") == "psk31":
+        return "psk31"
     if spec.get("mode") == "rtty":
         return (f"rtty:{'rev' if spec['reverse'] else 'norm'}:"
                 f"{int(spec['usos'])}:{spec['stop_bits']}")
@@ -298,6 +320,10 @@ def spec_key(spec: dict) -> str:
 def decoder_spec(conf: dict, source: str, radio: dict) -> dict:
     """What a tile's settings ask to be decoded, as a spec for a decoder."""
     mode = str(conf.get("mode") or "cw")
+    if mode == "psk31":
+        # BPSK has no sideband to get the wrong way up: a reversal is a
+        # reversal in USB and in LSB.
+        return {"mode": "psk31"}
     if mode != "rtty":
         return {"mode": "cw"}
     try:
@@ -328,8 +354,8 @@ def reversed_for(conf: dict, source: str, radio: dict) -> bool:
 
 def listen_key(device: str, mode: str) -> str:
     """The input a listener is opened on. The mock is one per mode."""
-    if device == "mock" and mode == "rtty":
-        return "mock:rtty"
+    if device == "mock" and mode in ("rtty", "psk31"):
+        return f"mock:{mode}"
     return device
 
 

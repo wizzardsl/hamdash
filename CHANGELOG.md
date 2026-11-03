@@ -19,6 +19,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   2.5 kHz, mostly readable at -6 dB, and nothing printed from noise. The
   mock input now plays an RTTY exchange when the tile is in RTTY. Two tiles
   on one sound card can decode different modes at once.
+- **PSK31 in the Decoder card.** BPSK31 decodes beside CW and RTTY: the
+  strongest PSK31 signal in the passband is found and followed as it
+  drifts, with nothing to set. Clean copy to about -5 dB SNR in 2.5 kHz,
+  readable to about -10 dB, nothing printed from noise, and a nearby
+  carrier does not pull it off. The mock input plays a PSK31 QSO when the
+  tile is in PSK31.
 
 ### Fixed
 - **A sound card that comes back is found without restarting hamdash.**

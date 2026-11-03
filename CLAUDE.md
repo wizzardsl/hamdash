@@ -1564,6 +1564,47 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   and made every poll of an RTTY tile a 500 - found only on the scratch
   instance, with the module's tests all green. `TestTheReadouts` holds it.
 
+### PSK31 (`plugins/decoder/psk.py`, `tests/test_psk.py`)
+
+- **The Varicode table was checked against fldigi's, entry by entry, and
+  the test does not do that** - fldigi is GPL and is not vendored, and a
+  table checked against a copy of itself checks nothing. The test pins
+  well-known entries and the shape (starts and ends with 1, no "00").
+- **The carrier is found by squaring, and the demodulator decides.**
+  Squaring removes BPSK's keying and leaves a line at twice the carrier;
+  a plain carrier also has an unsquared line, BPSK has a hole there. But a
+  squared line is only a candidate: squared PSK has weaker lines half a
+  baud either side, which won during text and locked 15.6 Hz off, and a
+  loud carrier beside the signal makes a mixing product that squares 15 dB
+  *stronger* than the PSK. Each candidate and its +-15.6 Hz neighbours is
+  demodulated over three seconds (`trial_quality`) and the decisive one
+  wins - and a move, once locked, is judged the same way, never on the
+  squared line. Two more guards came from the same case: a leaked tone
+  turns a fixed amount per symbol and so looks decisive, but PSK's
+  envelope dips at reversals and a tone's does not (`TRIAL_DIP`); and the
+  strongest squared *bins* were all the shoulders of one carrier's line,
+  so peaks are picked, not bins.
+- **Noise, tried often enough, clears any one bar.** A search tries a few
+  candidates, three offsets and sixteen clock phases twice a second; at
+  0.78 over two seconds that printed "e e nef" from a quiet band in one of
+  three runs. 0.80 over three seconds is five standard deviations of
+  noise, and a character also needs the running quality, not only its own
+  four symbols. 24 noise runs at two rates print nothing.
+- **Differential detection, so no phase lock.** Each symbol against the one
+  before; the frequency only has to be within a few hertz, and the residual
+  rotation (angle of d squared, halved) drives the AFC.
+- **Train the clock before reading.** The replay at lock is run twice:
+  once to set the bit clock, once to print. Read straight away the first
+  symbols came out as a stray "-" before every over.
+- **Nothing is printed twice.** A replay after losing a weak signal and
+  finding it again re-read text already printed; `_printed_to` holds how
+  far the audio has been read out, and it is `>=`, not `>` - characters
+  land on whole sample positions that coincide with block edges, and the
+  strict comparison dropped one in ten.
+- **One rate.** Input over 24 kHz is decimated to about 12 kHz first, the
+  rate the shared capture delivers and the one everything was tuned at;
+  run at 48 kHz the same thresholds let noise through.
+
 ## Logbook sync
 
 - **A button in Settings acts on what is on screen, so it saves first.**
@@ -2863,12 +2904,12 @@ it into the GitHub bug form, which is pre-filled by the button.
   watched doing each job on one radio. What is still unproven anywhere is a
   *second* rig model - everything here is one FT-890/900 - so anything that
   looks like a rig quirk should be suspected of being this rig's quirk.
-- The decoder's other modes. PSK31 is next, and is a different shape of
-  problem again - phase rather than tones, so neither the CW tracker nor
-  RTTY's pair search carries over, but the card's per-mode streams, the
-  polling and the text window do. RTTY at other speeds and shifts (50 and
-  75 baud, 425 and 850 Hz) is a constructor argument away in `rtty.py` and
-  untested.
+- The decoder's other modes: FT8 is the one left in its dropdown, and it is
+  a different thing altogether - 15-second slots, LDPC, many signals at
+  once - closer to porting WSJT-X's decoder than to writing another one.
+  RTTY at other speeds and shifts (50 and 75 baud, 425 and 850 Hz) is a
+  constructor argument away in `rtty.py` and untested. QPSK31 and PSK63
+  are a few lines away in `psk.py` and untested.
 - The decoder publishes nothing. A callsign it has copied would be worth
   putting on the bus for the logbook and the map to pick up, but only once
   it can say how sure it is: `lookup.result` is the "what are we looking at"

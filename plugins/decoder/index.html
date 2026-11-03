@@ -139,6 +139,10 @@ function readout(d) {
   if (d.mode === 'rtty') {
     if (d.mark_hz) bits.push(`M <b>${Math.round(d.mark_hz)}</b>`
                              + ` S ${Math.round(d.space_hz)} Hz`);
+  } else if (d.mode === 'psk31') {
+    // The carrier to a tenth: PSK31 is 60 Hz wide, so where it sits is
+    // the useful number, and the AFC moving it is worth seeing.
+    if (d.tone_hz) bits.push(`<b>${d.tone_hz.toFixed(1)}</b> Hz`);
   } else {
     if (d.wpm) bits.push(`<b>${d.wpm}</b> wpm`);
     if (d.tone_hz) bits.push(`${Math.round(d.tone_hz)} Hz`);
@@ -156,6 +160,11 @@ function readout(d) {
   if (d.mode === 'rtty' && d.hearing && running
       && (d.quiet_for === null || d.quiet_for > 8)) {
     hint = 'Hearing RTTY but nothing frames - try Rev, or the stop bits.';
+  }
+  if (d.mode === 'psk31' && d.tone_hz && running && !d.hearing
+      && (d.quiet_for === null || d.quiet_for > 8)) {
+    hint = 'Locked on a PSK31 carrier, but its symbols are not clear - '
+         + 'too weak, or another signal on top of it.';
   }
   $('#err').textContent = d.error || hint;
 }

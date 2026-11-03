@@ -26,10 +26,11 @@
       "label": "Mode",
       "options": [
         "cw",
-        "rtty"
+        "rtty",
+        "psk31"
       ],
       "default": "cw",
-      "help": "CW or amateur RTTY (45.45 baud, 170 Hz shift). The card's own dropdown lists what else is planned. Either way the signal is found anywhere in the passband; nothing needs tuning to a set audio frequency."
+      "help": "CW, amateur RTTY (45.45 baud, 170 Hz shift) or PSK31 (BPSK). The card's own dropdown lists what else is planned. Whichever it is, the signal is found anywhere in the passband; nothing needs tuning to a set audio frequency."
     },
     "reverse": {
       "type": "select",

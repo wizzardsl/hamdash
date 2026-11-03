@@ -3,7 +3,7 @@
 What each bundled card does, and the decisions inside the ones that have a few.
 
 - [Spectrum and waterfall](#spectrum-and-waterfall)
-- [Decoding CW and RTTY](#decoding-cw-and-rtty)
+- [Decoding CW, RTTY and PSK31](#decoding-cw-rtty-and-psk31)
 - [PSK Reporter](#psk-reporter)
 - [Spots](#spots)
 
@@ -133,16 +133,16 @@ next coffee shop's. Naming one address is the better habit.
 Transmitting from the browser is not supported. A microphone needs a
 secure context, which means HTTPS with a certificate; receiving has no
 such restriction.
-## Decoding CW and RTTY
+## Decoding CW, RTTY and PSK31
 
-The `decoder` card reads digital modes out of the radio's audio. CW and RTTY
-work; PSK31 and FT8 are in the dropdown, disabled, so the card says what it
+The `decoder` card reads digital modes out of the radio's audio. CW, RTTY
+and PSK31 work; FT8 is in the dropdown, disabled, so the card says what it
 is rather than looking finished.
 
 Pick the input at the top of the tile. **Radio's audio in** uses whatever
 sound device the rig in use is set to in Settings → Radio, which is the one
 worth choosing: it follows you when you switch radios. **Mock** synthesises
-a signal in the chosen mode - Morse, or an RTTY exchange - so the card works
+a signal in the chosen mode - Morse, an RTTY exchange or a PSK31 one - so the card works
 with no radio attached. Anything else is a sound card by name. Two tiles on
 one input can decode different modes at once.
 
@@ -199,6 +199,20 @@ What to expect of it: clean copy down to about -3 dB signal-to-noise in a
 or wrong. Tuning onto a station mid-over costs the first few characters, not
 a line of rubbish. Like the CW decoder it prints nothing from a dead band,
 and nothing from the noise after a transmission ends.
+
+### PSK31
+
+BPSK31: the strongest PSK31 signal anywhere in the passband is found and
+read, and followed as it drifts. There is nothing to set - PSK31 has no
+sideband to get the wrong way up and one speed - so the tile shows only the
+carrier frequency, to a tenth of a hertz.
+
+What to expect of it: clean copy down to about -5 dB signal-to-noise in a
+2.5 kHz bandwidth, readable with errors to about -10 dB. It reads one
+signal at a time - the strongest - so on a busy PSK31 frequency it is a
+listening tool, not a band scope. A carrier sitting near the signal does
+not pull it off; joining an over part way costs the first word or two; and
+it prints nothing from a dead band.
 
 ## PSK Reporter
 
