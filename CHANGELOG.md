@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.3.0]
+
 ### Added
 - **`AudioFeed` in the card SDK** reads the radio's audio from the shared
   capture instead of opening a sound card, with `"uses": ["rx_audio"]` in
