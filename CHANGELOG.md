@@ -6,7 +6,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **`AudioFeed` in the card SDK** reads the radio's audio from the shared
+  capture instead of opening a sound card, with `"uses": ["rx_audio"]` in
+  `card.json`. See `docs/cards.md`.
+
 ### Fixed
+- **Listen, the waterfall and the decoder can share the radio's audio
+  input.** Whichever opened it first used to lock the others out - on
+  Windows a sound card input will not reliably open twice - and the error
+  blamed WSJT-X. The input is now opened once, behind Listen, and every
+  card reads from that one capture: stopping one leaves the others going,
+  and the sound card is handed back when the last of them stops. A
+  Spectrum tile's input can now be `rig`, to follow the selected radio.
 - **Hamlib radios no longer have their VFOs switched twice a second.**
   Reading the other VFO's frequency makes some radios switch to it and
   back, which clicked and flickered; it is now read every few seconds and

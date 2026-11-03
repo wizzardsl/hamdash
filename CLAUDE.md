@@ -1198,6 +1198,46 @@ follows it):
   the error saying what is wrong. Retry on a timer instead.
 - **PortAudio is not thread-safe across enumerate/open.** Both go through one
   lock, or Windows blocks for a long time or forever.
+- **One capture per device, and only `rx_audio` opens it.** PortAudio on
+  Windows will not reliably give one input to two openers, so the
+  spectrum, the decoder and Listen each opening the radio's input locked
+  the others out - and the refusal named WSJT-X. The engine is the one
+  opener now: `plugins/rx_audio/capture.py` holds a `Capture` per device
+  (the only thing that opens it), a `Tap` per (device, rate) on it (a
+  decimator and a ring), and a `Hub` of wants per listener. The other
+  cards read it with `hamdash.sdk.AudioFeed`, which polls
+  `/cards/rx_audio/api/pcm` through the host exactly as the browser does,
+  and declare `uses: ["rx_audio"]` so `_needed()` keeps the engine.
+  **Why there and not the host**: the host runs the PTT watchdog, and a
+  PortAudio driver that wedges takes its process with it - a card is the
+  place for that (cards are processes for this reason). The engine also
+  already had the ring, the listener bookkeeping and `look`/`tap_for`;
+  a third option, shared memory between processes, buys latency nobody
+  needs at the cost of a mechanism nothing else here uses.
+  **The rate was the hidden second opener.** Taps were keyed
+  `device|rate`, each with its own stream, so Listen at 12 kHz and a
+  waterfall at 24 would have opened one device twice *inside the card
+  meant to stop that*. Captures are keyed by device alone; a rate is a
+  filter. A capture closes when its last tap goes, popped from the hub
+  before it is stopped so nothing can close it twice.
+  **A feed joins at the head** (`since=head`): a decoder starting up must
+  not decode the last 3 s of Listen's ring as if it were now.
+  **A blank `device` means "my tile's settings"** to the engine (a test
+  holds it), so a feed asking for the system default says
+  `<system default>`. The engine resolves `rig` itself, so a spectrum tile
+  set to `rig` follows the radio for free.
+  **The rules move with the device, they do not change**: wants are per
+  listener (a page's `who`, or a feed's own id), the decoder and spectrum
+  still let go when hidden - their *feed* leaves, and the input closes if
+  that was the last listener - and Listen still does not. `/api/info`
+  carries `listeners` by rate, which is the first question when an input
+  will not open. `tests/test_shared_capture.py` drives the hub with fake
+  devices playing known tones and `AudioFeed` against the real engine
+  over HTTP; checked against a mutation keying captures by rate, which
+  nine of its tests catch. **Proven on a scratch instance with mock
+  audio only** - three consumers on one capture, each leaving alone, one
+  close at the end. The real USB input on the station is the operator's
+  check, and Windows (where the lock-out was) is untested.
 - **Mock by default**, like the rig. A card that needs hardware to show
   anything can't be developed or demonstrated.
 
@@ -2809,12 +2849,6 @@ it into the GitHub bug form, which is pre-filled by the button.
   configuration and no password. If it is ever picked up, a shared token
   checked before the mutating routes, carried by the board itself, is
   the small version; it should not grow accounts.
-- **Sharing one sound card between cards is not solved.** If a spectrum
-  or decoder tile already holds the radio's input, `rx_audio` cannot open
-  it too - PortAudio on Windows will not reliably give one capture device
-  to two openers. The card says so and names the likely culprit rather
-  than failing blankly, but the real answer is one capture fanned out to
-  several consumers, and that is a change to three cards.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a
   pip-installable pywebview backend, Linux needs system GTK/WebKit packages

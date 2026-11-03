@@ -12,11 +12,12 @@ Design notes that are not obvious:
   rows and hands over every row since the client's last sequence number in one
   request. The page polls a few times a second and still renders every row.
 
-* **One capture per device, shared by tiles.** A sound card input can usually
-  only be opened once, and two tiles pointed at the same device want the same
-  audio anyway. Analysis is shared; contrast, span and palette are per tile
-  and applied in the browser, so two tiles can look different without
-  reopening anything.
+* **It never opens a sound card.** The `rx_audio` engine does, once per
+  device, and this reads from it with `AudioFeed` - so the waterfall,
+  the decoder and Listen can all have the radio's input at once, which
+  PortAudio on Windows would not allow three openers. Only the mock is
+  synthesised here. Analysis is still one per device, shared by tiles;
+  contrast, span and palette are per tile and applied in the browser.
 
 * **Rows are bytes, not numbers.** A row is `BINS` uint8 values base64'd -
   about 200 characters. As a JSON array of floats the same row is 10x that,
@@ -32,12 +33,17 @@ from collections import deque
 import numpy as np
 from flask import request
 
-from hamdash.sdk import Card
+from hamdash.sdk import AudioFeed, Card
 
 card = Card(__file__)
 
-FFT_N = 2048            # ~23 Hz bins at 48 kHz
+FFT_N = 2048            # ~23 Hz bins at 48 kHz; scaled to keep them so
 HOP = 2048              # no overlap: ~23 rows/second, which is plenty
+# What the waterfall asks the engine for. 24 kHz passes 8.6 kHz alias-free,
+# more than any receiver's audio and any `max_hz` worth setting, at half
+# the arithmetic of 48. A different rate from Listen's 12 kHz is a second
+# filter on the same capture, not a second open.
+FEED_RATE = 24000
 HISTORY = 400           # rows kept per analyser (~17 s)
 DB_FLOOR = -140.0       # of the uint8 encoding, not of the display
 DB_RANGE = 140.0
@@ -49,8 +55,8 @@ IDLE_SECONDS = 30.0
 RETRY_SECONDS = 5.0
 
 # PortAudio does not enjoy having its device list enumerated on one thread
-# while another opens a stream: on Windows that can block for a long time or
-# not come back at all. Everything that touches the library goes through here.
+# while another opens a stream. Nothing here opens one any more - the engine
+# does - but the /devices list still enumerates, so it keeps its lock.
 _pa_lock = threading.Lock()
 
 
@@ -78,6 +84,7 @@ class Analyser:
         self.peak_hz = 0.0
         self.peak_db = -999.0
         self._buf = np.zeros(0, dtype=np.float32)
+        self.fft_n = FFT_N
         self._window = np.hanning(FFT_N).astype(np.float32)
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True,
@@ -89,43 +96,34 @@ class Analyser:
         if self.device == "mock":
             self._run_mock()
             return
+        # Not opened here. The radio's input is opened once, by the
+        # rx_audio engine, and read from it - so this waterfall, the
+        # decoder and Listen can all have the same sound card at once,
+        # which PortAudio on Windows would not allow three openers.
+        feed = AudioFeed(card.host, self.device, FEED_RATE, self._on_feed,
+                         who=f"spectrum-{id(self):x}").start()
         try:
-            import sounddevice as sd
-        except Exception as exc:                        # noqa: BLE001
-            self.status = "error"
-            self.error = (f"sounddevice is not available ({exc}). "
-                          f"Install it, or set this tile's input to 'mock'.")
-            return
-        try:
-            with _pa_lock:
-                index = _resolve_device(sd, self.device)
-                info = sd.query_devices(index)
-                self.samplerate = int(info["default_samplerate"])
-                stream = sd.InputStream(device=index, channels=1,
-                                        dtype="float32",
-                                        samplerate=self.samplerate,
-                                        blocksize=HOP,
-                                        callback=self._on_audio)
-                stream.start()
-            try:
-                self.status = "running"
-                while not self._stop.wait(0.25):
-                    pass
-            finally:
-                with _pa_lock:
-                    stream.stop()
-                    stream.close()
-            self.status = "stopped"
-        except Exception as exc:                        # noqa: BLE001
-            self.status = "error"
-            self.error = (f"could not open {self.device or 'the default input'}"
-                          f": {exc}. Pick another input in this tile's "
-                          f"settings, or check whether another program has it.")
+            while not self._stop.wait(0.25):
+                self.status = feed.status or "starting"
+                self.error = (f"{feed.error} {feed.hint}".strip()
+                              if feed.status == "error" else "")
+        finally:
+            feed.stop()
+        self.status = "stopped"
 
-    def _on_audio(self, indata, frames, time_info, status) -> None:
-        # status is a sounddevice CallbackFlags; overflow just means we were
-        # slow, and dropping old audio is the right answer for a waterfall.
-        self._feed(indata[:, 0].copy())
+    def _on_feed(self, samples: np.ndarray, rate: int) -> None:
+        if rate and rate != self.samplerate:
+            self._resize(rate)
+        self._feed(samples)
+
+    def _resize(self, rate: int) -> None:
+        """Bins of the same width whatever rate the engine produced, so
+        the page's arithmetic (`bin_hz`) is all that changes."""
+        self.samplerate = int(rate)
+        n = max(256, int(round(rate * FFT_N / 48000)))
+        self.fft_n = 1 << (n - 1).bit_length() if n & (n - 1) else n
+        self._window = np.hanning(self.fft_n).astype(np.float32)
+        self._buf = np.zeros(0, dtype=np.float32)
 
     def _run_mock(self) -> None:
         """A synthetic signal, so the card is usable with no radio attached.
@@ -156,17 +154,18 @@ class Analyser:
     # -- analysis --------------------------------------------------------
     def _feed(self, samples: np.ndarray) -> None:
         self._buf = np.concatenate((self._buf, samples))
-        while len(self._buf) >= FFT_N:
-            frame = self._buf[:FFT_N] * self._window
-            self._buf = self._buf[HOP:]
-            spec = np.abs(np.fft.rfft(frame)) / FFT_N
+        n = self.fft_n                  # no overlap: the hop is the frame
+        while len(self._buf) >= n:
+            frame = self._buf[:n] * self._window
+            self._buf = self._buf[n:]
+            spec = np.abs(np.fft.rfft(frame)) / n
             db = 20.0 * np.log10(np.maximum(spec, 1e-12))
             with _lock:
                 self.rows.append(_to_u8(db))
                 self.seq += 1
                 self.first_seq = self.seq - len(self.rows) + 1
             idx = int(np.argmax(db[1:]) + 1)
-            self.peak_hz = idx * self.samplerate / FFT_N
+            self.peak_hz = idx * self.samplerate / n
             self.peak_db = float(db[idx])
 
     def since(self, seq: int, limit: int = 60,
@@ -212,27 +211,14 @@ class Analyser:
         return {"auto_floor": auto_floor, "auto_ceil": auto_ceil,
                 "device": self.device, "status": self.status,
                 "error": self.error, "samplerate": self.samplerate,
-                "bin_hz": self.samplerate / FFT_N, "bins": FFT_N // 2 + 1,
+                "bin_hz": self.samplerate / self.fft_n,
+                "bins": self.fft_n // 2 + 1,
                 "seq": self.seq, "db_floor": DB_FLOOR, "db_range": DB_RANGE,
                 "peak_hz": round(self.peak_hz, 1),
                 "peak_db": round(self.peak_db, 1)}
 
     def stop(self) -> None:
         self._stop.set()
-
-
-def _resolve_device(sd, wanted: str):
-    """Match a device by name fragment, so a saved setting survives the index
-    shuffling that Windows does when something is plugged in."""
-    if not wanted:
-        return None                                  # default input
-    if wanted.isdigit():
-        return int(wanted)
-    low = wanted.lower()
-    for i, d in enumerate(sd.query_devices()):
-        if d["max_input_channels"] > 0 and low in d["name"].lower():
-            return i
-    raise RuntimeError(f"no input device matching {wanted!r}")
 
 
 def analyser_for(device: str) -> Analyser:

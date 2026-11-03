@@ -14,6 +14,9 @@
   "permissions": [
     "radio"
   ],
+  "uses": [
+    "rx_audio"
+  ],
   "subscribes": [
     "radio.state"
   ],
