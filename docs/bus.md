@@ -3,6 +3,7 @@
 One publish/subscribe channel for the whole board, and the rules about who may say what.
 
 - [The bus, and who may say what](#the-bus-and-who-may-say-what)
+- [Topics the built-in cards publish](#topics-the-built-in-cards-publish)
 
 *[&larr; back to the README](../README.md)*
 
@@ -51,3 +52,29 @@ there is no way to publish *into* someone else's.
 calls carry its token and are checked properly. A card's *page* is identified
 by `Referer`, which the page itself controls. Treat this as a namespace policy
 that stops honest cards colliding, not as protection from a hostile one.
+
+## Topics the built-in cards publish
+
+Most of what crosses the bus is the host's (`radio.state`, `log.qso_added`,
+`lookup.result`, ...). One built-in card publishes something meant for
+others:
+
+**`decoder.decoded`** - a slot's FT8 or FT4 decodes, once per slot that
+decoded anything:
+
+```json
+{"mode": "FT8", "slot": "2026-11-03T07:28:15Z", "slot_ts": 1793690895.0,
+ "dial_hz": 7074000, "rig": "d2bcaa58", "simulated": false,
+ "source": "alsa_input.usb-...",
+ "decodes": [{"text": "CQ VA7HDX CN89", "to": "CQ", "call": "VA7HDX",
+              "grid": "CN89", "snr": -12, "dt": 0.1, "audio_hz": 1180.0,
+              "rf_hz": 7075180, "kind": "standard"}]}
+```
+
+`call` is the station transmitting; `to`, `grid`, `report` and `ack`
+(RRR, RR73, 73) are there when the message carries them. `dial_hz` and
+`rf_hz` are null unless the audio is the radio's own and the radio sat on
+one frequency for the whole slot. `simulated` is true for the mock input
+or the simulated radio, and anything that sends decodes anywhere must skip
+those. `osd` is present, with a distance, on a decode from the decoder's
+less certain stage.

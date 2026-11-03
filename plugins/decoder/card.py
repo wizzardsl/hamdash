@@ -1,11 +1,17 @@
-"""Decode digital modes from the radio's audio: CW, RTTY and PSK31.
+"""Decode digital modes from the radio's audio: CW, RTTY, PSK31, FT8, FT4.
 
-The decoding itself is in `cw.py`, `rtty.py` and `psk.py`, which take
-samples and return text and know nothing about audio devices or HTTP - that
-is what lets `tests/test_cw.py`, `tests/test_rtty.py` and `tests/test_psk.py`
-drive them with synthesised
-signals at known speeds, offsets and signal-to-noise ratios. This file is
-the part that owns a sound card.
+The decoding itself is in `cw.py`, `rtty.py`, `psk.py` and `ftx.py`, which
+take samples and return text and know nothing about audio devices or HTTP -
+that is what lets `tests/test_cw.py`, `tests/test_rtty.py`,
+`tests/test_psk.py` and `tests/test_ftx.py` drive them with synthesised
+signals at known speeds, offsets and signal-to-noise ratios, and with
+WSJT-X's own. This file is the part that owns a sound card.
+
+* **FT8 and FT4 are published; nothing else is.** Their CRC-14 makes a
+  decoded callsign one that was really sent, so each slot's decodes go on
+  the bus as `decoder.decoded` for the logbook, the maps and the PSK
+  Reporter uploader. CW, RTTY and PSK31 print whatever the noise spells,
+  and a garbled callsign on the bus would be taken as a station heard.
 
 * **One input, as many decoders as are wanted.** A sound card can usually
   be opened once, and two tiles on one radio may want different modes - so
@@ -51,6 +57,7 @@ from flask import request
 from hamdash.sdk import AudioFeed, Card
 
 import cw
+import ftx
 import psk
 import rtty
 
@@ -90,8 +97,10 @@ MODES = [
     {"id": "cw", "name": "CW (Morse)", "ready": True},
     {"id": "rtty", "name": "RTTY 45.45", "ready": True},
     {"id": "psk31", "name": "PSK31", "ready": True},
-    {"id": "ft8", "name": "FT8", "ready": False},
+    {"id": "ft8", "name": "FT8", "ready": True},
+    {"id": "ft4", "name": "FT4", "ready": True},
 ]
+SLOT_MODES = ("ft8", "ft4")
 
 _lock = threading.Lock()
 _listeners: dict[str, "Listener"] = {}
@@ -105,9 +114,12 @@ _wanted: dict[str, dict[str, float]] = {}
 class Stream:
     """One decoder's text, with the sequence numbers the page polls by."""
 
-    def __init__(self, spec: dict, samplerate: int) -> None:
+    def __init__(self, spec: dict, samplerate: int,
+                 device: str = "") -> None:
         self.spec = spec
-        self.decoder = make_decoder(spec, samplerate)
+        self.device = device
+        self.dial_at: dict[float, dict] = {}    # slot start -> radio state
+        self.decoder = make_decoder(spec, samplerate, self)
         self.text = ""
         self.first_seq = 0          # sequence number of text[0]
         self.seq = 0                # one past the last character
@@ -121,7 +133,10 @@ class Listener:
     def __init__(self, device: str) -> None:
         self.device = device
         self.started_at = time.time()
-        self.samplerate = 48000
+        # The FT mocks are made at the rate the decoder works at; the rest
+        # at the rate the old capture used.
+        self.samplerate = (ftx.RATE if device.startswith("mock:ft")
+                           else 48000)
         self.status = "starting"
         self.error = ""
         self.streams: dict[str, Stream] = {}
@@ -136,7 +151,8 @@ class Listener:
         with _lock:
             st = self.streams.get(key)
             if st is None:
-                st = self.streams[key] = Stream(spec, self.samplerate)
+                st = self.streams[key] = Stream(spec, self.samplerate,
+                                                self.device)
             st.asked_at = time.time()
             return st
 
@@ -150,6 +166,9 @@ class Listener:
             return
         if self.device == "mock:psk31":
             self._run_mock(_mock_psk(self.samplerate))
+            return
+        if self.device in ("mock:ft8", "mock:ft4"):
+            self._run_slot_mock(ftx.MODES[self.device[5:]])
             return
         # Not opened here. The radio's input is opened once, by the
         # rx_audio engine, and read from it - so the decoder, the
@@ -175,7 +194,7 @@ class Listener:
         with _lock:
             self.samplerate = rate
             for st in self.streams.values():
-                st.decoder = make_decoder(st.spec, rate)
+                st.decoder = make_decoder(st.spec, rate, st)
 
     def _on_feed(self, samples: np.ndarray, rate: int) -> None:
         if rate and rate != self.samplerate:
@@ -206,6 +225,33 @@ class Listener:
                              ).astype(np.float32)
             self._feed(noisy)
             time.sleep(BLOCK / self.samplerate)
+
+    def _run_slot_mock(self, mode: ftx.Mode) -> None:
+        """An FT8 or FT4 QSO, slot by slot, on the UTC clock - a slot mode
+        means nothing unless the signals start when the slots do."""
+        self.status = "running"
+        rate = self.samplerate
+        per_slot = int(mode.slot * rate)
+        block = rate // 10
+        made: dict[int, np.ndarray] = {}
+        pos = int(time.time() * rate)
+        while not self._stop.is_set():
+            slot = pos // per_slot
+            if slot not in made:
+                made.clear() if len(made) > 2 else None
+                made[slot] = ftx.mock_slot_audio(slot, mode, rate)
+            off = pos - slot * per_slot
+            chunk = made[slot][off:off + block]
+            if chunk.size < block:
+                chunk = np.concatenate(
+                    (chunk, np.zeros(block - chunk.size, dtype=np.float32)))
+            self._feed(chunk.astype(np.float32))
+            pos += block
+            delay = pos / rate - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            elif delay < -1.0:
+                pos = int(time.time() * rate)   # fell behind: rejoin now
 
     # -- decoding ----------------------------------------------------------
     def _feed(self, samples: np.ndarray) -> None:
@@ -256,6 +302,13 @@ class Listener:
                "hearing": d.hearing,
                "quiet_for": round(time.time() - st.last_char_at, 1)
                if st.last_char_at else None}
+        if isinstance(d, ftx.SlotDecoder):
+            out.update({"median_dt": d.median_dt, "last_ms": d.last_ms,
+                        "last_count": d.last_count, "busy": d.busy,
+                        "dropped": d.dropped, "last_slot": d.last_slot,
+                        "dseq": d.seq, "slot_s": d.mode.slot,
+                        "clock": round(time.time(), 3)})
+            return out
         if isinstance(d, rtty.RttyDecoder):
             out.update({"baud": d.baud, "reverse": d.reverse,
                         "mark_hz": round(d.mark_hz, 1),
@@ -298,7 +351,14 @@ def _mock_psk(rate: int) -> np.ndarray:
                          amplitude=0.3, lead_seconds=1.5, tail_seconds=1.0)
 
 
-def make_decoder(spec: dict, samplerate: int):
+def make_decoder(spec: dict, samplerate: int, stream: "Stream | None" = None):
+    if spec.get("mode") in SLOT_MODES:
+        return ftx.SlotDecoder(
+            samplerate, spec["mode"],
+            on_slot=(lambda t, rows: on_slot(stream, t, rows)) if stream
+            else None,
+            on_slot_start=(lambda t: on_slot_start(stream, t)) if stream
+            else None)
     if spec.get("mode") == "psk31":
         return psk.PskDecoder(samplerate)
     if spec.get("mode") == "rtty":
@@ -309,8 +369,8 @@ def make_decoder(spec: dict, samplerate: int):
 
 
 def spec_key(spec: dict) -> str:
-    if spec.get("mode") == "psk31":
-        return "psk31"
+    if spec.get("mode") in ("psk31",) + SLOT_MODES:
+        return spec["mode"]
     if spec.get("mode") == "rtty":
         return (f"rtty:{'rev' if spec['reverse'] else 'norm'}:"
                 f"{int(spec['usos'])}:{spec['stop_bits']}")
@@ -320,6 +380,8 @@ def spec_key(spec: dict) -> str:
 def decoder_spec(conf: dict, source: str, radio: dict) -> dict:
     """What a tile's settings ask to be decoded, as a spec for a decoder."""
     mode = str(conf.get("mode") or "cw")
+    if mode in SLOT_MODES:
+        return {"mode": mode}
     if mode == "psk31":
         # BPSK has no sideband to get the wrong way up: a reversal is a
         # reversal in USB and in LSB.
@@ -354,7 +416,7 @@ def reversed_for(conf: dict, source: str, radio: dict) -> bool:
 
 def listen_key(device: str, mode: str) -> str:
     """The input a listener is opened on. The mock is one per mode."""
-    if device == "mock" and mode in ("rtty", "psk31"):
+    if device == "mock" and mode in ("rtty", "psk31") + SLOT_MODES:
         return f"mock:{mode}"
     return device
 
@@ -398,6 +460,71 @@ def resolve_source(conf: dict, state: dict | None = None
         return "mock", ""
     return "", ("The radio in use has no audio input set. "
                 "Settings → Radio, or pick an input below.")
+
+
+# ------------------------------------------------------------ the bus
+def on_slot_start(stream: "Stream", t: float) -> None:
+    """Note what the radio was tuned to as a slot began.
+
+    Asked on a thread of its own: this is called from the audio feed, and
+    a host that is slow to answer must not stall the capture."""
+    def ask():
+        st = radio_state()
+        stream.dial_at[t] = st
+        for old in [k for k in stream.dial_at if k < t - 120]:
+            stream.dial_at.pop(old, None)
+    threading.Thread(target=ask, daemon=True, name="decoder-dial").start()
+
+
+def dial_for(stream: "Stream", t: float, now: dict) -> tuple[int | None, bool,
+                                                            str]:
+    """(dial Hz, simulated, rig) for decodes from the slot starting at t.
+
+    The dial is only known if this input *is* the radio's audio and the
+    radio sat on one frequency for the whole slot - asked as the slot
+    began and again once it was decoded. Retuned in between, the audio
+    offsets belong to two different dials and none of them is reported:
+    a spot on the wrong frequency is worse than no spot."""
+    before = stream.dial_at.get(t) or {}
+    simulated = (stream.device.startswith("mock") or bool(now.get("mock"))
+                 or bool(before.get("mock")))
+    rig = str(now.get("rig_id") or now.get("id") or "")
+    mine = str(now.get("audio_in") or "")
+    # The simulated radio's own mock is "its" audio too, so the demo shows
+    # radio frequencies; `simulated` is what keeps it off anybody's map.
+    ours = (stream.device == mine) if mine else (
+        stream.device.startswith("mock") and bool(now.get("mock")))
+    if not ours:
+        return None, simulated, rig
+    f0, f1 = before.get("freq"), now.get("freq")
+    if not f0 or not f1 or int(f0) != int(f1) or not before.get("ok", True):
+        return None, simulated, rig
+    return int(f1), simulated, rig
+
+
+def on_slot(stream: "Stream", t: float, rows: list) -> None:
+    """Publish a slot's decodes - one event per slot, not per decode, the
+    way an import publishes once: a busy band is forty decodes every
+    fifteen seconds, and a bus queue that fills drops its subscriber."""
+    if not rows:
+        return
+    now = radio_state()
+    dial, simulated, rig = dial_for(stream, t, now)
+    out = []
+    for r in rows:
+        d = {k: r[k] for k in ("text", "call", "to", "grid", "report",
+                               "ack", "snr", "dt", "freq", "kind", "osd")
+             if k in r}
+        d["audio_hz"] = d.pop("freq")
+        d["rf_hz"] = int(dial + r["freq"]) if dial else None
+        out.append(d)
+    card.publish("decoder.decoded", {
+        "mode": stream.spec["mode"].upper(),
+        "slot": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        if float(t).is_integer() else
+        time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + ".5Z",
+        "slot_ts": t, "dial_hz": dial, "rig": rig, "simulated": simulated,
+        "source": stream.device, "decodes": out})
 
 
 def who() -> str:
@@ -506,6 +633,30 @@ def text():
     first, chunk = li.since(st, seq)
     out = li.info(st)
     out.update({"first": first, "text": chunk, "mode": spec["mode"],
+                "source": str(conf.get("source") or "mock")})
+    return out
+
+
+@card.get("/decodes")
+def decodes():
+    """FT8/FT4 decodes after the caller's sequence number, as fields.
+
+    The text route carries the same decodes as lines; this one is for a
+    page that wants the callsign, grid and report without parsing them."""
+    conf, device, note, spec = _tile()
+    if spec["mode"] not in SLOT_MODES:
+        return {"decodes": [], "error": "not a slot mode"}
+    if note:
+        return {"decodes": [], "status": "idle", "error": note,
+                "mode": spec["mode"], "dseq": 0}
+    li = listener_for(device, who())
+    st = li.stream(spec)
+    try:
+        seq = int(request.args.get("since", "0"))
+    except ValueError:
+        seq = 0
+    out = li.info(st)
+    out.update({"decodes": st.decoder.since(seq), "mode": spec["mode"],
                 "source": str(conf.get("source") or "mock")})
     return out
 

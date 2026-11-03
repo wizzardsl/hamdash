@@ -48,11 +48,13 @@ hamdash/proc.py     one OS process per python card, health, restart, reap
 hamdash/registry.py reads card.json from plugins/ and <home>/cards/
 hamdash/windows.py  native pop-out windows (pywebview js_api bridge)
 hamdash/config.py   config.json, layout.json, tile settings, search paths
-hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math
+hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math,
+                    wsjtx (UDP in), pskreporter (UDP out)
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
-                    psk_reporter, decoder, spots, web_embed, hello_card
+                    psk_reporter, decoder (CW/RTTY/PSK31/FT8/FT4), spots,
+                    web_embed, hello_card
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
 docs/               README.md indexes them; board, radios, logging,
@@ -1605,6 +1607,79 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   rate the shared capture delivers and the one everything was tuned at;
   run at 48 kHz the same thresholds let noise through.
 
+### FT8 and FT4 (`plugins/decoder/ftx.py`, `tests/test_ftx.py`)
+
+- **WSJT-X is the referee, and it is installed on the station.**
+  `ft8code`/`ft4code` print the bits, CRC, parity and symbols of a message
+  (`fixtures/ftx/codes.json`), `ft8sim` makes WSJT-X's own waveforms, and
+  `jt9` decodes WAVs; `tools/ftx_fixtures.py` drives all three. The LDPC
+  tables are transcribed from kgoba/ft8_lib (MIT, notice in
+  `ftx_tables.py`); nothing is from WSJT-X's source, which is GPL.
+- **jt9's default "my call" and "his call" are K1ABC and W9XYZ** - the
+  calls in every textbook example. A benchmark using them is decoded *a
+  priori* (the `a2`/`a8` on the end of jt9's line) and made jt9 look 30/30
+  at -22 dB. Run it with `-c` and `-x` set to calls nobody uses and drop
+  lines ending in `aN`; the fixtures record `ap` for that reason.
+- **`ft4sim_mult` reads its message list and writes nothing** - no error,
+  exit 0, whatever the format. FT4's fixture is this tree's synthesis, and
+  jt9 decoding every signal at the SNR it was made at is the proof that
+  the waveform (GFSK BT=1, a whole-symbol ramp at each end, start at 0.5 s)
+  is right. FT8's are `ft8sim`'s own, noiseless (SNR 99) and summed here.
+- **WSJT-X sends RR73 as a grid square**, which it also is, not as the
+  report token reserved for it. Unpacked, a grid that reads RR73 is the ack.
+- **All zeros passes every parity check and the CRC**, and is what noise
+  decodes to most easily. It is never sent, so it is refused.
+- **Coherent sync is what made FT4 work.** The tones are phase-continuous,
+  so a Costas block's symbols add in phase at the right time and frequency
+  and nowhere else. Summed as powers, FT4's sixteen sync symbols at -16 dB
+  left the fit 70 samples and 4 Hz out and 6 of 30 decoded; coherently, 28.
+  The bit metrics are coherent too, over 3 symbols for FT8 and 4 for FT4,
+  tried after the single-symbol ones.
+- **SNR's noise is a Hann spectrogram's 25th percentile over time, per
+  bin.** The median of the other tones was the first version, and a strong
+  signal's own skirts raised it: -5 dB read -9. The signal is a DFT at
+  full rate on the sent tones, so both are one measurement and the ratio
+  needs only the bandwidth.
+- **Batch belief propagation.** One codeword at a time cost 7 ms, nearly
+  all numpy overhead, and was most of a slot; a pass's candidates go
+  through at once now. The CRC is linear, so a batch of OSD's codewords is
+  checked as a matrix product (`_crc_ok`).
+- **OSD is where false decodes come from, and the simulator under-states
+  it.** It tries ~900 codewords a candidate, so the CRC passes by chance
+  every few slots and only the distance (`OSD_SURE_DIST`, `OSD_MAX_DIST`
+  with `OSD_FAR_SYNC`) tells. Over 70 busy simulated slots every false find
+  was at 0.073 or more; eight real slots on 40 m put five at 0.050-0.065,
+  mostly from passes 2 and 3 - out of what subtraction left behind - and
+  every one carried a random `/P` or `/R` (one bit each in noise, rare on
+  the air), so OSD may not return those either. With the rules as they
+  are: 119 of jt9's 122 and nothing else. OSD also finds strong signals BP
+  missed on fading, so it earns its place. An OSD decode is italic on the
+  page, carries `osd` on the bus, and is not reported to PSK Reporter
+  unless it is within `OSD_SURE_DIST`.
+- **Two things measured and taken back out**: per-tone noise whitening
+  (for a signal on the SSB filter's skirt at 300 Hz) and a wider fine
+  frequency search (for a coarse peak a bin off). Each fixed the case it
+  was for and lost a decode or added a false one elsewhere on real audio.
+- **The clock is the earliest arrival** (`SlotDecoder`): blocks come in
+  polled, late by a varying amount, so the minimum of arrival minus
+  samples-so-far over 30 s is the stream's start; a jump past `GAP` is lost
+  audio and that slot is dropped. A slot joined part way is not decoded.
+  Decoding waits `WAIT` past the slot for DT up to +2 s and has a deadline
+  of 0.7 of a slot, so a busy band loses decodes rather than falling behind.
+- **The mock plays a QSO on the UTC clock.** A slot mode means nothing
+  otherwise, and its messages are checked against `ft8code`, not against
+  this encoder.
+- **Published once per slot, not per decode** (`decoder.decoded`), like an
+  import - a busy band is forty decodes every fifteen seconds. The dial is
+  asked as the slot starts and again after it is decoded; it is reported
+  only if the input is the radio's own audio and the two agree, because a
+  retune mid-slot puts every audio offset on the wrong dial. `simulated`
+  marks the mock and the simulated radio, which nothing may send anywhere.
+- **Measured.** 40 m at night, eight slots of 14-19 stations: jt9 122, this
+  119, all in common, ~4.7 s a slot on this machine (the deadline is 10.5
+  s). 30 m: 3 of jt9's 5. Simulated, without jt9's a-priori decoding: FT8
+  50% at -20.7 dB against -21.1, FT4 about -17 against -18.
+
 ## Logbook sync
 
 - **A button in Settings acts on what is on screen, so it saves first.**
@@ -1840,6 +1915,59 @@ logged contacts in the log. `tests/test_wsjtx.py` drives it.
   that writes to the log is covered.
   **Look for the traffic before declaring something unverifiable**: the
   port was being broadcast to the whole time.
+
+## PSK Reporter uploads
+
+`hamdash/services/pskreporter.py`, `tests/test_pskreporter.py`. What
+WSJT-X's "Enable PSK Reporter Spotting" does, from the Decoder card's
+`decoder.decoded`. The spec is https://pskreporter.info/pskdev.html.
+
+- **A host service, not part of the card.** It is the host's outward
+  traffic, it has to outlive any one tile, and its timers and de-dup must
+  span every decoder tile on every radio. It hears the bus in-process
+  (`Bus.listen`), because an SSE stream would hold a server thread for it
+  (invariant 4). A listener runs on the publishing thread, so `offer` only
+  appends; a listener that raises is printed and dropped, never raised into
+  `publish`.
+- **Off by default**, the "nothing new widens the surface unasked" rule:
+  it sends the operator's call, locator and what they heard to a third
+  party. No callsign or no grid in the Station tab is a refusal with a
+  reason (`blocked`), shown in Settings.
+- **FT8 and FT4 only, and that is a decision.** CRC-14 makes a decoded
+  callsign one that was sent. CW, RTTY and PSK31 are never reported - a
+  garbled call is a station on somebody else's map that does not exist -
+  and the decoder does not even publish them.
+- **No dial, no report; simulated, no report.** The reported frequency is
+  the dial plus the audio offset; the card sends `rf_hz` only when the
+  input is the radio's own audio and the radio was on one frequency at the
+  slot's start and end. `simulated` (mock input or simulated radio) is
+  refused here as well as marked there. Own call refused by `base_call`
+  (EA8/G4ABC/P is G4ABC); hashed calls refused; OSD decodes beyond
+  `OSD_TRUST` refused. `source` must be `decoder` - a page posting the
+  topic as `ui` is not the decoder.
+- **Their rules, as written**: one datagram per five minutes, timed from
+  when it was switched on, never the wall clock; a full datagram goes at
+  once; templates in the first three datagrams and hourly; one socket for
+  the session so every datagram has the same source port (the server
+  caches templates per address and port); a call once per five minutes
+  and once an hour unless it changes band; informationSource 1; the
+  sequence counts reports. `MAX_DATAGRAM` is 1400 so nothing fragments.
+- **Byte-exact against the page's own example datagram** - the one
+  complete packet the spec gives, and its later form without templates.
+  Note the page's *partial* example has "PSL" (`50 53 4C`) where the
+  complete one has "PSK" (`4B`); the complete one is what the test uses.
+- **No SNR in the reports, deliberately for now.** The documented sender
+  templates with an SNR also carry iMD, which FT8 does not measure, and the
+  page asks a program that does not fit to write to its author for a
+  template rather than invent one. IPFIX is self-describing and a template
+  without iMD would very likely be accepted, but "very likely" is a guess
+  about somebody else's server. Asking is the way to add it.
+- **Never sent to the live server from development.** The tests send to a
+  list and once to a local socket. PSK Reporter has a test listener on
+  pskreporter.info port 14739 with a packet-analysis page; it was not
+  used either, so the first real datagram is the operator's.
+- **What is queued is kept across a failed send** and sent when hamdash
+  stops properly (`stop()`); turning it off drops it.
 
 ## The log tells the board it changed
 
@@ -2904,16 +3032,19 @@ it into the GitHub bug form, which is pre-filled by the button.
   watched doing each job on one radio. What is still unproven anywhere is a
   *second* rig model - everything here is one FT-890/900 - so anything that
   looks like a rig quirk should be suspected of being this rig's quirk.
-- The decoder's other modes: FT8 is the one left in its dropdown, and it is
-  a different thing altogether - 15-second slots, LDPC, many signals at
-  once - closer to porting WSJT-X's decoder than to writing another one.
-  RTTY at other speeds and shifts (50 and 75 baud, 425 and 850 Hz) is a
+- The decoder's other modes. RTTY at other speeds and shifts (50 and 75 baud, 425 and 850 Hz) is a
   constructor argument away in `rtty.py` and untested. QPSK31 and PSK63
   are a few lines away in `psk.py` and untested.
-- The decoder publishes nothing. A callsign it has copied would be worth
-  putting on the bus for the logbook and the map to pick up, but only once
-  it can say how sure it is: `lookup.result` is the "what are we looking at"
-  event and feeding it guesses would be worse than silence.
+- **CW, RTTY and PSK31 publish nothing; FT8 and FT4 do** (`decoder.decoded`),
+  because their CRC says the callsign was sent. A callsign copied by the
+  others would be worth putting on the bus only once it can say how sure
+  it is: `lookup.result` is the "what are we looking at" event and feeding
+  it guesses would be worse than silence. Nothing subscribes to
+  `decoder.decoded` yet but the PSK Reporter uploader (see "PSK Reporter
+  uploads"): clicking a decode to
+  look the station up, and the map plotting the band, are the obvious next
+  uses. FT8/FT4 also have no a-priori decoding (WSJT-X's `aN` decodes, from
+  the calls in the operator's QSO), which is jt9's last decibel or two.
 - **What you bind is not what you dial.** `--host 0.0.0.0` listens
   everywhere, which is the point, and is not an address anything can
   connect to - on Windows that is WinError 10049, measured. The host URL

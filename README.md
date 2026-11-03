@@ -96,8 +96,8 @@ Eleven cards ship with it, and a tile can hold any of them:
 - **Path to Station** — bearing and distance to the station you are
   looking at.
 - **Spectrum** — a waterfall from the radio's sound card.
-- **Decoder** — live CW off the air, with the DSP tested against synthesised
-  Morse from 6 to 45 WPM.
+- **Decoder** — CW, RTTY and PSK31 off the air, and FT8 and FT4 a slot at a
+  time, held to WSJT-X's own decoder on the same audio.
 - **Web Page** — any page in a tile. **Cards → New from URL…** makes a named
   card out of one without your writing anything, and deletes it again.
 - **Hello Card** — the example, in about thirty lines.
@@ -142,7 +142,7 @@ own feed, with every filter running against what is already on your disk.
 | **[Using the board](docs/board.md)** | moving cards, stacking them into tabs, popping one out, tile settings, themes |
 | **[Radios](docs/radios.md)** | flrig, OmniRig, Hamlib and rigctld; VFOs, split, the meter, and the transmitter rules |
 | **[Logging and callsigns](docs/logging.md)** | the log, syncing it with LoTW, QRZ and WRL, lookups, grids and flags |
-| **[The cards that come with it](docs/built-in-cards.md)** | memories, listening, spectrum, CW decoder, PSK Reporter, satellites, spots |
+| **[The cards that come with it](docs/built-in-cards.md)** | memories, listening, spectrum, the CW/RTTY/PSK31/FT8/FT4 decoder, PSK Reporter, satellites, spots |
 | **[Writing a card](docs/cards.md)** | the whole extension contract, with a [template](docs/card-template) you can copy |
 | **[The bus](docs/bus.md)** | one pub/sub channel for the board, and who may say what |
 | **[When something goes wrong](docs/troubleshooting.md)** | where to look, and the failure modes worth knowing |
@@ -171,7 +171,7 @@ same-origin to the browser and their ports are never exposed.
 ## Not done yet
 
 Freeing a tile's grid slot while its card is popped out; remembering where
-popped-out windows were across a restart; RTTY and PSK31 in the decoder;
+popped-out windows were across a restart;
 multiple boards as tabs; transmitting from another machine (receiving already
 works — a microphone needs a secure context, so it means HTTPS or a tailnet).
 
@@ -233,6 +233,7 @@ Bundled with it, each keeping its own licence beside the files:
 | [satellite.js](https://github.com/shashwatak/satellite-js) | MIT — `hamdash/static/vendor/satellite.min.js`, SGP4 orbital propagation |
 | Natural Earth coastlines and boundaries | public domain, simplified into `vendor/world.js` and `vendor/borders.js` |
 | [ITU and CQ zone boundaries](https://github.com/HB9HIL/hamradio-zones-geojson) by HB9HIL | MIT — simplified into `vendor/ituzones.js` and `vendor/cqzones.js` by `tools/zones.py` |
+| [ft8_lib](https://github.com/kgoba/ft8_lib) by Kārlis Goba | MIT — the LDPC(174,91) tables in `plugins/decoder/ftx_tables.py`, and the reference the FT8/FT4 decoder's algorithms follow |
 | ITU Regions, from the Radio Regulations (Art. 5) and Natural Earth countries | public domain — built into `vendor/ituregions.js` by `tools/regions.py` |
 
 Hamlib is **not** bundled: `rigctl` and `rigctld` are GPL and hamdash is MIT,

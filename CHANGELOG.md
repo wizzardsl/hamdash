@@ -6,6 +6,28 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **FT8 and FT4 in the Decoder card.** Every signal in the passband, a UTC
+  slot at a time, one line per decode as WSJT-X shows them - SNR, DT,
+  audio frequency, message - with the median DT shown so a wrong system
+  clock is visible. Sync search, coherent fine fit, belief propagation with
+  ordered-statistics decoding behind it, CRC-14, and the standard, /P /R,
+  nonstandard-call, hashed, DXpedition and free-text messages. Checked
+  against WSJT-X 3.0.2 itself: its `ft8code`/`ft4code` for every table, its
+  `ft8sim` waveforms, and its `jt9` on the same audio - 119 of jt9's 122
+  decodes over eight busy slots of 40 m, nothing jt9 did not find, about
+  five seconds a slot. The mock plays an FT8 or FT4 QSO on the UTC clock.
+- **`decoder.decoded` on the bus**: each slot's FT8/FT4 decodes with
+  callsign, grid, report, SNR and the radio frequency, for other cards.
+- **PSK Reporter spotting**, as WSJT-X's "Enable PSK Reporter Spotting":
+  stations the Decoder copies on FT8 and FT4 are reported to
+  pskreporter.info with your callsign and locator. Off until ticked in
+  Settings → Integrations, with a status line saying when it last sent and
+  how many. Only FT8 and FT4, only with the radio's frequency known, never
+  your own call, and on PSK Reporter's own terms: batched, one report every
+  five minutes, each station once in five minutes and once an hour per
+  band.
+
 ## [1.3.1]
 
 ### Added

@@ -107,6 +107,19 @@ class Bus:
         # client's remembered id is older than anything held, and reads as
         # "unknown - send current state" instead of as "nothing missed".
         self._seq = int(time.time() * 1000)
+        # In-process listeners: (filters, fn). A host service hearing a
+        # card's events without holding an SSE stream - and a server
+        # thread - for it (invariant 4).
+        self._listeners: list[tuple[list[str], object]] = []
+
+    def listen(self, topics: str, fn) -> None:
+        """Call fn(event) for every event matching `topics` (comma
+        separated, `*` wildcards), on the publishing thread. It must be
+        quick, and it may not raise into the publisher: whatever it
+        raises is printed and dropped."""
+        with self._lock:
+            self._listeners.append(([t.strip() for t in topics.split(",")
+                                     if t.strip()], fn))
 
     def publish(self, topic: str, payload: dict | None = None,
                 source: str = "host") -> dict:
@@ -125,6 +138,13 @@ class Bus:
                     dead.append(q)      # a stalled consumer gets dropped, not queued forever
             for q in dead:
                 self._subs.discard(q)
+            listeners = list(self._listeners)
+        for filters, fn in listeners:
+            if _matches(topic, filters):
+                try:
+                    fn(evt)
+                except Exception as exc:                # noqa: BLE001
+                    print(f"bus listener for {topic} failed: {exc!r}")
         return evt
 
     def recent(self, topics: str = "*", limit: int = 50,

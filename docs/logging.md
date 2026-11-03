@@ -3,6 +3,8 @@
 The log, syncing it with the services that hold a copy, and working out where a station is.
 
 - [The log](#the-log)
+- [WSJT-X](#wsjt-x)
+- [Reporting to PSK Reporter](#reporting-to-psk-reporter)
 - [Logbook sync](#logbook-sync)
 - [Following one station](#following-one-station)
 - [Filling in your grid](#filling-in-your-grid)
@@ -93,6 +95,50 @@ second logbook tile — appear in every open logbook without touching
 anything. The card goes back to the first page when one arrives, because
 that is where a new contact sorts; if you have a search running it is left
 alone, so the answer on screen stays the answer to the question you asked.
+
+## Reporting to PSK Reporter
+
+Tick **Settings → Integrations → PSK Reporter** and the stations the
+[Decoder card](built-in-cards.md#ft8-and-ft4) copies on FT8 and FT4 are
+reported to [pskreporter.info](https://pskreporter.info/) with your
+callsign and locator, so the stations you hear can see where they were
+heard. It is what WSJT-X calls *Enable PSK Reporter Spotting*.
+
+**It is off until you tick it.** It sends your callsign, your locator and
+what you heard to somebody else's server, so it does not start by itself.
+It needs a callsign and a grid in the Station tab, and the line under the
+box says if either is missing.
+
+What is sent, and what is not:
+
+- **FT8 and FT4 only.** Their checksum means a decoded callsign is one that
+  was really sent. CW, RTTY and PSK31 are never reported: they print
+  whatever the noise spells, and a garbled callsign is a station on
+  somebody else's map that does not exist.
+- **Only with the radio's frequency known.** The frequency reported is the
+  dial plus the signal's audio offset, so the Decoder has to be on the
+  radio's own audio input, and the radio must not have been retuned during
+  the slot. Nothing from the mock input or the simulated radio.
+- **Never your own callsign**, in any form (`/P`, a prefix). Never a
+  hashed callsign (`<...>`), and never the decoder's less certain decodes
+  (the ones in italics).
+- **PSK Reporter's own rules**: at most one report every five minutes, on a
+  timer counted from when it was switched on rather than from the clock;
+  each station at most once in five minutes, and once an hour unless it
+  has changed band. Each report says the software is hamdash and its
+  version.
+
+The status line says when it last sent and how many stations, how many are
+waiting, and when the next report goes. What is waiting is sent when
+hamdash is stopped properly.
+
+If WSJT-X is spotting from the same radio as well, turn one of them off,
+or every station is reported twice.
+
+Reports carry no signal-to-noise figure yet: PSK Reporter's published
+templates with one also carry an intermodulation figure that FT8 does not
+measure, and their page asks programs that do not fit to ask for a
+template rather than invent one.
 
 ## Logbook sync
 

@@ -1,0 +1,104 @@
+{
+ "mode": "ft4",
+ "jt9": [
+  {
+   "snr": -8,
+   "dt": 0.0,
+   "freq": 600,
+   "text": "CQ VA7HDX CN89"
+  },
+  {
+   "snr": -13,
+   "dt": 0.2,
+   "freq": 900,
+   "text": "VE7XYZ VA7HDX -12"
+  },
+  {
+   "snr": -14,
+   "dt": -0.2,
+   "freq": 1249,
+   "text": "K1ABC W9XYZ R-07"
+  },
+  {
+   "snr": -11,
+   "dt": 0.4,
+   "freq": 1600,
+   "text": "W9XYZ K1ABC RR73"
+  },
+  {
+   "snr": -4,
+   "dt": 0.1,
+   "freq": 1900,
+   "text": "CQ TEST JA1XYZ PM95"
+  },
+  {
+   "snr": -15,
+   "dt": -0.1,
+   "freq": 2300,
+   "text": "PA9XYZ DL1ABC +05"
+  },
+  {
+   "snr": -13,
+   "dt": 0.0,
+   "freq": 2700,
+   "text": "EA3XYZ F4ABC 73"
+  },
+  {
+   "snr": -12,
+   "dt": 0.3,
+   "freq": 1930,
+   "text": "JA1XYZ G4ABC IO91"
+  }
+ ],
+ "jt9_version": "WSJT-X 3.0.2-devel",
+ "made": [
+  {
+   "text": "CQ VA7HDX CN89",
+   "freq": 600,
+   "dt": 0.0,
+   "snr": -8
+  },
+  {
+   "text": "VE7XYZ VA7HDX -12",
+   "freq": 900,
+   "dt": 0.2,
+   "snr": -12
+  },
+  {
+   "text": "K1ABC W9XYZ R-07",
+   "freq": 1250,
+   "dt": -0.2,
+   "snr": -14
+  },
+  {
+   "text": "W9XYZ K1ABC RR73",
+   "freq": 1600,
+   "dt": 0.4,
+   "snr": -10
+  },
+  {
+   "text": "CQ TEST JA1XYZ PM95",
+   "freq": 1900,
+   "dt": 0.1,
+   "snr": -4
+  },
+  {
+   "text": "JA1XYZ G4ABC IO91",
+   "freq": 1930,
+   "dt": 0.3,
+   "snr": -11
+  },
+  {
+   "text": "PA9XYZ DL1ABC +05",
+   "freq": 2300,
+   "dt": -0.1,
+   "snr": -15
+  },
+  {
+   "text": "EA3XYZ F4ABC 73",
+   "freq": 2700,
+   "dt": 0.0,
+   "snr": -13
+  }
+ ]
+}

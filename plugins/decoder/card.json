@@ -2,9 +2,9 @@
   "id": "decoder",
   "name": "Decoder",
   "kind": "python",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "HamDash",
-  "description": "Decode digital modes from the radio's audio: CW and RTTY",
+  "description": "Decode digital modes from the radio's audio: CW, RTTY, PSK31, FT8 and FT4",
   "entry": "card.py",
   "view": "index.html",
   "w": 5,
@@ -20,6 +20,9 @@
   "subscribes": [
     "radio.state"
   ],
+  "publishes": [
+    "decoder.decoded"
+  ],
   "settings": {
     "mode": {
       "type": "select",
@@ -27,10 +30,12 @@
       "options": [
         "cw",
         "rtty",
-        "psk31"
+        "psk31",
+        "ft8",
+        "ft4"
       ],
       "default": "cw",
-      "help": "CW, amateur RTTY (45.45 baud, 170 Hz shift) or PSK31 (BPSK). The card's own dropdown lists what else is planned. Whichever it is, the signal is found anywhere in the passband; nothing needs tuning to a set audio frequency."
+      "help": "CW, amateur RTTY (45.45 baud, 170 Hz shift), PSK31 (BPSK), FT8 or FT4. FT8 and FT4 are decoded a slot at a time on the UTC clock, so this computer's clock has to be right to within a second or so - the median DT on the tile says how far out it is. The card's own dropdown lists what else is planned. Whichever it is, the signal is found anywhere in the passband; nothing needs tuning to a set audio frequency."
     },
     "reverse": {
       "type": "select",
