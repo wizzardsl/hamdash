@@ -27,6 +27,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
   without the internet, marked "heard here". With PSK Reporter spotting on,
   the feed's echo of the same report is dropped and your copy - with its
   SNR - is kept.
+- **FT8/FT4 band buttons in the Decoder card**: one press tunes the radio
+  to that band's usual FT8 or FT4 frequency in USB data mode, 160 m to 6 m
+  for FT8 and 80 m to 6 m for FT4. The band the radio is on is lit.
 - **`decoder.decoded` on the bus**: each slot's FT8/FT4 decodes with
   callsign, grid, report, SNR and the radio frequency, for other cards.
 - **PSK Reporter spotting**, as WSJT-X's "Enable PSK Reporter Spotting":

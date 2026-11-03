@@ -1702,6 +1702,12 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   119, all in common, ~4.7 s a slot on this machine (the deadline is 10.5
   s). 30 m: 3 of jt9's 5. Simulated, without jt9's a-priori decoding: FT8
   50% at -20.7 dB against -21.1, FT4 about -17 against -18.
+- **The FT8/FT4 band buttons' dials are the spots card's**, and
+  `tests/test_decoder_tune.py` holds every one against `_FT8_DIALS` /
+  `_FT4_DIALS` in `plugins/spots/sources.py` and against `bands.for_hz`,
+  so a button cannot tune somewhere its label does not say. Mode before
+  frequency as everywhere; `PKTUSB` first and plain `USB` if the radio
+  refuses it - flrig on an FT-900 has no data mode.
 
 ## Logbook sync
 

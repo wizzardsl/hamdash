@@ -31,6 +31,13 @@
   #rev.on { color: var(--accent); border-color: var(--accent); }
   #rev[hidden] { display: none; }
   button.run.on { color: var(--accent); border-color: var(--accent); }
+  /* FT8/FT4: a band a click away, at that mode's usual dial frequency. */
+  .tune { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+          font-size: 12px; }
+  .tune[hidden] { display: none; }
+  .tune .lbl { color: var(--muted); font-size: 11px; margin-right: 2px; }
+  .tune button { padding: 1px 6px; font-family: var(--mono); }
+  .tune button.on { color: var(--accent); border-color: var(--accent); }
   body.stopped #out { opacity: .5; }
 
   #out {
@@ -101,6 +108,7 @@
   <button id="clear" type="button" title="Empty the window. The speed estimate is kept.">Clear</button>
 </div>
 
+<div class="tune" id="tune" hidden role="group" aria-label="Tune the radio to a band"></div>
 <div class="cols" id="cols" hidden aria-hidden="true">
   <span title="Start of the slot, UTC">UTC</span>
   <span class="num" title="Signal to noise, in a 2.5 kHz bandwidth">dB</span>
@@ -147,6 +155,73 @@ let dseq = 0;             // FT8/FT4: the last decode we have shown
 let lastSlot = null;      // FT8/FT4: the slot the last row was from
 const SLOT_MODES = ['ft8', 'ft4'];
 const slotMode = () => SLOT_MODES.includes(conf.mode);
+
+// ---- quick tune, FT8/FT4 -------------------------------------------------
+// The usual dial frequencies (USB, in hertz) - the defaults WSJT-X ships,
+// so a click lands where everybody else is. JSON on purpose: the test
+// reads this table to check it.
+const DIALS = {
+  "ft8": {"160": 1840000, "80": 3573000, "60": 5357000, "40": 7074000,
+          "30": 10136000, "20": 14074000, "17": 18100000, "15": 21074000,
+          "12": 24915000, "10": 28074000, "6": 50313000},
+  "ft4": {"80": 3575000, "40": 7047500, "30": 10140000, "20": 14080000,
+          "17": 18104000, "15": 21140000, "12": 24919000, "10": 28180000,
+          "6": 50318000}
+};
+let radioNow = null;      // the last radio.state, for lighting the band
+let tuneFor = null;       // which mode's buttons are drawn
+
+function paintTune() {
+  const box = $('#tune');
+  const dials = slotMode() ? DIALS[conf.mode] : null;
+  box.hidden = !dials;
+  if (!dials) return;
+  if (tuneFor !== conf.mode) {
+    tuneFor = conf.mode;
+    box.textContent = '';
+    box.append(Object.assign(document.createElement('span'),
+                             { className: 'lbl', textContent: 'Tune' }));
+    // Low bands first, as they sit on a radio's band keys.
+    for (const [band, hz] of Object.entries(dials).sort((a, b) => a[1] - b[1])) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${band}m`;
+      b.dataset.hz = String(hz);
+      b.title = `${(hz / 1e6).toFixed(hz % 1000 ? 4 : 3)} MHz USB - the usual `
+              + `${conf.mode.toUpperCase()} frequency on ${band} m`;
+      b.setAttribute('aria-label', `Tune to ${band} metres ${conf.mode.toUpperCase()}`);
+      b.onclick = () => tuneTo(hz);
+      box.append(b);
+    }
+  }
+  // Lit when the radio is there - within the passband of that dial, where
+  // the decodes would come from.
+  const f = radioNow && radioNow.ok ? Number(radioNow.freq) : 0;
+  box.querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('on', !!f && Math.abs(f - Number(b.dataset.hz)) <= 3000);
+  });
+}
+
+// Mode first, then the frequency (CLAUDE.md, "Mode before frequency"). The
+// radio's data mode if it has one - USB-D, DATA-U, PKTUSB - else USB, the
+// same choice the spots card makes for a digital spot.
+async function tuneTo(hz) {
+  $('#err').textContent = '';
+  let note = '';
+  try { await HD.radio.mode('PKTUSB'); } catch {
+    try { await HD.radio.mode('USB'); } catch (e) {
+      note = `The mode was left as it was: ${e.message}`;
+    }
+  }
+  try {
+    radioNow = await HD.radio.freq(hz);
+    paintTune();
+  } catch (e) {
+    $('#err').textContent = e.message;
+    return;
+  }
+  if (note) $('#err').textContent = note;
+}
 
 // Whether this tile is decoding. Kept on the tile, so a card left stopped is
 // still stopped tomorrow, and so two tiles can watch different inputs with
@@ -450,6 +525,7 @@ function applyWrap() {
   $('#out').classList.toggle('nowrap', conf.wrap === false);
   $('#out').classList.toggle('slots', slotMode());
   $('#cols').hidden = !slotMode();
+  paintTune();
   $('#out').dataset.empty = !running ? 'Stopped'
     : slotMode() ? `Listening - decodes appear as each ${conf.mode === 'ft4' ? '7.5' : '15'} s slot ends`
     : 'Listening…';
@@ -531,6 +607,8 @@ $('#source').onchange = async () => {
 // operator had open.
 let listsFor = null;
 HD.on('radio.state', (s) => {
+  radioNow = s;
+  paintTune();
   const key = `${s && s.rig_id}|${s && s.audio_in}`;
   if (key === listsFor) return;
   listsFor = key;
@@ -539,6 +617,9 @@ HD.on('radio.state', (s) => {
 
 (async function boot() {
   try { conf = await HD.settings(); } catch { /* defaults will do */ }
+  // The radio is announced on change only, so ask once: without it the
+  // band buttons stay dark until somebody next turns the dial.
+  HD.radio.state().then((s) => { radioNow = s; paintTune(); }).catch(() => {});
   HD.onSettings((v) => {
     // A different decoder is a different text, whichever control chose it.
     const was = decoderOf(conf);

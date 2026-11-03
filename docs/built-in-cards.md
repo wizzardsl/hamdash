@@ -222,6 +222,12 @@ WSJT-X's band activity reads - the slot's time, SNR, DT, the audio
 frequency and the message - with CQs in the signal colour and a thin rule
 between slots, under column headings. There is nothing to set.
 
+**Band buttons** above the headings tune the radio to that band's FT8 or
+FT4 frequency - the usual dial, the same table the Spots card reads modes
+from - in USB data mode (or plain USB on a radio without one), mode first
+so the dial lands where it should. The button for the band the radio is on
+is lit. They tune the selected radio.
+
 Two more columns say where each sending station is:
 
 - **Where**: the flag, then the state or province and the country. The
