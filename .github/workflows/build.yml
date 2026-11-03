@@ -3,10 +3,11 @@ name: build
 # Frozen desktop builds. Runs on demand, and as the middle stage of a release
 # (release.yml calls this, then attaches what it produces).
 #
-# Windows and macOS only for now: both have a pip-installable pywebview
-# backend, so the binary this produces really does open a native window. A
-# Linux build needs system GTK/WebKit packages, and one built without them
-# would silently be browser-only - see "Not done yet" in the README.
+# Windows, macOS and Linux. Windows and macOS have a pip-installable
+# pywebview backend; Linux needs GTK's Python bindings, which pip does not
+# provide, so the Linux job builds from a venv that can see the system's
+# python3-gi and WebKit2GTK - and proves the window opens, because a build
+# without them still passes the --browser smoke test while having no window.
 on:
   workflow_dispatch:
   workflow_call:
@@ -26,16 +27,34 @@ jobs:
             label: windows-x64
           - os: macos-latest
             label: macos-arm64
+          - os: ubuntu-24.04
+            label: linux-x64
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
+        if: runner.os != 'Linux'
         with:
           python-version: "3.13"
 
       - name: Install
+        if: runner.os != 'Linux'
         run: pip install -r requirements.txt pyinstaller
+
+      # The system Python, because python3-gi is built for it: a
+      # setup-python interpreter cannot import the distribution's gi.
+      # libportaudio2 is what sounddevice loads, and PyInstaller bundles it
+      # from here; xvfb is a screen for the window check below.
+      - name: Install (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv python3-gi gir1.2-webkit2-4.1 \
+            libportaudio2 xvfb
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install -r requirements.txt pyinstaller
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Build
         run: pyinstaller --noconfirm --clean hamdash.spec
@@ -47,6 +66,13 @@ jobs:
       # up - the one check that running from source can never make.
       - name: Smoke test the binary
         run: python tools/smoke_frozen.py
+
+      # The one failure the step above cannot see: no GUI toolkit in the
+      # bundle means no window, and the app then quietly carries on in the
+      # browser. Starts it as a double-click would, on a virtual screen.
+      - name: Smoke test the desktop window (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python tools/smoke_frozen.py --window
 
       - uses: actions/upload-artifact@v7
         with:

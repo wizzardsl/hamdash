@@ -3,6 +3,8 @@
 
     pyinstaller --noconfirm --clean hamdash.spec
     python tools/smoke_frozen.py
+    xvfb-run -a python tools/smoke_frozen.py --window    # Linux CI
+
 
 Exists because the interesting failures only happen in a build. From source,
 `sys.executable` is an interpreter and everything works; frozen, it is the
@@ -16,6 +18,13 @@ Checks, in order:
   3. the bundled cards are discovered from the bundle
   4. a python card actually starts, which is the re-exec path
   5. that card answers through the host's proxy
+
+With `--window` it starts the app as somebody double-clicking it would,
+with its desktop window, and checks the window opened and its page loaded.
+That is the Linux check: pywebview installs from pip there without a
+toolkit, and a build without GTK carries on in the browser rather than
+failing - fine for the operator, invisible to a smoke test that only ever
+asked for --browser.
 """
 from __future__ import annotations
 
@@ -32,11 +41,13 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = ROOT / "dist" / "hamdash"
+DIST = Path(os.environ.get("HAMDASH_DIST") or ROOT / "dist" / "hamdash")
 BINARY = DIST / ("hamdash.exe" if os.name == "nt" else "hamdash")
 
 BOOT_TIMEOUT = 60.0     # a cold first launch on a CI runner is not fast
 CARD_TIMEOUT = 60.0
+WINDOW_TIMEOUT = 60.0   # the webview's first paint, on a virtual screen
+WINDOW = "--window" in sys.argv[1:]
 
 
 def free_port() -> int:
@@ -70,6 +81,35 @@ def wait_for(url: str, limit: float, want: str = "") -> str:
     raise SystemExit(f"FAIL  {url} never came good.\n      last: {last}")
 
 
+def check_window(base: str) -> None:
+    """The window opened and the board in it is on the bus.
+
+    Before any card is started here, so a stream on the bus is the board
+    page (or a card it loaded) - the page really ran inside the window."""
+    deadline = time.time() + WINDOW_TIMEOUT
+    native, subs = None, 0
+    while time.time() < deadline:
+        _, shell = get(f"{base}/api/shell")
+        _, stats = get(f"{base}/api/bus/stats")
+        try:
+            native = json.loads(shell).get("native")
+            subs = int(json.loads(stats).get("subscribers") or 0)
+        except (ValueError, AttributeError):
+            pass
+        if native is False:
+            raise SystemExit(
+                "FAIL  no desktop window: the app fell back to the browser. "
+                "The build has no GUI toolkit for pywebview - on Linux, "
+                "build from a venv that can see python3-gi and WebKit2GTK.")
+        if native and subs:
+            print(f"ok    desktop window open, board on the bus ({subs} "
+                  f"stream{'s' if subs != 1 else ''})")
+            return
+        time.sleep(1.0)
+    raise SystemExit(f"FAIL  the window's page never reached the bus "
+                     f"(native={native}, subscribers={subs})")
+
+
 def main() -> int:
     if not BINARY.exists():
         raise SystemExit(
@@ -79,11 +119,15 @@ def main() -> int:
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     home = Path(tempfile.mkdtemp(prefix="hamdash-smoke-"))
-    env = dict(os.environ, HAMDASH_HOME=str(home))
+    # BROWSER=true: if the window cannot open, the app's fallback opens a
+    # web browser - which on a CI runner should be nothing at all.
+    env = dict(os.environ, HAMDASH_HOME=str(home), BROWSER="true")
+    shell = [] if WINDOW else ["--browser"]
 
-    print(f"starting {BINARY.name} on {port}, config in {home}")
+    print(f"starting {BINARY.name} on {port}"
+          f"{' with its window' if WINDOW else ''}, config in {home}")
     proc = subprocess.Popen(
-        [str(BINARY), "--browser", "--port", str(port)],
+        [str(BINARY), *shell, "--port", str(port)],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace")
     try:
@@ -108,6 +152,9 @@ def main() -> int:
                 raise SystemExit(f"FAIL  {want} not discovered; the bundle is "
                                  f"missing plugins/. Found: {ids}")
         print(f"ok    cards discovered from the bundle: {', '.join(sorted(ids))}")
+
+        if WINDOW:
+            check_window(base)
 
         # The one that only fails in a build.
         body = wait_for(f"{base}/cards/hello_card/api/state?uid=smoke",

@@ -51,8 +51,12 @@ jobs:
 
       # One zip per platform, named for the release, so a download says what
       # it is once it has left the browser.
+      # upload-artifact does not keep file permissions, so the binary
+      # comes back without its execute bit: on Linux and macOS a download
+      # that will not run. Put it back before zipping; zip keeps it.
       - name: Zip the builds
         run: |
+          find builds -type f -name hamdash -exec chmod +x {} +
           mkdir -p assets
           for dir in builds/*/; do
             name=$(basename "$dir")

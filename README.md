@@ -175,10 +175,7 @@ popped-out windows were across a restart;
 multiple boards as tabs; transmitting from another machine (receiving already
 works — a microphone needs a secure context, so it means HTTPS or a tailnet).
 
-On packaging: Linux builds (CI builds Windows and macOS, which both have a
-pip-installable pywebview backend — Linux needs system GTK/WebKit packages
-and a build without them would silently be browser-only), code signing, and
-an application icon.
+On packaging: code signing, and an application icon.
 
 The full list, with the reasoning and what was measured, is under
 [Open threads in CLAUDE.md](CLAUDE.md#open-threads) — kept there rather than

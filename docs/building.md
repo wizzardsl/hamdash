@@ -72,7 +72,15 @@ python3 -m venv --system-site-packages .venv
 ```
 
 A build made from that environment carries GTK with it (about 300 MB,
-against 93 MB without) and opens its own window. It still relies on the
+against 93 MB without) and opens its own window. CI builds Linux exactly
+this way, and checks the window on a virtual screen:
+
+```bash
+xvfb-run -a python tools/smoke_frozen.py --window
+```
+
+because a build with no toolkit passes the plain smoke test - it carries on
+in the browser - and the only thing missing is the window. It still relies on the
 machine having WebKitGTK installed, which every desktop Linux with a GNOME
 or GTK browser has.
 

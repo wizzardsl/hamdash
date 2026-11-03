@@ -7,6 +7,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A Linux download.** Releases carry a `linux-x64` build beside Windows
+  and macOS, with its own desktop window (GTK). It needs WebKitGTK on the
+  machine, which a desktop Linux with GNOME or a GTK browser already has.
 - **FT8 and FT4 in the Decoder card.** Every signal in the passband, a UTC
   slot at a time, one line per decode as WSJT-X shows them - SNR, DT,
   audio frequency, message - with the median DT shown so a wrong system
@@ -42,6 +45,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   band.
 
 ### Fixed
+- **The macOS download would not start.** The `hamdash` binary in the
+  release zip had lost its execute permission on the way through the build
+  pipeline, so unzipping it gave a file macOS would not run. Releases put
+  it back now; for 1.3.1, `chmod +x hamdash` inside the folder fixes it.
 - **A desktop window that cannot open no longer takes the board with it.**
   On Linux without GTK's Python bindings the app exited with a traceback
   and no window; it now says why in the log and opens the board in your
