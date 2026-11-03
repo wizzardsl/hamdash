@@ -1,0 +1,124 @@
+{
+ "mode": "ft8",
+ "jt9": [
+  {
+   "snr": -3,
+   "dt": 0.4,
+   "freq": 1510,
+   "text": "KC5UZI K5RJM EM12"
+  },
+  {
+   "snr": 3,
+   "dt": 0.3,
+   "freq": 608,
+   "text": "CQ W6ACT CM97"
+  },
+  {
+   "snr": -6,
+   "dt": 0.1,
+   "freq": 2244,
+   "text": "K0KP W9ML EN61"
+  },
+  {
+   "snr": 9,
+   "dt": 0.1,
+   "freq": 348,
+   "text": "JH7AQH K3QM 73"
+  },
+  {
+   "snr": 1,
+   "dt": 0.1,
+   "freq": 1211,
+   "text": "LU6WAV N7WFK EM15"
+  },
+  {
+   "snr": -5,
+   "dt": 1.0,
+   "freq": 1846,
+   "text": "N4RDG AD0KI DN70"
+  },
+  {
+   "snr": -7,
+   "dt": 0.0,
+   "freq": 1582,
+   "text": "HA8UM KJ5DZV -18"
+  },
+  {
+   "snr": -1,
+   "dt": 0.4,
+   "freq": 1543,
+   "text": "CQ N4NJJ DM26"
+  },
+  {
+   "snr": -13,
+   "dt": 0.3,
+   "freq": 704,
+   "text": "CU2DX AH6DL BK29"
+  },
+  {
+   "snr": -16,
+   "dt": 0.1,
+   "freq": 1971,
+   "text": "ZZ5UNO K4YT FM19"
+  },
+  {
+   "snr": -18,
+   "dt": 0.0,
+   "freq": 1909,
+   "text": "CQ KB5YNF EM45"
+  },
+  {
+   "snr": -20,
+   "dt": 0.3,
+   "freq": 1710,
+   "text": "CT7AUT JA8UIV QN03"
+  },
+  {
+   "snr": -12,
+   "dt": -0.5,
+   "freq": 473,
+   "text": "IK2SAR N9CBW EM78"
+  },
+  {
+   "snr": -20,
+   "dt": 0.1,
+   "freq": 1779,
+   "text": "KC5UZI KG9OH EN52"
+  },
+  {
+   "snr": -17,
+   "dt": 0.2,
+   "freq": 1343,
+   "text": "CQ ZL1GMW RF73"
+  },
+  {
+   "snr": -17,
+   "dt": 1.0,
+   "freq": 1062,
+   "text": "KC5JEC KA9EOK R+04"
+  },
+  {
+   "snr": -9,
+   "dt": 0.2,
+   "freq": 2259,
+   "text": "CT7AUT JA8DKJ QN03"
+  },
+  {
+   "snr": -19,
+   "dt": -0.4,
+   "freq": 1365,
+   "text": "N4RDG N2LEE 73"
+  },
+  {
+   "snr": -16,
+   "dt": 0.7,
+   "freq": 619,
+   "text": "CQ KT3S EL98",
+   "ap": "a1"
+  }
+ ],
+ "jt9_version": "WSJT-X 3.0.2-devel",
+ "note": "Off the air: Yaesu FT-900 on 7.074 MHz USB, 2026-11-03 ~07:07 UTC, through PipeWire at 12 kHz. Slot start is the recording's own estimate (+-0.1 s), shared by jt9 and this decoder.",
+ "expect_found": 17,
+ "extra": []
+}

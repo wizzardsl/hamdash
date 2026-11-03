@@ -3,7 +3,7 @@
 What each bundled card does, and the decisions inside the ones that have a few.
 
 - [Spectrum and waterfall](#spectrum-and-waterfall)
-- [Decoding CW, RTTY and PSK31](#decoding-cw-rtty-and-psk31)
+- [Decoding CW, RTTY, PSK31, FT8 and FT4](#decoding-cw-rtty-psk31-ft8-and-ft4)
 - [PSK Reporter](#psk-reporter)
 - [Spots](#spots)
 
@@ -133,16 +133,16 @@ next coffee shop's. Naming one address is the better habit.
 Transmitting from the browser is not supported. A microphone needs a
 secure context, which means HTTPS with a certificate; receiving has no
 such restriction.
-## Decoding CW, RTTY and PSK31
+## Decoding CW, RTTY, PSK31, FT8 and FT4
 
-The `decoder` card reads digital modes out of the radio's audio. CW, RTTY
-and PSK31 work; FT8 is in the dropdown, disabled, so the card says what it
-is rather than looking finished.
+The `decoder` card reads digital modes out of the radio's audio: CW, RTTY,
+PSK31, FT8 and FT4.
 
 Pick the input at the top of the tile. **Radio's audio in** uses whatever
 sound device the rig in use is set to in Settings → Radio, which is the one
 worth choosing: it follows you when you switch radios. **Mock** synthesises
-a signal in the chosen mode - Morse, an RTTY exchange or a PSK31 one - so the card works
+a signal in the chosen mode - Morse, an RTTY or PSK31 exchange, or an FT8 or FT4
+QSO a slot at a time - so the card works
 with no radio attached. Anything else is a sound card by name. Two tiles on
 one input can decode different modes at once.
 
@@ -213,6 +213,40 @@ signal at a time - the strongest - so on a busy PSK31 frequency it is a
 listening tool, not a band scope. A carrier sitting near the signal does
 not pull it off; joining an over part way costs the first word or two; and
 it prints nothing from a dead band.
+
+### FT8 and FT4
+
+Every signal in the passband, decoded a slot at a time: FT8 every 15
+seconds, FT4 every 7.5, on the UTC clock. Each decode is one line, the way
+WSJT-X's band activity reads - the slot's time, SNR, DT, the audio
+frequency and the message - with CQs in the signal colour and a thin rule
+between slots. There is nothing to set.
+
+Above the window: how many the last slot gave, how long it took to decode,
+and the **median DT**. That last one is the clock. Stations' own clocks
+scatter by a few tenths, but if everybody is late by the same amount it is
+*this* computer that is wrong - the tile says so past half a second, and
+by two seconds nothing decodes at all. Keep the clock right with NTP, the
+same as for WSJT-X.
+
+What to expect of it, measured against WSJT-X 3.0.2's own `jt9` on the
+same audio: on 40 m at night, 119 of jt9's 122 decodes in eight busy slots
+and nothing jt9 did not find, the three missed at -20 and -21 dB. On
+WSJT-X's own simulated signals it is about half a decibel behind jt9 -
+FT8 copied half the time at -20.7 dB against jt9's -21, FT4 at -17
+against -18 - when jt9 is not decoding *a priori* (from the calls it
+expects in your QSO), which is a thing this does not do. A busy slot
+takes about five seconds to decode.
+
+Hashed callsigns - the ones too long for the message - show as `<...>`
+until the station has been heard sending its call in full, then by name,
+as in WSJT-X. A line in italics came from the slower, less certain stage
+of the decoder; it is shown, and not reported to PSK Reporter.
+
+The decodes are published on the bus as `decoder.decoded`, one event per
+slot (see [the bus](bus.md#topics-the-built-in-cards-publish)). Only FT8
+and FT4: their CRC makes a decoded callsign one that was really sent,
+where CW, RTTY and PSK31 print whatever the noise spells.
 
 ## PSK Reporter
 

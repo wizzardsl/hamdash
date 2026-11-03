@@ -47,6 +47,15 @@
      of a block of text that is otherwise all the same. */
   #out .new { color: var(--accent); }
   .err { color: var(--alert); font-size: 12px; margin: 0; }
+  /* FT8/FT4: one row per decode, as WSJT-X's band activity reads. */
+  #out.slots { white-space: pre; word-break: normal; letter-spacing: 0;
+               font-size: 13px; line-height: 1.4; }
+  #out .row { display: block; }
+  #out .row .m { color: var(--muted); }
+  #out .row.cq .t { color: var(--signal); }
+  #out .row.osd .t { font-style: italic; }
+  #out .slot-rule { display: block; border-top: 1px solid var(--rule);
+                    margin: 2px 0; height: 0; }
 </style>
 </head>
 <body>
@@ -96,6 +105,10 @@ let conf = {};
 let revNow = false;       // whether RTTY is being read reversed, as reported
 let seq = 0;              // the next character we have not seen
 let fading = [];          // spans recently added, to un-highlight
+let dseq = 0;             // FT8/FT4: the last decode we have shown
+let lastSlot = null;      // FT8/FT4: the slot the last row was from
+const SLOT_MODES = ['ft8', 'ft4'];
+const slotMode = () => SLOT_MODES.includes(conf.mode);
 
 // Whether this tile is decoding. Kept on the tile, so a card left stopped is
 // still stopped tomorrow, and so two tiles can watch different inputs with
@@ -133,10 +146,54 @@ setInterval(() => {
   });
 }, 500);
 
+function appendRows(rows) {
+  const el = $('#out');
+  for (const r of rows) {
+    if (lastSlot !== null && r.slot !== lastSlot) {
+      el.appendChild(Object.assign(document.createElement('span'),
+                                   { className: 'slot-rule' }));
+    }
+    lastSlot = r.slot;
+    const row = document.createElement('span');
+    row.className = 'row new' + (r.to === 'CQ' || /^CQ /.test(r.text) ? ' cq' : '')
+                  + (r.osd ? ' osd' : '');
+    const t = new Date(r.slot * 1000).toISOString();
+    const hms = t.slice(11, 13) + t.slice(14, 16) + t.slice(17, 19);
+    const num = (v, w) => String(v).padStart(w);
+    const sign = (v, w) => (v >= 0 ? '+' : '') + v;
+    const meta = document.createElement('span');
+    meta.className = 'm';
+    meta.textContent = `${hms} ${num(sign(r.snr), 3)} ${num(sign(r.dt.toFixed(1)), 4)}`
+                     + ` ${num(Math.round(r.freq), 4)}  `;
+    const txt = document.createElement('span');
+    txt.className = 't';
+    txt.textContent = r.text;
+    if (r.osd) txt.title = 'Found by the slower, less certain decoder (OSD)';
+    row.append(meta, txt);
+    el.appendChild(row);
+    fading.push([row, Date.now()]);
+  }
+  // A busy band is forty rows a slot: keep the window to a few hundred.
+  while (el.childNodes.length > 600) el.removeChild(el.firstChild);
+  if (rows.length && pinned) el.scrollTop = el.scrollHeight;
+}
+
 function readout(d) {
   $('#ear').classList.toggle('on', !!d.hearing);
   const bits = [];
-  if (d.mode === 'rtty') {
+  if (SLOT_MODES.includes(d.mode)) {
+    if (d.last_slot) {
+      bits.push(`<b>${d.last_count}</b> decoded`);
+      if (d.last_ms !== null && d.last_ms !== undefined) {
+        bits.push(`${(d.last_ms / 1000).toFixed(1)} s`);
+      }
+    } else {
+      bits.push('waiting for a slot');
+    }
+    if (d.median_dt !== null && d.median_dt !== undefined) {
+      bits.push(`DT <b>${d.median_dt >= 0 ? '+' : ''}${d.median_dt.toFixed(1)}</b>`);
+    }
+  } else if (d.mode === 'rtty') {
     if (d.mark_hz) bits.push(`M <b>${Math.round(d.mark_hz)}</b>`
                              + ` S ${Math.round(d.space_hz)} Hz`);
   } else if (d.mode === 'psk31') {
@@ -147,7 +204,9 @@ function readout(d) {
     if (d.wpm) bits.push(`<b>${d.wpm}</b> wpm`);
     if (d.tone_hz) bits.push(`${Math.round(d.tone_hz)} Hz`);
   }
-  if (d.snr_db) bits.push(`${Math.round(d.snr_db)} dB`);
+  if (d.snr_db && !SLOT_MODES.includes(d.mode)) {
+    bits.push(`${Math.round(d.snr_db)} dB`);
+  }
   $('#read').innerHTML = bits.join(' · ');
   const rev = $('#rev');
   rev.hidden = d.mode !== 'rtty';
@@ -166,6 +225,19 @@ function readout(d) {
     hint = 'Locked on a PSK31 carrier, but its symbols are not clear - '
          + 'too weak, or another signal on top of it.';
   }
+  if (SLOT_MODES.includes(d.mode) && running) {
+    // Everybody late by the same amount is this computer's clock, not
+    // the band. WSJT-X decodes to about +-2 s and so does this, but the
+    // margin is gone long before that.
+    if (d.median_dt !== null && Math.abs(d.median_dt) >= 0.5) {
+      hint = `Stations are arriving ${Math.abs(d.median_dt).toFixed(1)} s `
+           + (d.median_dt > 0 ? 'late' : 'early')
+           + ' on average - is this computer\'s clock right? (NTP)';
+    } else if (d.dropped) {
+      hint = `${d.dropped} slot${d.dropped === 1 ? '' : 's'} skipped - audio`
+           + ' was interrupted, or decoding could not keep up.';
+    }
+  }
   $('#err').textContent = d.error || hint;
 }
 
@@ -178,7 +250,7 @@ function paintRun() {
   b.classList.toggle('on', !running);
   b.title = running ? 'Stop decoding and give the sound card back'
                     : 'Start decoding';
-  $('#out').dataset.empty = running ? 'Listening…' : 'Stopped';
+  applyWrap();
   if (!running) {
     $('#read').textContent = 'stopped';
     $('#err').textContent = '';
@@ -190,6 +262,7 @@ async function setRunning(on, { save = true } = {}) {
   paintRun();
   if (on) {
     seq = 0;                 // a restarted listener counts from zero again
+    dseq = 0;
     tick();
   } else {
     // Say so rather than just going quiet. The card would work it out from
@@ -204,8 +277,27 @@ async function setRunning(on, { save = true } = {}) {
   }
 }
 
+async function tickSlots() {
+  let d;
+  try {
+    d = await HD.card('decoder', `/api/decodes?since=${dseq}&who=${WHO}`);
+  } catch (e) {
+    $('#err').textContent = e.message;
+    return;
+  }
+  readout(d);
+  if (d.status === 'idle') { dseq = 0; return; }
+  if (d.dseq < dseq) dseq = 0;          // the card restarted under us
+  const rows = d.decodes || [];
+  if (rows.length) {
+    appendRows(rows);
+    dseq = rows[rows.length - 1].seq;
+  }
+}
+
 async function tick() {
   if (!running || HD.hidden) return;
+  if (slotMode()) return tickSlots();
   let d;
   try {
     d = await HD.card('decoder', `/api/text?since=${seq}&who=${WHO}`);
@@ -256,6 +348,10 @@ async function fillLists() {
 
 function applyWrap() {
   $('#out').classList.toggle('nowrap', conf.wrap === false);
+  $('#out').classList.toggle('slots', slotMode());
+  $('#out').dataset.empty = !running ? 'Stopped'
+    : slotMode() ? `Listening - decodes appear as each ${conf.mode === 'ft4' ? '7.5' : '15'} s slot ends`
+    : 'Listening…';
 }
 
 $('#run').onclick = () => setRunning(!running);
@@ -266,7 +362,7 @@ $('#run').onclick = () => setRunning(!running);
 // the radio's audio against WSJT-X for as long as the board is open.
 HD.onVisible((on) => {
   if (!running) return;
-  if (on) { seq = 0; tick(); }
+  if (on) { seq = 0; dseq = 0; tick(); }
   else HD.card('decoder', `/api/stop?who=${WHO}`, {}).catch(() => {});
 });
 
@@ -277,6 +373,7 @@ $('#clear').onclick = async () => {
     fading = [];
     pinned = true;
     seq = r.seq || 0;
+    lastSlot = null;
   } catch (e) { $('#err').textContent = e.message; }
 };
 
@@ -291,6 +388,9 @@ function restartText() {
   $('#out').textContent = '';
   fading = [];
   seq = 0;
+  dseq = 0;
+  lastSlot = null;
+  applyWrap();
 }
 
 $('#mode').onchange = async () => {

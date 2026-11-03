@@ -1,0 +1,146 @@
+{
+ "mode": "ft8",
+ "jt9": [
+  {
+   "snr": -8,
+   "dt": 0.3,
+   "freq": 2400,
+   "text": "TNX BOB 73 GL"
+  },
+  {
+   "snr": -5,
+   "dt": 0.1,
+   "freq": 1480,
+   "text": "CQ DX JA1XYZ PM95"
+  },
+  {
+   "snr": -10,
+   "dt": -0.0,
+   "freq": 520,
+   "text": "CQ VA7HDX CN89"
+  },
+  {
+   "snr": -13,
+   "dt": -0.2,
+   "freq": 2950,
+   "text": "G4ABC/P PA9XYZ JO22"
+  },
+  {
+   "snr": -12,
+   "dt": -0.8,
+   "freq": 2100,
+   "text": "CQ POTA N0XRG EL29"
+  },
+  {
+   "snr": -16,
+   "dt": 0.4,
+   "freq": 810,
+   "text": "VE7XYZ VA7HDX -12"
+  },
+  {
+   "snr": -18,
+   "dt": -0.3,
+   "freq": 1050,
+   "text": "K1ABC W9XYZ R EN37"
+  },
+  {
+   "snr": -14,
+   "dt": 0.6,
+   "freq": 1495,
+   "text": "JA1XYZ G4ABC IO91"
+  },
+  {
+   "snr": -16,
+   "dt": 0.9,
+   "freq": 2412,
+   "text": "EA3XYZ F4ABC 73"
+  },
+  {
+   "snr": -21,
+   "dt": 0.2,
+   "freq": 1780,
+   "text": "PA9XYZ DL1ABC JO62"
+  },
+  {
+   "snr": -20,
+   "dt": 1.2,
+   "freq": 1300,
+   "text": "W9XYZ K1ABC RR73"
+  }
+ ],
+ "jt9_version": "WSJT-X 3.0.2-devel",
+ "made": [
+  {
+   "text": "CQ VA7HDX CN89",
+   "freq": 520,
+   "dt": 0.0,
+   "snr": -10
+  },
+  {
+   "text": "VE7XYZ VA7HDX -12",
+   "freq": 810,
+   "dt": 0.4,
+   "snr": -16
+  },
+  {
+   "text": "K1ABC W9XYZ R EN37",
+   "freq": 1050,
+   "dt": -0.3,
+   "snr": -18
+  },
+  {
+   "text": "W9XYZ K1ABC RR73",
+   "freq": 1300,
+   "dt": 1.2,
+   "snr": -20
+  },
+  {
+   "text": "CQ DX JA1XYZ PM95",
+   "freq": 1480,
+   "dt": 0.1,
+   "snr": -5
+  },
+  {
+   "text": "JA1XYZ G4ABC IO91",
+   "freq": 1495,
+   "dt": 0.6,
+   "snr": -14
+  },
+  {
+   "text": "PA9XYZ DL1ABC JO62",
+   "freq": 1780,
+   "dt": 0.2,
+   "snr": -21
+  },
+  {
+   "text": "CQ POTA N0XRG EL29",
+   "freq": 2100,
+   "dt": -0.8,
+   "snr": -12
+  },
+  {
+   "text": "TNX BOB 73 GL",
+   "freq": 2400,
+   "dt": 0.3,
+   "snr": -8
+  },
+  {
+   "text": "EA3XYZ F4ABC 73",
+   "freq": 2412,
+   "dt": 0.9,
+   "snr": -15
+  },
+  {
+   "text": "K1ABC/R W9XYZ EN37",
+   "freq": 2700,
+   "dt": 0.5,
+   "snr": -17
+  },
+  {
+   "text": "G4ABC/P PA9XYZ JO22",
+   "freq": 2950,
+   "dt": -0.2,
+   "snr": -13
+  }
+ ]
+}
