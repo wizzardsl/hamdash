@@ -140,6 +140,12 @@ def wait_for(url: str, timeout: float = 15.0) -> bool:
     return False
 
 
+# What a desktop window needs that pip does not bring, said when it is missing.
+WINDOW_HINT = ("On Linux the window needs GTK's Python bindings - "
+               "`sudo apt install python3-gi gir1.2-webkit2-4.1` and a venv made "
+               "with --system-site-packages - or `pip install pywebview[qt]`.")
+
+
 def fail(code: int, *lines: str) -> int:
     """Say why the app is not starting, on stderr *and* in the log.
 
@@ -369,8 +375,9 @@ def main() -> int:
         logging.shutdown()
         os._exit(0)
 
+    shell = {"native": not args.browser}
     app, shutdown = create_app(cfg, host=args.host, port=port,
-                               native=not args.browser, on_quit=quit_now)
+                               native=lambda: shell["native"], on_quit=quit_now)
     # The page the window opens, or that is printed for the
     # operator - the bind address may be a wildcard, which is
     # not something a browser can go to.
@@ -435,6 +442,7 @@ def main() -> int:
     try:
         import webview
     except ImportError:
+        shell["native"] = False
         print("pywebview is not installed; falling back to --browser mode.\n"
               "  pip install pywebview   for the desktop window", file=sys.stderr)
         print(f"hamdash on {url}")
@@ -444,8 +452,9 @@ def main() -> int:
             close_once()
         return 0
 
-    threading.Thread(target=wsgi_serve, kwargs={"app": app, **kwargs},
-                     daemon=True, name="hamdash-http").start()
+    http = threading.Thread(target=wsgi_serve, kwargs={"app": app, **kwargs},
+                            daemon=True, name="hamdash-http")
+    http.start()
     if not wait_for(url):
         close_once()
         return fail(1, f"the server at {url} did not answer within 15 s",
@@ -458,7 +467,26 @@ def main() -> int:
                                    min_size=(960, 640), js_api=popouts)
     native_windows.attach_main(window)
     window.events.closed += close_once
-    webview.start()
+    try:
+        webview.start()
+    except Exception as exc:                            # noqa: BLE001
+        # No GUI toolkit pywebview can use - on Linux, GTK or Qt with
+        # Python bindings, which a pip-installed pywebview does not bring.
+        # It raised with the board already serving and the cards already
+        # starting, and the traceback took them all down: exit 1, no
+        # window, nothing on screen. The board works without a window, so
+        # carry on as --browser does and say why.
+        shell["native"] = False
+        logging.getLogger("hamdash").warning(
+            "no desktop window (%s); carrying on in the browser "
+            "at %s. %s", exc, url, WINDOW_HINT)
+        print(f"hamdash on {url}  (no desktop window: {exc})")
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:                               # noqa: BLE001
+            pass
+        http.join()
     close_once()
     return 0
 

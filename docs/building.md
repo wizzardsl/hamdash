@@ -59,6 +59,23 @@ which is a readable answer rather than a crash, but it does mean a card with
 dependencies needs a source install, or those dependencies added to
 `hamdash.spec` and a rebuild.
 
+**On Linux the window needs GTK, and pip does not bring it.** pywebview
+installs from pip on Linux without a toolkit to drive, and the app then has
+no window to open. It says so in the log and carries on in your web browser,
+the same as `--browser`. For the window, use the system's GTK bindings and a
+virtual environment that can see them:
+
+```bash
+sudo apt install python3-gi gir1.2-webkit2-4.1
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -r requirements.txt pyinstaller
+```
+
+A build made from that environment carries GTK with it (about 300 MB,
+against 93 MB without) and opens its own window. It still relies on the
+machine having WebKitGTK installed, which every desktop Linux with a GNOME
+or GTK browser has.
+
 **The builds are unsigned.** Windows shows a SmartScreen warning and macOS
 needs right-click → Open the first time. Signing needs a certificate and an
 Apple developer account.

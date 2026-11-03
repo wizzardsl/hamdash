@@ -3160,9 +3160,21 @@ it into the GitHub bug form, which is pre-filled by the button.
   the small version; it should not grow accounts.
 - Multiple boards (tabs) — `layout.json` becomes a list of boards.
 - Linux builds. `build.yml` is Windows + macOS only: both have a
-  pip-installable pywebview backend, Linux needs system GTK/WebKit packages
-  and a build without them is silently browser-only. The `tests` matrix still
-  covers Linux.
+  pip-installable pywebview backend, Linux needs system GTK/WebKit packages.
+  **Measured on the station (Ubuntu 26.10, Python 3.14) and it works**: the
+  spec builds as it is (93 MB), `smoke_frozen.py` passes, and every python
+  card runs frozen - FT8 decoding through numpy, the waterfall, mock audio.
+  Built from a venv made `--system-site-packages` with `python3-gi` and
+  `gir1.2-webkit2-4.1` installed, the bundle carries GTK (295 MB) and opens
+  its own window under Xvfb, page loaded and on the bus. What is left is
+  CI: a Linux job in `build.yml` with those packages, and a decision on
+  AppImage or a plain tarball. The `tests` matrix still covers Linux.
+  **A window that cannot open used to end the process** - pywebview raises
+  in `webview.start()` with the board already serving, and that traceback
+  was exit 1 with nothing on screen. It falls back to the browser now, and
+  `/api/shell` is a callable so it says so (invariant 2): the old
+  no-pywebview fallback had been telling a browser page it was native.
+  `tests/test_no_window.py`.
 - Code signing. Builds are unsigned, so Windows shows SmartScreen and macOS
   needs right-click → Open. Needs a certificate and an Apple developer
   account; nothing in the repo is blocking it.

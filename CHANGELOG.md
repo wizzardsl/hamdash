@@ -41,6 +41,14 @@ versions follow [SemVer](https://semver.org/). The version of record is
   five minutes, each station once in five minutes and once an hour per
   band.
 
+### Fixed
+- **A desktop window that cannot open no longer takes the board with it.**
+  On Linux without GTK's Python bindings the app exited with a traceback
+  and no window; it now says why in the log and opens the board in your
+  web browser. The page is told it is in a browser, so pop-outs use
+  browser windows rather than a desktop bridge that is not there - the
+  same was wrong when pywebview was not installed at all.
+
 ## [1.3.1]
 
 ### Added

@@ -91,9 +91,16 @@ def reachable(host: str) -> str:
 
 
 def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
-               native: bool = False, on_quit=None):
+               native=False, on_quit=None):
     static = BUNDLED_STATIC
     app = Flask(__name__, static_folder=None)
+
+    def in_window() -> bool:
+        # A callable because the launcher can find out too late: a build
+        # with no GUI toolkit fails in webview.start(), after this app is
+        # serving, and the board then carries on in a browser - which must
+        # be told it is one (invariant 2).
+        return bool(native() if callable(native) else native)
     # Cards dial this, so it must be dialable: see reachable().
     host_url = f"http://{reachable(host)}:{port}"
 
@@ -269,7 +276,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         webview, window.open and Picture-in-Picture are not just degraded,
         they hand the URL to the OS (Windows then offers to find an app for
         the 'about:' link), so the pop-out backend is chosen from this."""
-        return jsonify(native=bool(native), platform=sys.platform)
+        return jsonify(native=in_window(), platform=sys.platform)
 
     @app.get("/api/ping")
     def ping():
@@ -1490,7 +1497,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             "machine": platform.machine(),
             "frozen": bool(getattr(sys, "frozen", False)),
             "pywebview": pyweb,
-            "native_window": native,
+            "native_window": in_window(),
             "listening": host_url,
             "debug_logging": diagnostics.debug_on(),
             "radios": {"selected": rig.selected_id(), "open": rig.open_ids(),
