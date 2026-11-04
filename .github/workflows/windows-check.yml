@@ -1,0 +1,103 @@
+name: windows check
+
+# A Windows machine on demand, for the development host that has none.
+# The Linux station cannot run a Windows VM (7 GB of RAM, already busy
+# being a station), and Wine gets wrong exactly what would need checking -
+# pywebview, WebView2, PortAudio, COM. So: build the app here, open its
+# real window, take a picture of the screen, and keep the log.
+#
+#   gh workflow run windows-check.yml
+#   gh workflow run windows-check.yml -f script=tools/some_probe.py
+#
+# Nothing here reaches a radio or a sound card - the runner has neither -
+# so OmniRig and real audio stay the Windows laptop's job.
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: "Run the unit tests first"
+        type: boolean
+        default: true
+      script:
+        description: "Optional: a script in the repo to run afterwards, e.g. tools/probe.py"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    env:
+      HAMDASH_HOME: ${{ github.workspace }}\check-home
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Unit tests
+        if: inputs.tests
+        run: python -m unittest discover -s tests
+
+      - name: Build
+        run: pyinstaller --noconfirm --clean hamdash.spec
+
+      # Both halves of the frozen check: the board and a card through the
+      # re-exec path, then the app started as a double-click would, with
+      # its WebView2 window, which must open and load the board.
+      - name: Smoke test
+        run: |
+          python tools/smoke_frozen.py
+          python tools/smoke_frozen.py --window
+
+      # The board as an operator would first see it, photographed. Started
+      # from the frozen binary, waited for until the page is on the bus,
+      # given a moment to paint, then asked to stop properly - a kill would
+      # skip exactly the shutdown path that is worth seeing in the log.
+      - name: Screenshot the board
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:HAMDASH_HOME, shots | Out-Null
+          Start-Process -FilePath dist\hamdash\hamdash.exe -ArgumentList '--port','8790'
+          $deadline = (Get-Date).AddSeconds(90)
+          do {
+            Start-Sleep -Seconds 2
+            try { $subs = (Invoke-RestMethod http://127.0.0.1:8790/api/bus/stats).subscribers } catch { $subs = 0 }
+          } until ($subs -gt 0 -or (Get-Date) -gt $deadline)
+          Start-Sleep -Seconds 12
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("shots\board.png")
+          Invoke-RestMethod http://127.0.0.1:8790/api/shell | ConvertTo-Json -Compress
+          Invoke-RestMethod http://127.0.0.1:8790/api/health | ConvertTo-Json -Compress
+          python run.py --stop --home $env:HAMDASH_HOME
+          if ($subs -eq 0) { throw "the board never reached the bus" }
+
+      # The input goes through the environment, never into the command
+      # line itself, so a value cannot become shell.
+      - name: Run a script
+        if: inputs.script != ''
+        env:
+          SCRIPT: ${{ inputs.script }}
+        shell: pwsh
+        run: python $env:SCRIPT
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-check
+          path: |
+            shots/
+            check-home/*.log
+          if-no-files-found: warn
+          retention-days: 7

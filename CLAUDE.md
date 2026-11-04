@@ -3350,6 +3350,14 @@ Windows-only checks: the frozen build above all, OmniRig, and Windows file
 locking. Every Windows-only bug so far was found there, and Windows is
 still what most users run, so "not checked on Windows" stays worth saying.
 Neither session can see the other's files or processes.
+**For a Windows check without the laptop**, `windows-check.yml` is a
+Windows runner on demand: build, both smoke tests, the WebView2 window
+photographed, the log kept, and optionally one repo script
+(`-f script=...`, passed through the environment so it cannot become
+shell). A VM on the station was considered and refused - 7 GB of RAM,
+mostly in use by the station - and Wine fails on exactly pywebview,
+WebView2, PortAudio and COM, the things worth checking. The runner has
+no radio and no sound card: OmniRig and real audio stay the laptop's.
 
 - **Fetch before editing, and pull if `origin/main` moved.** The other host
   may have pushed since you last looked.

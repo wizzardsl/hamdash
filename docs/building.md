@@ -84,6 +84,20 @@ in the browser - and the only thing missing is the window. It still relies on th
 machine having WebKitGTK installed, which every desktop Linux with a GNOME
 or GTK browser has.
 
+**A Windows machine on demand.** `windows-check.yml` builds the app on
+GitHub's Windows runner, runs both smoke tests, opens the board in its real
+WebView2 window, photographs the screen, and keeps the screenshot and the
+log as an artifact. It can also run one script from the repository:
+
+```bash
+gh workflow run windows-check.yml
+gh workflow run windows-check.yml -f script=tools/some_probe.py -f tests=false
+gh run download --name windows-check     # shots/board.png and the log
+```
+
+The runner has no radio and no sound card, so OmniRig and real audio still
+need a Windows PC.
+
 **The builds are unsigned.** Windows shows a SmartScreen warning and macOS
 needs right-click → Open the first time. Signing needs a certificate and an
 Apple developer account.
