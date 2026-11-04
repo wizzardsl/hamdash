@@ -140,6 +140,30 @@ def wait_for(url: str, timeout: float = 15.0) -> bool:
     return False
 
 
+WINDOW = (1440, 900)        # the size the board is laid out for
+WINDOW_LEAST = (960, 640)   # below this the board is cramped
+WINDOW_SHARE = 0.9          # of the screen, leaving the taskbar and a margin
+
+
+def window_size(screens):
+    """(width, height, min width, min height) for the main window.
+
+    1440x900 on a screen smaller than that opened partly off it - found
+    on GitHub's 1024x768 Windows runner, and the same on a 1366x768
+    laptop, or a 1920x1080 one at 150% scaling, which is 1280x720 to
+    the window. Both pywebview backends give screens in logical pixels,
+    the unit window sizes are in, so they compare directly. The first
+    screen is the primary; no screens (no toolkit to ask) means the
+    default."""
+    if not screens:
+        return (*WINDOW, *WINDOW_LEAST)
+    sw, sh = screens[0]
+    room_w, room_h = int(sw * WINDOW_SHARE), int(sh * WINDOW_SHARE)
+    width, height = min(WINDOW[0], room_w), min(WINDOW[1], room_h)
+    return (width, height,
+            min(WINDOW_LEAST[0], width), min(WINDOW_LEAST[1], height))
+
+
 # What a desktop window needs that pip does not bring, said when it is missing.
 WINDOW_HINT = ("On Linux the window needs GTK's Python bindings - "
                "`sudo apt install python3-gi gir1.2-webkit2-4.1` and a venv made "
@@ -463,8 +487,20 @@ def main() -> int:
     native_windows.configure(url)
     popouts = native_windows.PopoutApi()
 
-    window = webview.create_window("hamdash", url, width=1440, height=900,
-                                   min_size=(960, 640), js_api=popouts)
+    try:
+        # Reading the screens starts the GUI toolkit, so with none it
+        # raises here - before the window exists. The default size is
+        # fine then: webview.start() fails the same way and the board
+        # carries on in the browser.
+        screens = [(s.width, s.height) for s in webview.screens]
+    except Exception:                                   # noqa: BLE001
+        screens = []
+    width, height, least_w, least_h = window_size(screens)
+    logging.getLogger("hamdash").info(
+        "window %dx%d on screen %s", width, height,
+        "x".join(map(str, screens[0])) if screens else "unknown")
+    window = webview.create_window("hamdash", url, width=width, height=height,
+                                   min_size=(least_w, least_h), js_api=popouts)
     native_windows.attach_main(window)
     window.events.closed += close_once
     try:

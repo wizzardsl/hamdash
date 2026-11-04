@@ -3215,6 +3215,21 @@ it into the GitHub bug form, which is pre-filled by the button.
   test that passes against the old code is not testing anything.
 - **A map card re-frames its own map**, so its zoom level is not a stable
   signal; watch the call rather than the zoom.
+- **`xvfb-run` does not hide a GTK window on this desktop.** GTK prefers
+  Wayland and the shell carries `WAYLAND_DISPLAY`, so a "virtual screen"
+  test window opened on the operator's real one - noticed only because
+  the log reported the desktop's 1920x1080 instead of Xvfb's 1024x768.
+  `env -u WAYLAND_DISPLAY GDK_BACKEND=x11` for anything run by hand;
+  `smoke_frozen.py --window` does it itself.
+- **The main window is sized from the primary screen** (`window_size` in
+  `run.py`): 1440x900 at most, nine tenths of the screen otherwise, and
+  the minimum shrinks with it. Found in `windows-check`'s first
+  screenshot, a 1024x768 runner with the window off the edge. Both
+  pywebview backends give screens in logical pixels, the unit window
+  sizes are in, so a laptop at 150% compares correctly. Reading
+  `webview.screens` starts the toolkit, so with none it raises before
+  the window exists: caught, default size, and `start()` then falls
+  back to the browser as before. The chosen size is in the log.
 
 ## Extending it: cards
 

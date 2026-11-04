@@ -45,6 +45,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   band.
 
 ### Fixed
+- **The window fits the screen it opens on.** It always opened at
+  1440x900, so on a smaller screen - a 1366x768 laptop, or a 1080p one at
+  150% scaling - part of it was off the edge. It now takes at most nine
+  tenths of the screen, and its minimum size shrinks to match.
 - **The macOS download would not start.** The `hamdash` binary in the
   release zip had lost its execute permission on the way through the build
   pipeline, so unzipping it gave a file macOS would not run. Releases put

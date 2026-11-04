@@ -104,5 +104,39 @@ class TestMainCarriesOn(unittest.TestCase):
         self.fail("no ImportError fallback around `import webview` in main()")
 
 
+class TestTheWindowFitsTheScreen(unittest.TestCase):
+    """1440x900 opened partly off a 1024x768 screen (GitHub's Windows
+    runner), and would on a 1366x768 laptop or a 1080p one at 150%."""
+
+    @classmethod
+    def setUpClass(cls):
+        import run
+        cls.size = staticmethod(run.window_size)
+
+    def test_a_big_screen_gets_the_board_s_size(self):
+        self.assertEqual(self.size([(2560, 1440)]), (1440, 900, 960, 640))
+
+    def test_small_screens_get_a_window_inside_them(self):
+        for sw, sh in ((1024, 768), (1366, 768), (1280, 720), (800, 600)):
+            with self.subTest(screen=(sw, sh)):
+                w, h, mw, mh = self.size([(sw, sh)])
+                self.assertLessEqual(w, sw)
+                self.assertLessEqual(h, sh)
+                self.assertLessEqual(mw, w, "a minimum bigger than the window")
+                self.assertLessEqual(mh, h)
+
+    def test_the_primary_screen_decides(self):
+        self.assertEqual(self.size([(1024, 768), (2560, 1440)])[:2], (921, 691))
+
+    def test_nothing_to_ask_is_the_default(self):
+        self.assertEqual(self.size([]), (1440, 900, 960, 640))
+
+    def test_main_asks_the_screen(self):
+        main = ast.unparse(_main())
+        self.assertIn("window_size(", main)
+        self.assertIn("webview.screens", main)
+        self.assertNotIn("width=1440", main)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -123,6 +123,13 @@ def main() -> int:
     # web browser - which on a CI runner should be nothing at all.
     env = dict(os.environ, HAMDASH_HOME=str(home), BROWSER="true")
     shell = [] if WINDOW else ["--browser"]
+    if WINDOW and sys.platform.startswith("linux"):
+        # GTK prefers Wayland, so from a desktop session the window opens
+        # on the operator's real screen rather than on xvfb-run's - found
+        # when a test window turned up on the station's desktop. CI has no
+        # Wayland; a desktop does, so take it away.
+        env.pop("WAYLAND_DISPLAY", None)
+        env["GDK_BACKEND"] = "x11"
 
     print(f"starting {BINARY.name} on {port}"
           f"{' with its window' if WINDOW else ''}, config in {home}")
