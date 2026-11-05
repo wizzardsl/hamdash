@@ -1,0 +1,7 @@
+{
+ "mode": "ft4",
+ "jt9": [],
+ "expect_found": 0,
+ "extra": [],
+ "note": "80 m, 3.575 MHz, 2026-11-05 06:47 UTC: no FT4 on the air (jt9 decodes nothing in 40 slots), but a strong signal of another kind at 1704 Hz. OSD once turned it into 'GM3HPN K29DAB R OL68' at distance 0.038 - the reason FT4's OSD limit is 0.030."
+}

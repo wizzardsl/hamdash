@@ -256,7 +256,8 @@ class Heard:
             if call and grid:
                 self.grids[call] = grid
             if (not call or call.startswith("<") or call == my_call
-                    or d.get("osd") or not d.get("rf_hz") or not at):
+                    or d.get("osd") or d.get("ap") or not d.get("rf_hz")
+                    or not at):
                 continue
             rows.append({
                 "tx": call, "rx": my_call,

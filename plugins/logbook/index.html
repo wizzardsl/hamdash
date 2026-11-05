@@ -355,8 +355,58 @@ function maybeLookup(call, now) {
 $('#f-call').addEventListener('input', (e) => {
   const call = e.target.value.trim().toUpperCase();
   e.target.value = call;
+  picked = '';            // typed, so it is the operator's now
   maybeLookup(call, false);
 });
+
+// ---- a station picked in another card ----------------------------------------
+// The Decoder (a click on an FT8/FT4 line) and Spots (a click on a spot)
+// say which station the operator is looking at. A pick fills the form the
+// way typing the call would - the same lookup, the same peek - plus what
+// the pick knows: the grid the station sent, the report we measured, and
+// the mode, which the radio cannot say (it reads USB for FT8).
+// **A pick never overwrites a callsign somebody typed.** Only an empty
+// box, or one the last pick filled, is taken; otherwise it says so and
+// leaves the half-typed contact alone.
+let picked = '';          // the callsign a pick put in the box, if it is still that
+let pickedGrid = false;   // whether the grid box holds a pick's grid
+
+function takePick(p, from, report) {
+  const call = String(p.call || '').trim().toUpperCase();
+  if (!CALLSIGN.test(call)) return;
+  const box = $('#f-call');
+  const cur = box.value.trim().toUpperCase();
+  if (cur && cur !== picked && cur !== call) {
+    $('#found').textContent = `${call} picked in ${from} - clear the callsign to log it`;
+    return;
+  }
+  const changed = cur !== call;
+  box.value = call;
+  picked = call;
+  if (p.grid) {
+    $('#f-grid').value = p.grid;
+    pickedGrid = true;
+  } else if (changed && pickedGrid) {
+    $('#f-grid').value = '';       // the last pick's grid is not this station's
+    pickedGrid = false;
+  }
+  if (p.mode && !p.mode_from) {
+    $('#f-mode').value = String(p.mode).toUpperCase();
+    claim('mode');
+  }
+  // Only the Decoder's: a spot's snr is a skimmer's measurement, not ours.
+  if (report && typeof p.snr === 'number' && Number.isFinite(p.snr)) {
+    // FT8's report is the SNR we measured, written the way WSJT-X sends it.
+    const v = Math.max(-30, Math.min(30, Math.round(p.snr)));
+    $('#f-sent').value = (v < 0 ? '-' : '+') + String(Math.abs(v)).padStart(2, '0');
+  }
+  lookedUp = '';
+  maybeLookup(call, true);
+  $('#found').textContent = `${call} from ${from}`;
+}
+
+HD.on('decoder.picked', (p) => takePick(p || {}, 'the Decoder', true));
+HD.on('spots.picked', (p) => takePick(p || {}, 'Spots'));
 // Leaving the field says you have finished typing, so don't sit on the timer.
 $('#f-call').addEventListener('blur', (e) => {
   maybeLookup(e.target.value.trim().toUpperCase(), true);
@@ -500,6 +550,8 @@ $('#save').onclick = async () => {
     const full = await HD.card('logbook', `/api/prefill/${qso.call || 'X'}`);
     await HD.card('logbook', '/api/save', { ...full.qso, ...clean(qso) });
     ['#f-call', '#f-grid', '#f-comment'].forEach((s) => { $(s).value = ''; });
+    picked = '';
+    pickedGrid = false;
     // That contact is logged, so nothing about it is being protected any
     // more: the boxes go back to the radio for the next one.
     ['freq', 'band', 'mode'].forEach((f) => mine.delete(f));

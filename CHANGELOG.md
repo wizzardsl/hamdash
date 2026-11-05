@@ -6,6 +6,33 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **Click an FT8 or FT4 decode to pick that station.** It is looked up, the
+  map cards draw the path, and the Logbook fills in the callsign, the grid
+  they sent, the report you would send (the SNR you measured) and the mode.
+  A pick never overwrites a callsign you typed. Clicking a spot in the
+  Spots card fills the Logbook the same way.
+- **A-priori decoding for FT8 and FT4**, as WSJT-X does: a weak CQ, or a
+  weak call to you, is decoded by assuming that part of the message. Such
+  lines are marked `a1` (CQ) or `a2` (your call) and shown in italics, and
+  are not sent to PSK Reporter.
+- **Popped-out windows remember where they were** across a restart, and a
+  window last seen on a monitor that is no longer connected opens on one
+  that is.
+
+### Fixed
+- **FT8 stations whose clock runs fast are decoded.** A station starting
+  more than a second early was missed every time, however strong; up to
+  2.5 seconds early is read now, as in WSJT-X.
+- **Fewer made-up decodes on a busy band.** The slower, less certain
+  decoding stage could turn somebody else's signal into a message from
+  stations that do not exist ("O10EFG 5G1JZS"). Its decodes now have to
+  name callsigns from allocated series and, where a grid is sent, a grid
+  that country could be in - checked so that rare DX is not thrown out
+  with them. FT4's version of that stage is stricter too.
+- **The beacon map on a narrow tile** pushed its Find button off the edge
+  and scrolled sideways.
+
 ## [1.4.0]
 
 ### Added

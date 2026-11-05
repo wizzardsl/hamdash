@@ -22,7 +22,8 @@
     "radio.state"
   ],
   "publishes": [
-    "decoder.decoded"
+    "decoder.decoded",
+    "decoder.picked"
   ],
   "settings": {
     "mode": {

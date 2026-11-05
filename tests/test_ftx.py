@@ -286,6 +286,127 @@ class TestOffTheAir(unittest.TestCase):
                                          3, t)
 
 
+class TestAPriori(unittest.TestCase):
+    """WSJT-X's a-priori decoding of a CQ (a1) and of a message to the
+    operator (a2): part of the message pinned before belief propagation.
+    Measured on real 40 and 20 m slots it added two of jt9's AP decodes
+    and nothing jt9 did not find; on the busy simulated sets, 462/475
+    against 460 for FT8 and 367 against 363 for FT4, with no false
+    decodes; and none in 400 slots of noise in either mode."""
+
+    def test_the_pinned_bits_are_a_real_cq(self):
+        """Pinning the wrong bits would quietly never help: they must be
+        exactly what the packer makes of a CQ, and of a call to me."""
+        for mode in (ftx.FT8, ftx.FT4):
+            pats = {name: (idx, bits) for name, idx, bits
+                    in ftx._ap_patterns(mode, "VA7SLL")}
+            for name, text in (("a1", "CQ K1ABC FN42"),
+                               ("a2", "VA7SLL K1ABC FN42")):
+                payload = np.array(ftx.pack77(text), dtype=np.uint8)
+                if mode is ftx.FT4:
+                    payload = payload ^ ftx.FT4_XOR_BITS
+                idx, bits = pats[name]
+                with self.subTest(mode=mode.name, kind=name):
+                    self.assertTrue((payload[idx] == bits).all())
+
+    def test_no_a2_for_a_call_that_does_not_pack_as_itself(self):
+        names = [p[0] for p in ftx._ap_patterns(ftx.FT8, "EA8/G4ABC/P")]
+        self.assertEqual(names, ["a1"])
+
+    def test_off_unless_asked(self):
+        a = ftx.slot_audio([("CQ VA7HDX CN89", 1200.0, 0.2, -21)], ftx.FT8,
+                           seed=3)
+        self.assertNotIn("CQ VA7HDX CN89",
+                         {d.text for d in ftx.decode(a, ftx.FT8)})
+
+    def test_it_finds_a_cq_too_weak_for_bp_alone(self):
+        for mode, snr, seed in ((ftx.FT8, -21, 3), (ftx.FT4, -17, 2)):
+            a = ftx.slot_audio([("CQ VA7HDX CN89", 1200.0, 0.2, snr)], mode,
+                               seed=seed)
+            got = {d.text: d for d in ftx.decode(a, mode, ap=True)}
+            with self.subTest(mode=mode.name):
+                self.assertIn("CQ VA7HDX CN89", got)
+                self.assertEqual(got["CQ VA7HDX CN89"].ap, "a1")
+                self.assertEqual(got["CQ VA7HDX CN89"].as_dict()["ap"], "a1")
+
+    def test_noise_stays_noise(self):
+        rng = np.random.default_rng(11)
+        for mode in (ftx.FT8, ftx.FT4):
+            for _ in range(3):
+                x = rng.normal(0, 0.05, int(mode.slot * 12000))
+                with self.subTest(mode=mode.name):
+                    self.assertEqual(ftx.decode(x, mode, 12000, ap=True,
+                                                mycall="VA7SLL"), [])
+
+    def test_the_line_says_so(self):
+        d = ftx.Decode("FT8", "CQ VA7HDX CN89", {}, -21, 0.2, 1200.0, ap="a1")
+        self.assertTrue(ftx.format_line(0, d).endswith("CQ VA7HDX CN89 a1"))
+
+
+class TestRealBandLessons(unittest.TestCase):
+    """What two busy real bands (40 and 80 m, 2026-11-05, 48 slots) showed
+    that the simulator had not."""
+
+    def test_a_station_that_starts_early_is_decoded(self):
+        """Clocks run fast: J88IH at DT -1.1 and HA1BF at -2.1 were missed
+        every slot, at up to +1 dB, while jt9 read them. The search began
+        a second before the nominal start; it begins 2.5 s before now."""
+        for dt in (-1.2, -2.1):
+            a = ftx.slot_audio([("CQ DX J88IH FK93", 1044.0, dt, -10)],
+                               ftx.FT8, seed=1)
+            got = {d.text: d.dt for d in ftx.decode(a, ftx.FT8)}
+            with self.subTest(dt=dt):
+                self.assertIn("CQ DX J88IH FK93", got)
+                self.assertAlmostEqual(got["CQ DX J88IH FK93"], dt, delta=0.1)
+
+    def test_an_uncertain_decode_needs_calls_from_somewhere(self):
+        """OSD's false finds on those bands read "A32TZM X70VKD" and
+        "O10EFG 5G1JZS": callsign-shaped, from no country. The caller's
+        prefix table is asked about OSD and AP decodes only."""
+        known = lambda call, grid="": call in {"VA7HDX", "K1ABC"}
+        f = {"kind": "standard", "call": "X70VKD", "to": "VA7HDX"}
+        self.assertFalse(ftx.plausible("VA7HDX X70VKD EN55", f, True, known))
+        self.assertTrue(ftx.plausible("VA7HDX X70VKD EN55", f, False, known),
+                        "plain decodes are not second-guessed")
+        self.assertTrue(ftx.plausible("VA7HDX X70VKD EN55", f, True, None),
+                        "no table, no check")
+        ok = {"kind": "standard", "call": "K1ABC", "to": "VA7HDX"}
+        self.assertTrue(ftx.plausible("VA7HDX K1ABC FN42", ok, True, known))
+
+    def test_cq_means_cq_or_cq_with_a_modifier(self):
+        """OSD spelt noise as "CQVXW6 6Z7K <...> RR73"; CQ itself, CQ DX,
+        CQ NA and CQ 291 are what CQ looks like."""
+        for to, ok in (("CQ", True), ("CQ DX", True), ("CQ NA", True),
+                       ("CQ 291", True), ("CQVXW6 6Z7K", False)):
+            f = {"kind": "nonstandard", "to": to, "call": "<...>"}
+            with self.subTest(to=to):
+                self.assertEqual(ftx.plausible(f"{to} <...> RR73", f, True), ok)
+
+    def test_the_card_puts_the_grid_near_the_country(self):
+        """"DS4ESX OM1ZAX JC75" put a Slovak station near Antarctica."""
+        import importlib.util
+        sys.path.insert(0, str(ROOT))
+        spec = importlib.util.spec_from_file_location(
+            "decoder_card_for_ftx_tests", ROOT / "plugins/decoder/card.py")
+        card = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(card)
+        self.assertFalse(card._known_call("OM1ZAX", "JC75"))
+        self.assertTrue(card._known_call("OM1ZAX", "JN98"))
+        self.assertTrue(card._known_call("KH6DC", "BL11"), "Hawaii is US")
+        self.assertTrue(card._known_call("6W/IK2HKT", "IK14"), "signed abroad")
+        self.assertFalse(card._known_call("X70VKD"))
+        self.assertFalse(card._known_call("K17AEJ", "EJ94"),
+                         "a US call has one digit")
+        for real in ("AA6MU", "KH6DC", "W9LO", "KJ5DZV", "N0ANE", "K1ABC/P",
+                     "VE7/K1ABC"):
+            self.assertTrue(card._known_call(real), real)
+        # The first version used the prefix table alone and threw away
+        # twelve real DX decodes from these to catch four false ones.
+        for dx, grid in (("C5R", ""), ("5P0T", ""), ("7U1JSI", ""),
+                         ("J88IH", "FK93"), ("CA6SNT", "FF30")):
+            self.assertTrue(card._known_call(dx, grid), dx)
+
+
 class TestSlots(unittest.TestCase):
     """The live path: a stream placed on the UTC clock, a slot at a time."""
 

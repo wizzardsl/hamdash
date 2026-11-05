@@ -255,17 +255,30 @@ same as for WSJT-X.
 
 What to expect of it, measured against WSJT-X 3.0.2's own `jt9` on the
 same audio: on 40 m at night, 119 of jt9's 122 decodes in eight busy slots
-and nothing jt9 did not find, the three missed at -20 and -21 dB. On
+and nothing jt9 did not find; on two very busy evenings of 40 and 80 m,
+about nine in ten of jt9's, most of the rest at -16 dB and below. On
 WSJT-X's own simulated signals it is about half a decibel behind jt9 -
 FT8 copied half the time at -20.7 dB against jt9's -21, FT4 at -17
-against -18 - when jt9 is not decoding *a priori* (from the calls it
-expects in your QSO), which is a thing this does not do. A busy slot
-takes about five seconds to decode.
+against -18. A busy slot takes about five seconds to decode.
+
+Like WSJT-X it decodes **a priori** too: a weak CQ, or a weak call to
+you (the callsign in Settings → Station), is read by assuming that much of
+the message. Those lines end in `a1` (a CQ) or `a2` (your call) and are
+shown in italics; they are not sent to PSK Reporter. A station whose
+clock is a second or two fast still decodes, as in WSJT-X.
 
 Hashed callsigns - the ones too long for the message - show as `<...>`
 until the station has been heard sending its call in full, then by name,
 as in WSJT-X. A line in italics came from the slower, less certain stage
 of the decoder; it is shown, and not reported to PSK Reporter.
+
+**Click a line** to pick that station. The Decoder looks it up, so the map
+cards draw the path to it, and the Logbook fills in the callsign, the grid
+they sent, the report you would send them (the SNR you measured) and the
+mode, then shows the usual peek - name, distance, whether you have worked
+them. A pick never overwrites a callsign you have typed into the logbook:
+it says which station was picked and leaves your contact alone until you
+clear the box. Clicking a spot in the Spots card does the same.
 
 The decodes are published on the bus as `decoder.decoded`, one event per
 slot (see [the bus](bus.md#topics-the-built-in-cards-publish)). Only FT8

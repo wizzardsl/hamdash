@@ -44,6 +44,7 @@ How a slot is decoded, and why each part is the way it is:
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -105,6 +106,7 @@ MODES = {"ft8": FT8, "ft4": FT4}
 # Where a signal is meant to start in its slot. jt9's DT is measured from
 # here, and so is ours.
 NOMINAL_START = 0.5
+EARLY = {"FT8": 2.5, "FT4": 1.0}   # how early a transmission may start, s
 
 # FT4's 77 bits are XORed with this before the CRC, so that a run of zeros
 # - a blank message - does not send a run of one tone.
@@ -812,12 +814,16 @@ class Decode:
     sync: float = 0.0
     passno: int = 1
     osd: float = 0.0          # >0 if found by OSD, its distance
+    ap: str = ""              # "a1" (CQ) or "a2" (my call) if a-priori
     symbols: np.ndarray = field(default=None, repr=False)
 
     def as_dict(self) -> dict:
-        return {"mode": self.mode, "text": self.text, "snr": self.snr,
-                "dt": round(self.dt, 2), "freq": round(self.freq, 1),
-                **self.fields}
+        out = {"mode": self.mode, "text": self.text, "snr": self.snr,
+               "dt": round(self.dt, 2), "freq": round(self.freq, 1),
+               **self.fields}
+        if self.ap:
+            out["ap"] = self.ap
+        return out
 
 
 def resample(audio: np.ndarray, rate: int) -> np.ndarray:
@@ -892,7 +898,18 @@ OSD_SYNC_MIN = 3.0
 OSD_SURE_DIST = 0.045       # of all |llr|: accepted at any sync
 OSD_MAX_DIST = 0.065        # accepted only with a sync of OSD_FAR_SYNC
 OSD_FAR_SYNC = 5.5
+# FT4 has its own, stricter: its first real-air test (80 slots on 80 and
+# 40 m, where jt9 found no FT4 at all) gave one OSD decode, at 0.038 and
+# -14 dB, on somebody else's signal - "GM3HPN K29DAB R OL68". True FT4 OSD
+# decodes in the simulator sit at 0.031-0.044, so distance cannot tell the
+# two apart above 0.030; a few weak decodes are the price.
+OSD_LIMITS = {"FT8": (OSD_SURE_DIST, OSD_MAX_DIST), "FT4": (0.030, 0.030)}
 FIT_MIN = 1.2               # the fitted sync metric, below which not to try
+# A-priori decoding: what is already known about a message, pinned before
+# belief propagation is run again. See _ap_patterns.
+AP_SYNC_MIN = 2.0           # below this a candidate is noise, AP or not
+AP_MAX = 60                 # candidates per pass
+AP_MAX_HARD = 36            # bits the unpinned metrics got wrong, at most
 LDPC_ITERATIONS = 30
 
 
@@ -926,9 +943,14 @@ def _candidates(power: np.ndarray, mode: Mode, f_lo: float, f_hi: float,
     total = np.zeros((nt, b_hi - b_lo))
     for k in range(mode.tones):
         total += power[:, b_lo + 2 * k:b_hi + 2 * k]
-    # Start offsets: from a second before the nominal start to well after.
+    # Start offsets: from EARLY before the nominal start to well after. A
+    # station whose clock is fast starts before the slot does, and is
+    # decoded from what is left - the first Costas block and a few symbols
+    # are missing, and the code corrects for them as for any erasure. At a
+    # second, as this was, real 40 m stations at DT -1.1 and -2.1 were
+    # missed every slot at up to +1 dB, while jt9 read them.
     nominal = int(round(NOMINAL_START * RATE / hop))
-    t_lo = nominal - int(round(1.0 * RATE / hop))
+    t_lo = nominal - int(round(EARLY[mode.name] * RATE / hop))
     t_hi = nominal + int(round(2.5 * RATE / hop))
     ts = np.arange(t_lo, t_hi + 1)
     sig = np.zeros((ts.size, b_hi - b_lo))
@@ -1259,7 +1281,7 @@ def _measure(slot: Slot, start: int, f0: float):
 
 
 def _finish(slot: Slot, bits: np.ndarray, p, s_best, freq, metric,
-            hashes: Hashes, seen: set, osd: bool = False):
+            hashes: Hashes, seen: set, osd: bool = False, known=None):
     mode = slot.mode
     payload = bits[:77]
     if not bits.any():
@@ -1280,7 +1302,7 @@ def _finish(slot: Slot, bits: np.ndarray, p, s_best, freq, metric,
         text, fields = unpack77(payload, None)
     except ValueError:
         return None
-    if not plausible(text, fields, osd):
+    if not plausible(text, fields, osd, known):
         return None
     text, fields = unpack77(payload, hashes)
     sym = symbols_for(payload, mode)
@@ -1290,9 +1312,89 @@ def _finish(slot: Slot, bits: np.ndarray, p, s_best, freq, metric,
 
 
 _CALL = None
+_CQ = re.compile(r"^CQ(?: (?:[A-Z]{1,4}|[0-9]{3}))?$")
 
 
-def plausible(text: str, fields: dict, osd: bool) -> bool:
+def _ap_patterns(mode: Mode, mycall: str = "") -> list:
+    """What can be known about a message before it is decoded, as
+    (name, bit positions, bit values) in the codeword.
+
+    WSJT-X's a-priori decoding, the two kinds that need no QSO in
+    progress: **a1**, a CQ (the first call field is the CQ token and the
+    message is the standard type), and **a2**, a message to the operator
+    (that field is their own call). Pinning those 32 of the 77 bits to
+    certainty is worth a decibel or two - the last of the gap to jt9 on
+    real slots - because belief propagation then only has to find the
+    other 45. The cost is that it *will* find 45 bits in noise more
+    readily, which is what `AP_MAX_HARD` and the strict plausibility
+    check are for.
+
+    The CQ token has no /R bit to set, the type is i3=1, and FT4's
+    scrambling applies to what is pinned exactly as to what is sent."""
+    out = []
+    i3 = [0, 0, 1]
+    idx = np.array(list(range(29)) + [74, 75, 76])
+    words = [("a1", "CQ")]
+    if mycall:
+        try:
+            n, ip = _pack28(mycall.upper())
+        except (ValueError, KeyError):
+            n = -1
+        # Only a call that packs as itself: a hashed one would pin a hash
+        # of a call nobody may be using.
+        if n >= NTOKENS + MAX22:
+            words.append(("a2", mycall.upper()))
+    for name, word in words:
+        n, ip = _pack28(word)
+        bits = np.array(_bits(n, 28) + [ip] + i3, dtype=np.uint8)
+        if mode is FT4:
+            bits = bits ^ FT4_XOR_BITS[idx]
+        out.append((name, idx, bits))
+    return out
+
+
+def _ap_try(slot, got, todo, patterns, hashes, seen, passno, known=None):
+    """A-priori decoding of the candidates belief propagation could not
+    decode alone. Returns ([(Decode, s_best)], candidates still undecoded)."""
+    cands = sorted((i for i in todo if got[i][4] >= AP_SYNC_MIN),
+                   key=lambda i: -got[i][4])[:AP_MAX]
+    if not cands or not patterns:
+        return [], todo
+    rows, meta = [], []
+    for i in cands:
+        for which, llr in enumerate(got[i][0]):
+            mag = float(np.abs(llr).max()) * 1.01
+            for name, idx, bits in patterns:
+                pinned = llr.copy()
+                pinned[idx] = np.where(bits == 1, mag, -mag)
+                rows.append(pinned)
+                meta.append((i, which, name, idx))
+    words, errs = bp_decode_many(np.array(rows), LDPC_ITERATIONS)
+    found, done = [], set()
+    for (i, which, name, idx), word, e in zip(meta, words, errs):
+        if e or i in done:
+            continue
+        llr = got[i][0][which]
+        free = np.ones(174, dtype=bool)
+        free[idx] = False
+        # How far the decode is from what the signal itself said, on the
+        # bits nobody told it: noise pinned into shape disagrees with its
+        # own metrics far more than a weak real signal does.
+        if int(((llr > 0).astype(np.uint8) != word)[free].sum()) > AP_MAX_HARD:
+            continue
+        g = got[i]
+        d = _finish(slot, word, g[1], g[2], g[3], g[4], hashes, seen,
+                    osd=True, known=known)
+        if d is None:
+            continue
+        d.passno = passno
+        d.ap = name
+        found.append((d, g[2]))
+        done.add(i)
+    return found, [i for i in todo if i not in done]
+
+
+def plausible(text: str, fields: dict, osd: bool, known=None) -> bool:
     """Whether a decode that passed the CRC is worth showing.
 
     Message types nobody defines are never real. From OSD - which tries
@@ -1320,9 +1422,22 @@ def plausible(text: str, fields: dict, osd: bool) -> bool:
         return False
     for key in ("call", "to"):
         v = fields.get(key, "")
-        if v.startswith("<") or v.startswith("CQ") or v in ("DE", "QRZ"):
+        # "CQ", "CQ DX", "CQ NA", "CQ 291" - and not "CQVXW6 6Z7K", which
+        # is how OSD spelt noise as a non-standard message's addressee.
+        if v.startswith("<") or v in ("DE", "QRZ") or _CQ.match(v):
             continue
         if not _CALL.match(v):
+            return False
+        # A callsign no country issues. Measured on two busy real bands:
+        # OSD's false finds there read "A32TZM X70VKD", "O10EFG 5G1JZS",
+        # "CQVXW6 6Z7K" - shaped like calls, from nowhere - at -4 to +2 dB,
+        # where a strength rule would also lose the real fading stations
+        # OSD exists to rescue. `known` is the caller's prefix table, so
+        # this file still imports nothing.
+        # The sender's grid has to be somewhere their country could be:
+        # "DS4ESX OM1ZAX JC75" put a Slovak station near Antarctica.
+        grid = fields.get("grid", "") if key == "call" else ""
+        if known is not None and not known(v, grid):
             return False
     return True
 
@@ -1330,8 +1445,20 @@ def plausible(text: str, fields: dict, osd: bool) -> bool:
 def decode(audio: np.ndarray, mode: Mode | str = FT8, rate: int = RATE,
            f_lo: float = 200.0, f_hi: float = 3000.0,
            hashes: Hashes | None = None, passes: int = PASSES,
-           deadline: float | None = None) -> list:
+           deadline: float | None = None, ap: bool = False,
+           mycall: str = "", known_call=None) -> list:
     """Every message in one slot of audio that starts at the slot's start.
+
+    `ap` adds a-priori decoding of CQs, and of messages to `mycall` when
+    it is given (see `_ap_patterns`). Off unless asked: a decode that was
+    helped is marked `ap`, and whoever shows or reports it decides.
+
+    `known_call(call, grid) -> bool`, when given, is asked about every
+    callsign in a decode from the less certain stages (OSD and AP), with
+    the grid the sender gave if any: a call no country issues, or a grid
+    on the far side of the world from it, is noise in the shape of a
+    message. The card passes the host's prefix table; plain
+    belief-propagation decodes are not asked.
 
     `deadline` (time.monotonic) stops looking for more: a decode that is
     still running when the next slot needs decoding is a decode that will
@@ -1349,6 +1476,7 @@ def decode(audio: np.ndarray, mode: Mode | str = FT8, rate: int = RATE,
     slot = Slot(x, mode)
     seen: set = set()
     out: list = []
+    patterns = _ap_patterns(mode, mycall) if ap else []
     for passno in range(1, passes + 1):
         if deadline is not None and time.monotonic() > deadline:
             break
@@ -1387,6 +1515,11 @@ def decode(audio: np.ndarray, mode: Mode | str = FT8, rate: int = RATE,
                 d.passno = passno
                 found.append((d, g[2]))
             todo = left
+        if patterns and todo and not (
+                deadline is not None and time.monotonic() > deadline):
+            helped, todo = _ap_try(slot, got, todo, patterns, hashes, seen,
+                                   passno, known_call)
+            found.extend(helped)
         # What belief propagation could not, ordered statistics may - the
         # strongest-synced first, and only so many, because it is the
         # slow part and the weak end of a busy band is mostly noise.
@@ -1406,11 +1539,13 @@ def decode(audio: np.ndarray, mode: Mode | str = FT8, rate: int = RATE,
             g = got[i]
             for llr in g[0]:
                 word, dist = osd_decode(llr, OSD_ORDER, OSD_DEPTH)
-                if word is None or dist > OSD_MAX_DIST or (
-                        dist > OSD_SURE_DIST and g[4] < OSD_FAR_SYNC):
+                sure, most = OSD_LIMITS.get(mode.name,
+                                            (OSD_SURE_DIST, OSD_MAX_DIST))
+                if word is None or dist > most or (
+                        dist > sure and g[4] < OSD_FAR_SYNC):
                     continue
                 d = _finish(slot, word, g[1], g[2], g[3], g[4], hashes, seen,
-                            osd=True)
+                            osd=True, known=known_call)
                 if d is not None:
                     d.passno = passno
                     d.osd = round(dist, 3)
@@ -1429,7 +1564,9 @@ def format_line(slot_start_utc: float, d: Decode) -> str:
     """One line like WSJT-X's band activity: HHMMSS SNR DT FREQ ~ text."""
     import time
     hms = time.strftime("%H%M%S", time.gmtime(slot_start_utc))
-    return f"{hms} {d.snr:+3d} {d.dt:+4.1f} {int(round(d.freq)):4d} ~  {d.text}"
+    tail = f" {d.ap}" if d.ap else ""
+    return (f"{hms} {d.snr:+3d} {d.dt:+4.1f} {int(round(d.freq)):4d} ~  "
+            f"{d.text}{tail}")
 
 
 # ---------------------------------------------------------------- streaming
@@ -1466,7 +1603,8 @@ class SlotDecoder:
 
     def __init__(self, samplerate: int, mode: Mode | str = FT8,
                  clock=None, on_slot=None, on_slot_start=None,
-                 threaded: bool = True) -> None:
+                 threaded: bool = True, ap: bool = False,
+                 mycall=None, known_call=None) -> None:
         import threading
         import time as _time
         self.mode = MODES[mode.lower()] if isinstance(mode, str) else mode
@@ -1475,6 +1613,12 @@ class SlotDecoder:
         self.on_slot = on_slot
         self.on_slot_start = on_slot_start
         self.threaded = threaded
+        # A-priori decoding, and the operator's call for its a2 kind:
+        # `mycall` may be a callable, asked each slot, so a callsign
+        # entered in Settings takes effect without restarting the card.
+        self.ap = ap
+        self.mycall = mycall
+        self.known_call = known_call
         self.wait = 1.0 if self.mode is FT8 else 0.5
         self.hashes = Hashes()
         self._lock = threading.Lock()
@@ -1583,8 +1727,11 @@ class SlotDecoder:
         import time as _time
         t0 = _time.monotonic()
         try:
+            me = self.mycall() if callable(self.mycall) else self.mycall
             found = decode(audio, self.mode, self.rate, hashes=self.hashes,
-                           deadline=t0 + self.mode.slot * 0.7)
+                           deadline=t0 + self.mode.slot * 0.7,
+                           ap=self.ap, mycall=me or "",
+                           known_call=self.known_call)
         except Exception as exc:                        # noqa: BLE001
             found = []
             print(f"{self.mode.name} decode failed: {exc!r}")

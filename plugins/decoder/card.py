@@ -48,6 +48,7 @@ It follows the shape `plugins/spectrum` settled on, for the same reasons:
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 
@@ -55,6 +56,8 @@ import numpy as np
 from flask import request
 
 from hamdash.sdk import AudioFeed, Card
+from hamdash.services import dxcc
+from hamdash.services import grid as gridlib
 
 import cw
 import ftx
@@ -358,10 +361,53 @@ def _mock_psk(rate: int) -> np.ndarray:
                          amplitude=0.3, lead_seconds=1.5, tail_seconds=1.0)
 
 
+def _my_call() -> str:
+    """The operator's call for a-priori decoding of messages to them.
+    PLACES already keeps the station block for a minute at a time."""
+    try:
+        return str((card.host.station() or {}).get("callsign") or "").strip()
+    except Exception:                                   # noqa: BLE001
+        return ""
+
+
+FAR_FROM_HOME_KM = 6000   # Hawaii from the middle of the US; across Russia
+_US_CALL = re.compile(r"^[AKNW][A-Z]?[0-9][A-Z]{1,3}$")
+
+
+def _known_call(call: str, grid: str = "") -> bool:
+    """The check ftx applies to its less certain decodes: a callsign from
+    an ITU-allocated series, and - for a country the prefix table knows -
+    the shape that country's calls have (the US only, so far) and, when
+    the station sent one, a grid within FAR_FROM_HOME_KM of its middle. The prefix table imports
+    nothing, so a card may use it. A station operating abroad signs with
+    that country's prefix (6W/IK2HKT), so its grid is still near "home"."""
+    where = dxcc.for_call(call)
+    if not where.get("iso"):
+        # Not a country this program can name - which is a gap in its
+        # table as often as not (C5, 5P, 7U, J8 and CA were, all DX worth
+        # seeing). Allocated by the ITU is enough; there is no middle of a
+        # country to measure a grid against.
+        return dxcc.itu_allocated(call)
+    # The US is most of what is on the air here and its calls have one
+    # shape: a 1-2 letter prefix, one digit, 1-3 letters. "K17AEJ" off a
+    # busy 40 m was OSD's, and only this tells it from a real one.
+    base = max(call.split("/"), key=len)
+    if where["iso"] == "us" and not _US_CALL.match(base):
+        return False
+    if grid and where.get("locator"):
+        try:
+            d = gridlib.distance_bearing(where["locator"], grid)["km"]
+        except (ValueError, KeyError, TypeError):
+            return True
+        return d <= FAR_FROM_HOME_KM
+    return True
+
+
 def make_decoder(spec: dict, samplerate: int, stream: "Stream | None" = None):
     if spec.get("mode") in SLOT_MODES:
         return ftx.SlotDecoder(
-            samplerate, spec["mode"],
+            samplerate, spec["mode"], ap=True, mycall=_my_call,
+            known_call=_known_call,
             on_slot=(lambda t, rows: on_slot(stream, t, rows)) if stream
             else None,
             on_slot_start=(lambda t: on_slot_start(stream, t)) if stream
@@ -524,7 +570,8 @@ def on_slot(stream: "Stream", t: float, rows: list) -> None:
         # not a grid) still get a real distance.
         PLACES.heard_grid(r.get("call", ""), r.get("grid", ""))
         d = {k: r[k] for k in ("text", "call", "to", "grid", "report",
-                               "ack", "snr", "dt", "freq", "kind", "osd")
+                               "ack", "snr", "dt", "freq", "kind", "osd",
+                               "ap")
              if k in r}
         d["audio_hz"] = d.pop("freq")
         d["rf_hz"] = int(dial + r["freq"]) if dial else None

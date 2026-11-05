@@ -71,6 +71,19 @@ decoded anything:
               "rf_hz": 7075180, "kind": "standard"}]}
 ```
 
+**`decoder.picked`** - the operator clicked an FT8 or FT4 line, which is
+saying "this station":
+
+```json
+{"call": "VA7HDX", "grid": "CN89", "snr": -12, "mode": "FT8",
+ "slot": 1793690895.0, "rf_hz": 7075180}
+```
+
+The Decoder also looks the station up, so the host publishes
+`lookup.result` and the map cards draw the path; the logbook fills its form
+from the pick. The Spots card's **`spots.picked`** is the same idea for a
+spot (its row as it appears in the list), and the logbook takes that too.
+
 `call` is the station transmitting; `to`, `grid`, `report` and `ack`
 (RRR, RR73, 73) are there when the message carries them. `dial_hz` and
 `rf_hz` are null unless the audio is the radio's own and the radio sat on

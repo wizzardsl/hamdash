@@ -346,6 +346,11 @@ class Reporter:
             return "own callsign"
         if not d.get("rf_hz"):
             return "no dial frequency"
+        # Decoded with part of the message assumed (a1 CQ, a2 my call):
+        # very likely right, and not yet measured on enough real slots to
+        # be put on somebody else's map. jt9 reports them; we do not, yet.
+        if d.get("ap"):
+            return "decoded a priori"
         if d.get("osd") and float(d["osd"]) > OSD_TRUST:
             return "uncertain decode"
         return ""

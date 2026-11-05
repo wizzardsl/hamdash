@@ -61,6 +61,9 @@
   #out .row .m { color: var(--muted); }
   #out .row.cq .t { color: var(--signal); }
   #out .row.osd .t { font-style: italic; }
+  #out.slots .row.pickable { cursor: pointer; }
+  #out.slots .row.pickable:hover { background: var(--surface-2, rgba(127,127,127,.12)); }
+  #out.slots .row.picked { outline: 1px solid var(--accent); outline-offset: -1px; }
   #out .slot-rule { display: block; border-top: 1px solid var(--rule);
                     margin: 2px 0; height: 0; }
   /* FT8/FT4 columns, with a heading row above that says what each is.
@@ -299,6 +302,35 @@ function paintDist(dist) {
     : (dist.dataset.approx ? '~' : '') + HD.fmtDistance(Number(km));
 }
 
+// A decode line is a station: clicking one looks it up - which is what the
+// map cards draw from (lookup.result) - and publishes decoder.picked for
+// the logbook. The sender is the station: in "K1ABC W9XYZ R-12" that is
+// W9XYZ, and in a CQ the one calling. A hashed call ("<...>") names nobody.
+const picks = new WeakMap();
+const PICK_CALL = /^(?:[A-Z0-9]{1,4}\/)?[A-Z0-9]{1,3}[0-9][A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/;
+const pickable = (r) => !!r.call && PICK_CALL.test(r.call);
+
+async function pick(row, r) {
+  $('#out').querySelectorAll('.row.picked').forEach((x) => x.classList.remove('picked'));
+  row.classList.add('picked');
+  const dial = radioNow && radioNow.ok ? Number(radioNow.freq) : 0;
+  const p = {
+    call: r.call, grid: r.grid || '', snr: r.snr,
+    mode: conf.mode.toUpperCase(), slot: r.slot,
+    rf_hz: dial ? Math.round(dial + Number(r.freq)) : null,
+  };
+  HD.publish('decoder.picked', p).catch(() => {});
+  try {
+    const q = p.grid ? `?grid=${encodeURIComponent(p.grid)}` : '';
+    await HD.get(`/api/lookup/${encodeURIComponent(p.call)}${q}`);
+  } catch (e) { /* the pick still reaches the logbook */ }
+}
+
+$('#out').addEventListener('click', (e) => {
+  const row = e.target.closest('.row.pickable');
+  if (row && picks.has(row)) pick(row, picks.get(row));
+});
+
 function appendRows(rows) {
   const el = $('#out');
   for (const r of rows) {
@@ -309,17 +341,28 @@ function appendRows(rows) {
     lastSlot = r.slot;
     const row = document.createElement('span');
     row.className = 'row new' + (r.to === 'CQ' || /^CQ /.test(r.text) ? ' cq' : '')
-                  + (r.osd ? ' osd' : '');
+                  + (r.osd || r.ap ? ' osd' : '');
     const t = new Date(r.slot * 1000).toISOString();
     const hms = t.slice(11, 13) + t.slice(14, 16) + t.slice(17, 19);
     const sign = (v) => (v >= 0 ? '+' : '') + v;
     const txt = cell('t', r.text);
     if (r.osd) txt.title = 'Found by the slower, less certain decoder (OSD)';
+    if (r.ap) {
+      txt.title = r.ap === 'a2'
+        ? 'a2: decoded expecting a message to your callsign'
+        : 'a1: decoded expecting a CQ';
+      txt.append(cell('m', ` ${r.ap}`));
+    }
     row.append(cell('m', hms), cell('m num', sign(r.snr)),
                cell('m num dt', sign(r.dt.toFixed(1))),
                cell('m num', String(Math.round(r.freq))), txt,
                cell('where'), cell('dist num'));
     paintWhere(row, r.where);
+    if (pickable(r)) {
+      row.classList.add('pickable');
+      row.title = `${r.call}: look up, show on the map, and fill the logbook`;
+      picks.set(row, r);
+    }
     el.appendChild(row);
     fading.push([row, Date.now()]);
   }

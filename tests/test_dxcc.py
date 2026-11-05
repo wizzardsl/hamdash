@@ -97,6 +97,27 @@ class TestFlagFiles(unittest.TestCase):
                 self.assertTrue(grid.valid(loc), f"{country}: {loc!r}")
 
 
+class TestITUAllocation(unittest.TestCase):
+    """Whether a prefix is allocated at all - a fixed question, unlike the
+    country table, which has gaps. FT8's uncertain decodes are checked
+    against it: X70VKD and O10EFG were OSD's; C5R, 5P0T, 7U1JSI, J88IH
+    and CA6SNT were real DX the country table did not know."""
+
+    def test_real_dx_is_allocated(self):
+        for call in ("C5R", "5P0T", "7U1JSI", "J88IH", "CA6SNT", "XP4PR",
+                     "6W/IK2HKT", "S53R", "ZS6ABC", "S8AA", "Z81D", "A65BR",
+                     "E51WL", "T88ZZ", "V51WH", "9M2ABC", "4X1ABC", "2E0ABC",
+                     "3B8CF", "YB1ABC", "8P9AB", "N8GNA", "R64JSY"):
+            with self.subTest(call=call):
+                self.assertTrue(dxcc.itu_allocated(call))
+
+    def test_series_nobody_has(self):
+        for call in ("X70VKD", "O10EFG", "Q1ABC", "1A2BC", "0O9LU", "E81AB",
+                     "", "CQ", "ABCDEF"):
+            with self.subTest(call=call):
+                self.assertFalse(dxcc.itu_allocated(call))
+
+
 if __name__ == "__main__":
     unittest.main()
 

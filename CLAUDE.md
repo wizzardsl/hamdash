@@ -1706,6 +1706,43 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   119, all in common, ~4.7 s a slot on this machine (the deadline is 10.5
   s). 30 m: 3 of jt9's 5. Simulated, without jt9's a-priori decoding: FT8
   50% at -20.7 dB against -21.1, FT4 about -17 against -18.
+- **A busy real band is a different test from the simulator, and it
+  found three things.** 48 slots of 40 and 80 m on 2026-11-05, with
+  18 stations a slot, against jt9 on the same audio (the recordings and
+  `apbench.py` were in the session scratchpad; `tools/ftx_fixtures.py`
+  is the shape). (1) **Fast clocks**: stations at DT -1.1 and -2.1 were
+  missed every slot at up to +1 dB, because the search began a second
+  before the nominal start. `EARLY` is 2.5 s for FT8 as in jt9 (1.0 for
+  FT4's short slot); every later stage already treats audio before
+  sample 0 as silence. (2) **OSD invents messages from other signals**
+  on a busy band - "A32TZM X70VKD EN55", "O10EFG 5G1JZS", "CQVXW6 6Z7K
+  <...> RR73", "DS4ESX OM1ZAX JC75" (a Slovak near Antarctica),
+  "DA4FAL K17AEJ" - at -10 to +2 dB, where a strength rule would also
+  lose the fading stations OSD rescues. So OSD and AP decodes go
+  through `known_call(call, grid)` from the card: an ITU-allocated
+  series (`dxcc.itu_allocated`), the US one-digit shape, and a sent grid
+  within `FAR_FROM_HOME_KM` of the country's middle; and "CQ" means CQ or
+  CQ with a modifier (`_CQ`). **The country table alone was the first
+  version and it was wrong**: it threw away twelve real DX decodes
+  (C5R, 5P0T, 7U1JSI, J88IH, CA6SNT - not in the table) to catch four
+  false ones. Measure what a filter rejects, not only what it keeps.
+  (3) **FT4's OSD limit is its own** (`OSD_LIMITS`): 280 slots of real
+  FT4-band audio on five bands held no FT4 at all - jt9 found none -
+  and OSD once read another signal as "GM3HPN K29DAB R OL68" at 0.038;
+  true simulated FT4 OSD decodes sit at 0.031-0.044, so FT4 takes 0.030.
+  `fixtures/ftx/ft4_air_3575_false.wav` is that slot. **FT4 has still
+  never been checked against a real FT4 signal** - the bands had none.
+- **A-priori decoding (`_ap_patterns`, `_ap_try`)**: a1 pins a CQ, a2
+  the operator's call (`mycall` from the card, asked each slot) - 32 of
+  the 77 bits - and runs belief propagation again on the candidates it
+  could not decode. `AP_MAX_HARD` rejects a decode the unpinned metrics
+  disagree with too much. Measured: 400 noise slots per mode, nothing;
+  busy simulated sets FT8 460->462, FT4 363->370 (367 after FT4's OSD
+  limit), nothing false; 130 real slots, +8 decodes, the one jt9 did not
+  have a real station it hears elsewhere. Marked `ap` on the bus and on
+  the line, and **not** sent to PSK Reporter or stored as heard - jt9
+  does report them; revisit once more real slots say so. a3 and up need
+  the QSO in progress, which nothing here knows.
 - **The FT8/FT4 band buttons' dials are the spots card's**, and
   `tests/test_decoder_tune.py` holds every one against `_FT8_DIALS` /
   `_FT4_DIALS` in `plugins/spots/sources.py` and against `bands.for_hz`,
@@ -3051,11 +3088,17 @@ it into the GitHub bug form, which is pre-filled by the button.
 - This machine logs `pywebview 6.2.1` on win32. The gui backend only resolves
   once a window opens, so `--browser` won't tell you; run `python run.py` and
   read the first lines of the log to decide whether always-on-top is available.
-- Popped-out window geometry is remembered in `windows._GEOMETRY`, which is a
-  module-level dict - so a window reopens where it was within a session and
-  forgets across a restart. Persisting it means writing it somewhere, and
-  multi-monitor placement is the harder half of the same problem.
 - Snapping a popped-out window to a screen edge.
+- **Pop-out positions persist** (`<home>/windows.json`, `windows.load`/
+  `save`/`place`). Not in `layout.json`: where a window sits is about this
+  machine's screens, and the same board opened elsewhere must not aim a
+  window at a monitor that machine does not have. `place` keeps a position
+  only if the title bar is on a screen that exists *now* - an unplugged
+  monitor would otherwise open the window somewhere nobody can reach - and
+  shrinks the size to fit. Saves are delayed a second (a drag fires
+  `moved` per pixel) and forced in `close_all`, since a shutdown never
+  runs the delayed one. The newest `KEEP` are kept. Proven under GTK on
+  Xvfb: moved and resized in one process, back exactly in the next.
 - **Card pages are not isolated, and `Referer` is not the reason.** A page
   cannot forge that header - the browser forbids it. The hole is that every
   card page shares one origin with the board and with each other, so a card
@@ -3137,11 +3180,11 @@ it into the GitHub bug form, which is pre-filled by the button.
   others would be worth putting on the bus only once it can say how sure
   it is: `lookup.result` is the "what are we looking at" event and feeding
   it guesses would be worse than silence. Nothing subscribes to
-  `decoder.decoded` yet but the PSK Reporter uploader (see "PSK Reporter
-  uploads"): clicking a decode to
-  look the station up, and the map plotting the band, are the obvious next
-  uses. FT8/FT4 also have no a-priori decoding (WSJT-X's `aN` decodes, from
-  the calls in the operator's QSO), which is jt9's last decibel or two.
+  `decoder.decoded` but the PSK Reporter uploader and the PSK Reporter
+  card's "heard here". A map plotting the band from it is the obvious
+  next use. A-priori decoding exists for a1 (CQ) and a2 (my call) - see
+  the FT8 notes; a3 and up need the QSO in progress, which nothing here
+  knows yet.
 - **What you bind is not what you dial.** `--host 0.0.0.0` listens
   everywhere, which is the point, and is not an address anything can
   connect to - on Windows that is WinError 10049, measured. The host URL

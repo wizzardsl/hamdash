@@ -59,7 +59,7 @@ PREFIXES: dict[str, tuple[str, str, str]] = {
     # read as fact.
     "VP8": ("Falkland Islands", "fk", "GD18"),
     "TJ": ("Cameroon", "cm", "JJ53"),
-    "OX": ("Greenland", "gl", "GP60"),
+    "OX": ("Greenland", "gl", "GP60"), "XP": ("Greenland", "gl", "GP60"),
     # South America
     "PY": ("Brazil", "br", "GG66"),
     # Brazil also has ZV-ZZ, which the table did not. ZW5K was on the
@@ -431,3 +431,42 @@ def province_for(call: str) -> tuple[str, str]:
 def province_grid(code: str) -> str:
     """A rough grid for a Canadian province code: where most people live."""
     return _CA_PROVINCE_GRIDS.get(code or "", "")
+
+
+# ---- is the prefix allocated at all? ------------------------------------------
+# The table above is the countries this program can name, and it has gaps:
+# Gambia, Algeria, Chile and St Vincent were all missing when FT8's less
+# certain decodes were first checked against it, and the check threw away
+# twelve real DX decodes to catch four false ones. Whether a prefix is
+# *allocated* is a smaller, fixed question - the ITU's table of call sign
+# series - and it is the one that separates "a station from somewhere" from
+# "noise in the shape of a callsign" (X70VKD, O10EFG). Two-letter series are
+# allocated for every letter but Q; a digit then a letter, for 2 to 9; a
+# letter then a digit only where listed here.
+_WHOLE_LETTER = set("BFGIKMNRW")            # any second character
+_LETTER_DIGIT = {
+    "A": "23456789", "C": "23456789", "D": "23456789", "E": "234567",
+    "H": "234678", "J": "2345678", "L": "23456789", "P": "23456789",
+    "S": "2356789", "T": "2345678", "V": "2345678", "Y": "23456789",
+    "Z": "2368",
+}
+
+
+def itu_allocated(call: str) -> bool:
+    """Whether a callsign's prefix series is one the ITU has allocated.
+    The longest part of a compound call is the station's own (6W/IK2HKT is
+    IK2HKT working from Senegal; both halves are allocated anyway)."""
+    parts = [p for p in str(call or "").upper().split("/") if p]
+    if not parts:
+        return False
+    base = max(parts, key=len)
+    if len(base) < 3 or not any(c.isdigit() for c in base):
+        return False
+    a, b = base[0], base[1]
+    if a.isdigit():
+        return a in "23456789" and b.isalpha()
+    if a in _WHOLE_LETTER:
+        return True
+    if b.isalpha():
+        return a != "Q"
+    return b in _LETTER_DIGIT.get(a, "")
