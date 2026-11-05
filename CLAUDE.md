@@ -1732,6 +1732,9 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   true simulated FT4 OSD decodes sit at 0.031-0.044, so FT4 takes 0.030.
   `fixtures/ftx/ft4_air_3575_false.wav` is that slot. **FT4 has still
   never been checked against a real FT4 signal** - the bands had none.
+  All of it together, on 130 real FT8 slots: 712 of jt9's 770 (700
+  before), 735 decodes in all; of the 23 jt9 did not have, about three
+  look false - all with a hashed sender, whose grid nothing can check.
 - **A-priori decoding (`_ap_patterns`, `_ap_try`)**: a1 pins a CQ, a2
   the operator's call (`mycall` from the card, asked each slot) - 32 of
   the 77 bits - and runs belief propagation again on the candidates it
