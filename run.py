@@ -485,7 +485,7 @@ def main() -> int:
         return fail(1, f"the server at {url} did not answer within 15 s",
                     "  check the lines above in hamdash.log")
 
-    native_windows.configure(url)
+    native_windows.configure(url, cfg.home / "windows.json")
     popouts = native_windows.PopoutApi()
 
     try:

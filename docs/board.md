@@ -160,7 +160,10 @@ window** button instead.
 
 `hamdash/windows.py` is the whole native side: it hands pywebview a `js_api`
 object, so the UI calls `pywebview.api.popout_open({...})` and Python creates
-the window. Window size and position are remembered per tile for the session.
+the window. Each window's size and position are remembered per tile, across
+restarts too, in `windows.json` beside your settings - a fact about this
+computer's screens, so it does not travel with the board. A window last seen
+on a monitor that is no longer connected opens on one that is.
 
 **If you edit that file, keep the api class methods-only.** pywebview builds
 the JavaScript proxy by introspecting the object, and on the Windows winforms
