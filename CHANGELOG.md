@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.4.0]
+
 ### Added
 - **A Windows installer.** `hamdash-setup-….exe` installs hamdash for you
   (no administrator needed) with a Start-menu entry and, if you like, a
