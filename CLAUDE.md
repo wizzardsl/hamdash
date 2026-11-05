@@ -2977,7 +2977,13 @@ tested and the page says so.
   so a bundled card removed in a new version does not linger in the Cards
   menu. **Nothing may add the settings folder to `[UninstallDelete]`.**
   `build.yml` installs, smoke-tests, upgrades over a planted stale file and
-  uninstalls on every Windows build; `release.yml` publishes the `.exe`
+  uninstalls on every Windows build. **Its first run failed, correctly**:
+  the upgrade left the planted file behind, because `smoke_frozen.py`
+  ended the app with `terminate()` - on Windows a hard kill - so its
+  cards kept running from `_internal` and held it open. The smoke test
+  asks `/api/shutdown` first now, and the installer test refuses to
+  upgrade over a running copy. A user closing the window never had the
+  problem; anything that kills hamdash rather than asking would. `release.yml` publishes the `.exe`
   as-is rather than zipping it.
 - **The update check (`services/updates.py`) is on by default** and that
   is a judgement: it is outbound, one GET of GitHub's public "latest
