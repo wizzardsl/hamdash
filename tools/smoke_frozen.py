@@ -177,9 +177,19 @@ def main() -> int:
         print("\nPASS  the frozen build runs cards")
         return 0
     finally:
-        proc.terminate()
+        # Asked to stop, the way the window's close button or --stop does,
+        # so it stops its cards. terminate() on Windows is TerminateProcess,
+        # which nothing can catch: the cards were left running from the
+        # bundle, holding its files open - and the installer test, which
+        # upgrades that folder next, could not clear it.
         try:
-            out = proc.communicate(timeout=15)[0]
+            urllib.request.urlopen(urllib.request.Request(
+                f"{base}/api/shutdown", data=b"{}", method="POST",
+                headers={"Content-Type": "application/json"}), timeout=10).read()
+        except (urllib.error.URLError, OSError, TimeoutError):
+            pass
+        try:
+            out = proc.communicate(timeout=20)[0]
         except subprocess.TimeoutExpired:
             proc.kill()
             out = proc.communicate()[0]

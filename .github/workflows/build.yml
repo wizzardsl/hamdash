@@ -107,8 +107,13 @@ jobs:
           New-Item -ItemType Directory -Force $settings | Out-Null
           Set-Content "$settings\keep-me.txt" "settings survive"
           Set-Content "$dir\_internal\stale-from-old-version.txt" "should go"
+          $left = Get-Process hamdash -ErrorAction SilentlyContinue
+          if ($left) { $left | Format-Table Id, Path; throw "hamdash still running after the smoke test" }
           Start-Process dist\hamdash-setup.exe -ArgumentList ($quiet + '/LOG=install2.log') -Wait
-          if (Test-Path "$dir\_internal\stale-from-old-version.txt") { throw "upgrade left an old file behind" }
+          if (Test-Path "$dir\_internal\stale-from-old-version.txt") {
+            Get-Content install2.log -Tail 40
+            throw "upgrade left an old file behind"
+          }
           if (-not (Test-Path "$dir\hamdash.exe")) { throw "upgrade removed the app" }
           if (-not (Test-Path "$settings\keep-me.txt")) { throw "upgrade touched the settings" }
           python tools/smoke_frozen.py
