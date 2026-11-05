@@ -33,6 +33,7 @@ from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes, Solar
 from .services import pskreporter as pskrsvc
+from .services import updates as updatesvc
 from .services import wsjtx as wsjtxsvc
 from .services import diagnostics
 
@@ -91,7 +92,7 @@ def reachable(host: str) -> str:
 
 
 def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
-               native=False, on_quit=None):
+               native=False, on_quit=None, check_updates=False):
     static = BUNDLED_STATIC
     app = Flask(__name__, static_folder=None)
 
@@ -219,6 +220,13 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     # PSK Reporter: what the Decoder card copies on FT8/FT4, reported as
     # WSJT-X would. A host service so it outlives any tile; it hears the
     # card's events in-process rather than holding a stream for them.
+    # Started only by the launcher: every test builds an app, and none of
+    # them should be asking GitHub anything.
+    updates = updatesvc.Updates(
+        lambda: bool((cfg.data.get("updates") or {}).get("check", True)))
+    if check_updates:
+        updates.start()
+
     pskr = pskrsvc.Reporter(lambda: cfg.data.get("station") or {},
                             __version__).start()
     BUS.listen("decoder.decoded", pskr.offer)
@@ -680,7 +688,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
                     "callsign_lookup", "logbook_sync", "wsjtx", "units",
-                    "debug", "pskreporter"):
+                    "debug", "pskreporter", "updates"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -715,6 +723,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             _apply_wsjtx()
         if "pskreporter" in body:
             _apply_pskr()
+        if (body.get("updates") or {}).get("check"):
+            updates.again()
         if "debug" in body:
             diagnostics.set_debug((cfg.data.get("debug") or {}).get("enabled"))
         BUS.publish("config.changed", _safe_config(), source="host")
@@ -733,6 +743,19 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         """
         c = cfg.data.get("wsjtx", {}) or {}
         return jsonify({"enabled": bool(c.get("enabled")), **wsjtx.status()})
+
+    @app.get("/api/updates")
+    def updates_status():
+        """The last answer about a newer release. Never asks GitHub on
+        this thread - the check runs on its own (invariant 4)."""
+        return jsonify(updates.status())
+
+    @app.post("/api/updates/check")
+    def updates_check():
+        """Look again now: wakes the checker and returns at once. The page
+        reads /api/updates a few seconds later for the answer."""
+        updates.again()
+        return jsonify(updates.status())
 
     @app.get("/api/pskreporter")
     def pskreporter_status():

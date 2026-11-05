@@ -84,6 +84,18 @@ in the browser - and the only thing missing is the window. It still relies on th
 machine having WebKitGTK installed, which every desktop Linux with a GNOME
 or GTK browser has.
 
+**The Windows installer** is `installer/hamdash.iss` (Inno Setup 6), built
+from `dist/hamdash` by `build.yml` and tested there the way an operator
+would use it: installed silently, smoke-tested, installed again over itself
+as an upgrade (a stale file planted in the old copy must be gone, the
+settings folder must not be), and uninstalled (the settings folder must
+survive that too). Its `AppId` must never change - it is how the next
+installer finds this one to upgrade.
+
+```bash
+iscc /DAppVersion=1.4.0 installer\hamdash.iss    # -> dist\hamdash-setup.exe
+```
+
 **A Windows machine on demand.** `windows-check.yml` builds the app on
 GitHub's Windows runner, runs both smoke tests, opens the board in its real
 WebView2 window, photographs the screen, and keeps the screenshot and the

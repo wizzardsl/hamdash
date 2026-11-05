@@ -68,6 +68,10 @@ DEFAULTS = {
     # ticked on deliberately. See services/pskreporter.py.
     "pskreporter": {"enabled": False},
     "units": "km",   # km | mi | nmi
+    # Once a day, ask GitHub whether a newer hamdash has been released and
+    # say so in Settings -> Help. One public request, nothing from the
+    # config in it; off means no request at all. services/updates.py.
+    "updates": {"check": True},
     # Writes the radio conversation to daily hamdash-debug-*.log files,
     # kept 48 hours and capped in size, so it can stay on indefinitely.
     # See services/diagnostics.py.

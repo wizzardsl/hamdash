@@ -314,6 +314,19 @@
   </section>
 
   <section class="tab-panel" data-panel="help" role="tabpanel" hidden>
+    <h3>Updates</h3>
+    <p class="sheet-note" id="s-upd-status">Checking…</p>
+    <div class="row-btns">
+      <a class="btn" id="s-upd-get" target="_blank" rel="noopener" hidden>Get the new version</a>
+      <button class="btn btn-quiet" id="s-upd-now" type="button">Check now</button>
+      <a class="btn btn-quiet" href="https://github.com/wizzardsl/hamdash/blob/main/docs/install.md"
+         target="_blank" rel="noopener">How to upgrade</a>
+    </div>
+    <label class="row"><input type="checkbox" id="s-upd-check"> Check for a
+      new version once a day</label>
+    <p class="sheet-note">Asks GitHub which version is the latest, and nothing
+      else: no callsign, no settings. Upgrading never touches your settings,
+      log or board.</p>
     <p class="sheet-note">Something not working? These three gather what is
       needed to fix it into one file for you to send. Nothing is sent
       anywhere by hamdash itself.</p>

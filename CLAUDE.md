@@ -351,6 +351,10 @@ Tagging is the trigger; the tree is the source of truth.
 2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under `## [X.Y.Z]`.
 3. Commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
+The release carries a zip per platform and `hamdash-setup-vX.Y.Z.exe`
+for Windows; the app's update check reads the release's own page, so
+nothing else needs bumping.
+
 `release.yml` runs the full CI matrix, then publishes a GitHub Release whose
 notes are that CHANGELOG section, extracted by `tools/release_notes.py`. It
 refuses to publish if the tag disagrees with `__version__`, the section is
@@ -2946,6 +2950,46 @@ arithmetic, because that is where the clock ticks.
   something up immediately afterwards.
 - LoTW has no public per-callsign page, so `links_for` has no lotw entry and
   should not grow one. Its public user-activity list is a separate feature.
+
+## Installing, upgrading, and saying there is a new version
+
+`docs/install.md` is the operator's half. Upgrading is "replace the
+program": settings, log, layout and user cards are in the home folder
+(`config.default_home()`), never in the program's, so nothing about an
+upgrade has to migrate files by hand - `normalise_layout` and `_merge`
+already read every older shape. **Measured, not assumed**: 0.5.0, 0.8.0
+and 1.0.0 were each run from a worktree on a scratch home, filled through
+their own API (config with a secret, a second radio, tile settings with
+memories, a QSO, a URL card), stopped, and the current tree started on the
+same home - all of it identical, nothing in the log. Downgrading is not
+tested and the page says so.
+
+- **The zip was the hard part, not the data.** Its files sit at the root,
+  so Explorer's Extract All names the folder after the zip *with the
+  version in it*, and a desktop shortcut quietly goes on opening the old
+  version. Extracting over the top leaves files the new version dropped.
+  Hence the installer.
+- **`installer/hamdash.iss`: the `AppId` GUID is permanent.** It is how a
+  new installer finds the old install; change it and every user gets a
+  second copy beside the first. Per-user (`PrivilegesRequired=lowest`,
+  `%LOCALAPPDATA%\Programs\hamdash`) so neither install nor upgrade asks
+  for an administrator. `[InstallDelete]` clears `{app}\_internal` first,
+  so a bundled card removed in a new version does not linger in the Cards
+  menu. **Nothing may add the settings folder to `[UninstallDelete]`.**
+  `build.yml` installs, smoke-tests, upgrades over a planted stale file and
+  uninstalls on every Windows build; `release.yml` publishes the `.exe`
+  as-is rather than zipping it.
+- **The update check (`services/updates.py`) is on by default** and that
+  is a judgement: it is outbound, one GET of GitHub's public "latest
+  release" with no query and nothing from the config, like the NOAA
+  fetches - not a listener, so the "nothing new widens the surface" rule
+  is about something else. `updates.check: false` means no request at
+  all. Daily, on its own thread, an hour later after a failure; the
+  endpoints never wait on GitHub (invariant 4). **Only `run.py` starts
+  it** (`check_updates=True`) - every test builds an app and none may
+  call GitHub, which a test checks by thread name. It says and links;
+  it does not download or install anything, and should not: an unsigned
+  binary replacing itself is the thing SmartScreen exists to stop.
 
 ## Problem reports
 

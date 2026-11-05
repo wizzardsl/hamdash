@@ -20,7 +20,16 @@ runs as it stands — copy it into your cards folder, press **Rescan**, and it
 is there. It carries a `CLAUDE.md` if you would like Claude Code to write it
 with you.
 
-## Run it
+## Install it
+
+Download it from the
+[releases page](https://github.com/wizzardsl/hamdash/releases/latest):
+**`hamdash-setup-…exe`** on Windows, a zip on macOS and Linux.
+[Installing and upgrading](docs/install.md) walks through it step by step.
+Upgrading never touches your settings, log or board, and
+**Settings → Help** says when there is a newer version.
+
+## Run it from source
 
 ```bash
 pip install -r requirements.txt

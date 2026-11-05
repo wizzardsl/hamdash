@@ -401,7 +401,8 @@ def main() -> int:
 
     shell = {"native": not args.browser}
     app, shutdown = create_app(cfg, host=args.host, port=port,
-                               native=lambda: shell["native"], on_quit=quit_now)
+                               native=lambda: shell["native"], on_quit=quit_now,
+                               check_updates=True)
     # The page the window opens, or that is printed for the
     # operator - the bind address may be a wildcard, which is
     # not something a browser can go to.

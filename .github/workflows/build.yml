@@ -74,6 +74,60 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a python tools/smoke_frozen.py --window
 
+      # The installer, from the build above. Inno Setup is on the Windows
+      # runner image; installed from Chocolatey if an image ever drops it.
+      - name: Installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          $v = python -c "import hamdash; print(hamdash.__version__)"
+          & $iscc /Qp "/DAppVersion=$v" installer\hamdash.iss
+          if ($LASTEXITCODE) { throw "ISCC failed" }
+
+      # What an operator does, done silently: install, run it, install a
+      # newer one over it, uninstall. An upgrade must clear stale files and
+      # keep the settings; an uninstall must keep the settings too.
+      - name: Test the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "$env:LOCALAPPDATA\Programs\hamdash"
+          $settings = "$env:APPDATA\hamdash"
+          $quiet = '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER'
+          Start-Process dist\hamdash-setup.exe -ArgumentList ($quiet + '/LOG=install1.log') -Wait
+          if (-not (Test-Path "$dir\hamdash.exe")) { throw "not installed at $dir" }
+          $env:HAMDASH_DIST = $dir
+          python tools/smoke_frozen.py
+          if ($LASTEXITCODE) { throw "the installed copy failed the smoke test" }
+
+          New-Item -ItemType Directory -Force $settings | Out-Null
+          Set-Content "$settings\keep-me.txt" "settings survive"
+          Set-Content "$dir\_internal\stale-from-old-version.txt" "should go"
+          Start-Process dist\hamdash-setup.exe -ArgumentList ($quiet + '/LOG=install2.log') -Wait
+          if (Test-Path "$dir\_internal\stale-from-old-version.txt") { throw "upgrade left an old file behind" }
+          if (-not (Test-Path "$dir\hamdash.exe")) { throw "upgrade removed the app" }
+          if (-not (Test-Path "$settings\keep-me.txt")) { throw "upgrade touched the settings" }
+          python tools/smoke_frozen.py
+          if ($LASTEXITCODE) { throw "the upgraded copy failed the smoke test" }
+
+          Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\hamdash.exe") { throw "uninstall left the app" }
+          if (-not (Test-Path "$settings\keep-me.txt")) { throw "uninstall removed the settings" }
+          Write-Host "installed, upgraded and uninstalled; settings kept throughout"
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: hamdash-windows-x64-setup
+          path: dist/hamdash-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
       - uses: actions/upload-artifact@v7
         with:
           name: hamdash-${{ matrix.label }}

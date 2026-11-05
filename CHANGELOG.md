@@ -7,6 +7,19 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ## [Unreleased]
 
 ### Added
+- **A Windows installer.** `hamdash-setup-….exe` installs hamdash for you
+  (no administrator needed) with a Start-menu entry and, if you like, a
+  desktop shortcut. To upgrade, run the newer one: it replaces the old copy
+  in place, closes hamdash first if it is running, and keeps your settings.
+  Uninstalling keeps your settings too.
+- **hamdash says when there is a new version.** Settings → Help shows
+  which version you have and, once a day, checks GitHub for a newer one,
+  with a button to get it. It sends nothing but the request itself, and
+  can be switched off there.
+- **Installing and upgrading, written down.** A step-by-step page for
+  Windows, macOS and Linux, including where your settings live and how to
+  back them up. Upgrades from 0.5, 0.8 and 1.0 were tested: everything
+  came through.
 - **A Linux download.** Releases carry a `linux-x64` build beside Windows
   and macOS, with its own desktop window (GTK). It needs WebKitGTK on the
   machine, which a desktop Linux with GNOME or a GTK browser already has.

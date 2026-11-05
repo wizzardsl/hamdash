@@ -6,6 +6,7 @@
 
 | | |
 |---|---|
+| [Installing and upgrading](install.md) | Windows, macOS and Linux step by step; where your settings live and why upgrading keeps them |
 | [Using the board](board.md) | moving cards, stacking them into tabs, popping one out into its own window, tile settings, themes |
 | [Radios](radios.md) | flrig, OmniRig, Hamlib and rigctld; VFOs, split, the meter, and the rules the transmitter follows |
 | [Logging and callsigns](logging.md) | the log, syncing with LoTW, QRZ and World Radio League, lookups, grids and flags |

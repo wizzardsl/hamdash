@@ -1475,7 +1475,7 @@
       p.hidden = p.dataset.panel !== name;
     });
     $('.tab-body').scrollTop = 0;
-    if (name === 'help') diagRigs();
+    if (name === 'help') { diagRigs(); refreshUpdates(); }
   }
   document.querySelectorAll('#settings-sheet .tab').forEach((b) => {
     b.onclick = () => showTab(b.dataset.tab);
@@ -1512,6 +1512,7 @@
     $('#s-pskr-enabled').checked = !!(config.pskreporter || {}).enabled;
     refreshPskr();
     $('#s-debug').checked = !!(config.debug || {}).enabled;
+    $('#s-upd-check').checked = (config.updates || {}).check !== false;
     gridNote('');
     showTab('station');
   }
@@ -1574,6 +1575,43 @@
    * cannot say, because the commonest reason it is not - no callsign or
    * locator in the Station tab - is somewhere else in the sheet.
    */
+  /**
+   * Is there a newer hamdash? The host asks GitHub once a day on its own
+   * thread; this only reads the last answer, so opening Help never waits
+   * on the network. "Check now" wakes the checker and reads again shortly.
+   */
+  async function refreshUpdates() {
+    const el = $('#s-upd-status');
+    const get = $('#s-upd-get');
+    if (!el) return;
+    let u;
+    try { u = await HD.get('/api/updates'); } catch (e) { return; }
+    let msg;
+    let kind = '';
+    get.hidden = true;
+    if (u.newer) {
+      msg = `hamdash ${u.latest} is available. You have ${u.current}.`;
+      kind = 'good';
+      get.href = u.url;
+      get.hidden = false;
+    } else if (!u.enabled && !u.checked) {
+      msg = `You have hamdash ${u.current}. Checking is off.`;
+    } else if (u.error) {
+      msg = `You have hamdash ${u.current}. Could not check: ${u.error}`;
+    } else if (u.checked) {
+      msg = `You have hamdash ${u.current}, the latest.`;
+    } else {
+      msg = `You have hamdash ${u.current}. Not checked yet.`;
+    }
+    el.textContent = msg;
+    el.className = `sheet-note ${kind}`.trim();
+  }
+  $('#s-upd-now').onclick = async () => {
+    $('#s-upd-status').textContent = 'Checking…';
+    try { await HD.post('/api/updates/check', {}); } catch (e) { /* shown below */ }
+    setTimeout(refreshUpdates, 4000);
+  };
+
   async function refreshPskr() {
     const el = $('#s-pskr-status');
     if (!el) return;
@@ -1786,6 +1824,7 @@
       }, 'password', '#s-lk-pass'),
       debug: { enabled: $('#s-debug').checked },
       pskreporter: { enabled: $('#s-pskr-enabled').checked },
+      updates: { check: $('#s-upd-check').checked },
       wsjtx: {
         enabled: $('#s-wx-enabled').checked,
         bind: $('#s-wx-bind').value.trim() || '127.0.0.1',
