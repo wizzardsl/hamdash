@@ -492,15 +492,20 @@ def main() -> int:
         # raises here - before the window exists. The default size is
         # fine then: webview.start() fails the same way and the board
         # carries on in the browser.
-        screens = [(s.width, s.height) for s in webview.screens]
+        found = list(webview.screens)
     except Exception:                                   # noqa: BLE001
-        screens = []
+        found = []
+    screens = [(s.width, s.height) for s in found]
     width, height, least_w, least_h = window_size(screens)
     logging.getLogger("hamdash").info(
         "window %dx%d on screen %s", width, height,
         "x".join(map(str, screens[0])) if screens else "unknown")
+    # Handed the screen, pywebview centres the window on it itself. Without
+    # one, WinForms' own CenterScreen put a 921x691 window at (165, 160)
+    # on a 1024x768 runner - the right size, still off the edge.
     window = webview.create_window("hamdash", url, width=width, height=height,
-                                   min_size=(least_w, least_h), js_api=popouts)
+                                   min_size=(least_w, least_h), js_api=popouts,
+                                   screen=found[0] if found else None)
     native_windows.attach_main(window)
     window.events.closed += close_once
     try:

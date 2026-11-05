@@ -3230,6 +3230,10 @@ it into the GitHub bug form, which is pre-filled by the button.
   `webview.screens` starts the toolkit, so with none it raises before
   the window exists: caught, default size, and `start()` then falls
   back to the browser as before. The chosen size is in the log.
+  **Size is half of it; the screen goes to `create_window` too.** Left
+  to WinForms' `CenterScreen`, the right-sized window still opened at
+  (165, 160) on the runner, off the edge; handed the screen, pywebview
+  centres it itself - (51, 38) on 1024x768, measured with `xwininfo`.
 
 ## Extending it: cards
 

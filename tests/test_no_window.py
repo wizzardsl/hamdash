@@ -137,6 +137,15 @@ class TestTheWindowFitsTheScreen(unittest.TestCase):
         self.assertIn("webview.screens", main)
         self.assertNotIn("width=1440", main)
 
+    def test_it_is_placed_on_that_screen(self):
+        """Left to WinForms' CenterScreen, the right-sized window still
+        opened off the edge of the runner's screen."""
+        for node in ast.walk(_main()):
+            if isinstance(node, ast.Call) and ast.unparse(node.func) == "webview.create_window":
+                self.assertIn("screen", [k.arg for k in node.keywords])
+                return
+        self.fail("main() creates no window")
+
 
 if __name__ == "__main__":
     unittest.main()
