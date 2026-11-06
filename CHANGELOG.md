@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.5.0]
+
 ### Added
 - **Click an FT8 or FT4 decode to pick that station.** It is looked up, the
   map cards draw the path, and the Logbook fills in the callsign, the grid
