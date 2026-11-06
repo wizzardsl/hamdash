@@ -53,6 +53,7 @@ WizardStyle=modern
 ; close, which is what unkeys a radio), rather than failing half way.
 CloseApplications=yes
 RestartApplications=no
+SetupIconFile=..\hamdash\static\icon\hamdash.ico
 UninstallDisplayIcon={app}\hamdash.exe
 UninstallDisplayName=hamdash
 SetupLogging=yes

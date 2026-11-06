@@ -14,6 +14,9 @@ The layout below has to match `config.bundle_root()`, which resolves
 `sys._MEIPASS`:  <root>/plugins and <root>/hamdash/static.
 """
 
+import sys
+
+
 datas = [
     ("hamdash/static", "hamdash/static"),   # board, client js, themes
     ("plugins", "plugins"),                 # bundled cards
@@ -68,6 +71,10 @@ exe = EXE(
     # which is that sys.stdout is None and every print() would otherwise
     # raise. Diagnostics go to <config dir>/hamdash.log instead.
     console=False,
+    # tools/make_icon.py draws it. Windows only: a macOS or Linux build of
+    # this onedir has no use for an .ico, and PyInstaller would try to
+    # convert it (which needs Pillow) for nothing.
+    icon="hamdash/static/icon/hamdash.ico" if sys.platform == "win32" else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

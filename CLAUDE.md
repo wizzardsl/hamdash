@@ -3037,6 +3037,29 @@ tested and the page says so.
   it does not download or install anything, and should not: an unsigned
   binary replacing itself is the thing SmartScreen exists to stop.
 
+## The icon
+
+`tools/make_icon.py` draws it and writes `hamdash/static/icon/` (the `.ico`
+for Windows, PNGs for the window, the phone and the browser tab), which
+is committed so no build installs anything. An A-frame mast radiating
+amber (--accent, transmit) and teal (--signal, receive) on the board's
+--bg; at 16-24 px one bolder wave a side, because two thin arcs there
+are a smudge. Signed distance fields in numpy, PNG and ICO written by
+hand - no Pillow. `tests/test_icon.py` rebuilds it and fails if the
+committed files differ, so edit the script and rerun it, never the files.
+
+- **The spec sets it on Windows only.** A macOS or Linux onedir has no
+  use for an `.ico`, and PyInstaller would want Pillow to convert it.
+  The installer's own `SetupIconFile` points at the same file; the
+  shortcuts take the exe's.
+- **Linux gets it through `webview.start(icon=...)`**, which GTK applies.
+  **Do not test that with xprop on a bare Xvfb**: with no window manager
+  GTK holds the icon (`get_icon()` returns it) and never publishes
+  `_NET_WM_ICON` - a plain five-line GTK window reads "not found" too.
+- **macOS still has no `.app` bundle**, so no icon there: the download is
+  a bare binary in a folder. A `BUNDLE` in the spec and an `.icns` (the
+  script can write one) are the way, untried without a Mac.
+
 ## Problem reports
 
 Settings → Help, `services/diagnostics.py`, `/api/diag*`,
@@ -3302,7 +3325,6 @@ radios nobody here owns can send what is needed to fix them.
 - Code signing. Builds are unsigned, so Windows shows SmartScreen and macOS
   needs right-click → Open. Needs a certificate and an Apple developer
   account; nothing in the repo is blocking it.
-- An icon. `hamdash.spec` sets none, so the binary carries PyInstaller's.
 - Bundling Hamlib is **not** on this list any more, and that is a decision
   rather than an omission: `tools/get_hamlib.py` fetches it from the Hamlib
   project on request. `rigctl` and `rigctld` are GPL and hamdash is MIT, so

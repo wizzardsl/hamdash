@@ -33,7 +33,7 @@ from pathlib import Path
 
 from hamdash import __version__
 from hamdash.app import create_app, reachable
-from hamdash.config import Config
+from hamdash.config import BUNDLED_STATIC, Config
 from hamdash import windows as native_windows
 from hamdash.services import diagnostics
 
@@ -510,7 +510,9 @@ def main() -> int:
     native_windows.attach_main(window)
     window.events.closed += close_once
     try:
-        webview.start()
+        # The window's own icon on Linux (GTK and Qt read it); Windows
+        # takes the exe's, which the spec gives it.
+        webview.start(icon=str(BUNDLED_STATIC / "icon" / "hamdash-512.png"))
     except Exception as exc:                            # noqa: BLE001
         # No GUI toolkit pywebview can use - on Linux, GTK or Qt with
         # Python bindings, which a pip-installed pywebview does not bring.

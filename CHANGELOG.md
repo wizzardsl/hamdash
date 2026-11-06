@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **An icon.** An antenna mast sending and receiving - amber and teal, the
+  board's own colours - on the program, the installer, the Start menu and
+  desktop shortcuts, the window, and the browser tab.
+
 ### Fixed
 - **The Help tab no longer says nothing is ever sent.** Since problem reports
   can be sent, it says what is true: nothing leaves your computer until you

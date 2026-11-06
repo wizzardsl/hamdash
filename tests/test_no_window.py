@@ -83,7 +83,7 @@ class TestTheShellCanChangeItsMind(unittest.TestCase):
 class TestMainCarriesOn(unittest.TestCase):
     def test_a_window_that_cannot_open_is_caught(self):
         for node in ast.walk(_main()):
-            if isinstance(node, ast.Try) and "webview.start()" in ast.unparse(
+            if isinstance(node, ast.Try) and "webview.start(" in ast.unparse(
                     ast.Module(body=node.body, type_ignores=[])):
                 (handler,) = node.handlers
                 self.assertTrue(_sets_browser(handler),
