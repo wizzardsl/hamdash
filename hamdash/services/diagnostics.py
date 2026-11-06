@@ -470,3 +470,96 @@ def write_report(home: Path, data: bytes, now: float | None = None) -> Path:
         except OSError:
             pass
     return path
+
+
+# ---- sending a report ---------------------------------------------------------
+# For operators without a GitHub account: Send uploads the zip to the
+# project's report service (tools/report-service, a Cloudflare Worker),
+# which files it as an issue in a private repository and answers with a
+# reference to quote. Only ever when the operator presses Send, after the
+# sheet has said what goes; nothing here runs by itself.
+REPORT_SERVICE = "https://hamdash-reports.wizzardsl.workers.dev/report"
+SEND_TIMEOUT = (10, 300)        # connect, then a slow uplink for 25 MB
+NOTE_CAP = 4000
+
+
+class SendError(Exception):
+    """The service refused or could not be reached; the text says why."""
+
+
+def send_report(path: Path, info: dict, note: str = "",
+                url: str = REPORT_SERVICE, post=None) -> str:
+    """Upload one report zip and return the reference the service gave.
+
+    `info` is {"version", "platform", "radio"}, sent as headers beside the
+    zip so the issue's title says what it is; the note is the operator's
+    own words. Header values are URL-encoded - a note has newlines and
+    accents, and a header may not."""
+    from urllib.parse import quote
+    if post is None:
+        import requests
+        post = requests.post
+    headers = {"Content-Type": "application/zip",
+               "User-Agent": f"hamdash/{info.get('version', '?')}"}
+    for key in ("version", "platform", "radio"):
+        if info.get(key):
+            headers[f"X-Hamdash-{key.title()}"] = quote(str(info[key])[:200])
+    if note.strip():
+        headers["X-Hamdash-Note"] = quote(note.strip()[:NOTE_CAP])
+    try:
+        with open(path, "rb") as f:
+            r = post(url, data=f, headers=headers, timeout=SEND_TIMEOUT)
+    except OSError as exc:
+        raise SendError(f"could not reach the report service ({exc})") from exc
+    except Exception as exc:                            # noqa: BLE001 - requests' own
+        raise SendError(f"could not reach the report service ({exc})") from exc
+    try:
+        body = r.json()
+    except ValueError:
+        body = {}
+    if r.status_code != 200 or not body.get("ok") or not body.get("reference"):
+        raise SendError(body.get("error")
+                        or f"the report service answered {r.status_code}")
+    return str(body["reference"])
+
+
+class Sender:
+    """One upload at a time, off the request thread (invariant 4): a 25 MB
+    report on a slow uplink is minutes, and a waitress thread is scarce.
+    The page asks `status()` until the state is no longer "sending"."""
+
+    def __init__(self, send=None) -> None:
+        self._send = send       # None: send_report, looked up when it runs
+        self._lock = threading.Lock()
+        self._state = {"state": "idle", "reference": "", "error": "",
+                       "name": ""}
+
+    def status(self) -> dict:
+        with self._lock:
+            return dict(self._state)
+
+    def start(self, path: Path, info: dict, note: str = "") -> bool:
+        with self._lock:
+            if self._state["state"] == "sending":
+                return False
+            self._state = {"state": "sending", "reference": "", "error": "",
+                           "name": Path(path).name}
+        threading.Thread(target=self._run, args=(path, info, note),
+                         daemon=True, name="report-send").start()
+        return True
+
+    def _run(self, path: Path, info: dict, note: str) -> None:
+        try:
+            ref = (self._send or send_report)(path, info, note)
+            update = {"state": "sent", "reference": ref}
+            logging.getLogger("hamdash").info(
+                "problem report %s sent as %s", Path(path).name, ref)
+        except SendError as exc:
+            update = {"state": "failed", "error": str(exc)}
+        except Exception as exc:                        # noqa: BLE001 - said
+            update = {"state": "failed", "error": f"{type(exc).__name__}: {exc}"}
+        if update["state"] == "failed":
+            logging.getLogger("hamdash").warning(
+                "problem report %s not sent: %s", Path(path).name, update["error"])
+        with self._lock:
+            self._state.update(update)

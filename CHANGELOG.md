@@ -16,6 +16,12 @@ versions follow [SemVer](https://semver.org/). The version of record is
   weak call to you, is decoded by assuming that part of the message. Such
   lines are marked `a1` (CQ) or `a2` (your call) and shown in italics, and
   are not sent to PSK Reporter.
+- **Send a problem report without a GitHub account.** Settings → Help →
+  **Send a problem report**: write a line about what went wrong, see what
+  the report holds, confirm, and get a reference to quote. It goes to the
+  developers privately and is deleted after 90 days; nothing is sent
+  unless you press Send. Saving the zip and posting it on GitHub still
+  works, under *Other ways*.
 - **Popped-out windows remember where they were** across a restart, and a
   window last seen on a monitor that is no longer connected opens on one
   that is.

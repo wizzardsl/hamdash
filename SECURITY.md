@@ -52,6 +52,19 @@ installing any other program. Read cards before you install them.
 - A transmission nobody is holding is taken off the air by a watchdog, and a
   clean exit unkeys the radio.
 
+## What hamdash sends, and when
+
+- **Problem reports**, only when you press **Send a problem report** in
+  Settings → Help and confirm. The report (logs, versions, radio and card
+  settings - with your callsign and grid, without passwords or API keys)
+  goes to the project's report service, a Cloudflare Worker
+  (`tools/report-service/`), which stores it in a private GitHub repository
+  only the maintainers can read and deletes it after 90 days.
+- **The update check**: once a day, a request to GitHub for the latest
+  release number, with nothing from your settings. Off in Settings → Help.
+- Everything else - lookups, spots, space weather, PSK Reporter, logbook
+  sync - goes only to the services you set up, as their own pages say.
+
 ## Transmitting
 
 You are the licensed operator and the control operator. hamdash will key your

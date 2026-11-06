@@ -277,13 +277,22 @@ html, body {
    offering a list was lost. */
 .sheet select { max-width: 100%; }
 #tile-fields select { display: block; width: 100%; margin-top: 3px; }
-.sheet input[type="text"], .sheet input:not([type]) {
+.sheet input[type="text"], .sheet input:not([type]), .sheet textarea {
   display: block; width: 100%; margin-top: 3px;
   font: inherit; color: var(--ink);
   background: var(--bg); border: 1px solid var(--rule);
   border-radius: var(--radius); padding: 6px 8px;
 }
 .sheet-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.sheet textarea { resize: vertical; min-height: 3.5em; }
+/* Sending a report: what goes is said in a box of its own before anything
+   leaves, because it carries the operator's callsign and grid. */
+.report-confirm { border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 8px 10px; margin: 0 0 8px; background: var(--bg); }
+.report-confirm[hidden] { display: none; }
+.report-other { margin-top: 6px; }
+.report-other summary { cursor: pointer; color: var(--muted); font-size: 12px;
+  margin-bottom: 8px; }
 
 /* One radio. The live one is marked by a stripe rather than by a colour, so
    it reads at a glance without a legend. */

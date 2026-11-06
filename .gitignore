@@ -36,3 +36,6 @@ desktop.ini
 # A note for picking the work up on another machine: describes this
 # station and its accounts, so it stays local and out of the public repo.
 HANDOFF.md
+
+# Wrangler (tools/report-service): local cache, names the Cloudflare account
+.wrangler/

@@ -9,9 +9,12 @@ body:
         backend**, and **what you expected instead**. The form asks for them
         so we do not spend a round trip getting there.
 
-        **The quickest way to send the first two:** in hamdash open
-        **Settings → Help**, press **Make a problem report**, and drag the
-        zip it saves into the box below. If the problem is with a radio,
+        **No GitHub account?** In hamdash, **Settings → Help → Send a
+        problem report** sends it to us directly - no need for this form.
+
+        **The quickest way to send the first two here:** in hamdash open
+        **Settings → Help**, open **Other ways**, press **Save a problem
+        report**, and drag the zip it saves into the box below. If the problem is with a radio,
         tick **Debug logging** and press **Test my radio** first - that
         records what the radio said, which is usually the whole answer.
   - type: textarea

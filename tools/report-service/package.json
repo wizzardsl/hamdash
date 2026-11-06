@@ -1,0 +1,6 @@
+{
+  "name": "hamdash-report-service",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that receives hamdash problem reports. See SETUP.md."
+}

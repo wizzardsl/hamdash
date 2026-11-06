@@ -1566,6 +1566,41 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                            __version__, sys.platform,
                            (rig.active() or {}).get("backend", "")))
 
+    sender = diagnostics.Sender()
+
+    def _report_meta() -> dict:
+        import platform
+        r = rig.active() or {}
+        radio = " via ".join(x for x in (str(r.get("name") or ""),
+                                          str(r.get("backend") or "")) if x)
+        return {"version": __version__,
+                "platform": f"{platform.system()} {platform.release()}".strip(),
+                "radio": radio}
+
+    @app.post("/api/diag/send")
+    def diag_send():
+        """Make a report and send it to the project, for an operator with
+        no GitHub account. Only when they press Send - the sheet says what
+        goes first - and only from this machine, like making one. The
+        upload runs on its own thread; GET says how it went."""
+        if not _from_here():
+            return _not_here()
+        body = request.get_json(silent=True) or {}
+        data = diagnostics.build_report(cfg.home, _report_info(),
+                                        secrets=_known_secrets())
+        path = diagnostics.write_report(cfg.home, data)
+        if not sender.start(path, _report_meta(), str(body.get("note") or "")):
+            return jsonify(ok=False, error="a report is already being sent"), 409
+        LOG.info("problem report %s (%d kB) sending", path.name, len(data) // 1024)
+        return jsonify({**sender.status(), "ok": True, "name": path.name,
+                        "size": len(data), "folder": str(path.parent)})
+
+    @app.get("/api/diag/send")
+    def diag_send_status():
+        if not _from_here():
+            return _not_here()
+        return jsonify(sender.status())
+
     @app.get("/api/diag/report/<name>")
     def diag_report_file(name):
         if not _from_here():

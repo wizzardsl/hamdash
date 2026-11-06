@@ -3041,9 +3041,32 @@ tested and the page says so.
 
 Settings → Help, `services/diagnostics.py`, `/api/diag*`,
 `tests/test_diagnostics.py`. Built so that people running hamdash on
-radios nobody here owns can send what is needed to fix them. **Nothing
-is sent by hamdash**: the report is a zip on disk and the operator drags
-it into the GitHub bug form, which is pre-filled by the button.
+radios nobody here owns can send what is needed to fix them.
+
+- **Send is the main path, because most hams have no GitHub account.**
+  The issue form needs one, and a link cannot carry a file, so the old
+  path was account, sign in, find the zip, drag it in - verified, and
+  too much. **Send a problem report** builds the zip and uploads it to
+  `tools/report-service` (a Cloudflare Worker on the free plan), which
+  streams it to a release asset in the private `wizzardsl/hamdash-reports`
+  and opens an issue there; the operator gets a reference (`HD-XXXXX`).
+  **Fetch one with** `gh release download reports-YYYY-MM -R
+  wizzardsl/hamdash-reports -p HD-XXXXX.zip` - the issue says exactly.
+  `tools/report-service/SETUP.md` is how it was set up.
+  **Streamed, not committed**: the contents API wants base64 in JSON, and
+  10 ms of Worker CPU cannot encode a large zip; passing the body through
+  to uploads.github.com costs none. **The app holds no secret** (anything
+  in a download can be extracted), so the guards are the 25 MB cap, a zip
+  check, a per-address rate limit and the repository being private. The
+  GitHub key is a fine-grained token for that repository only, held as a
+  Cloudflare secret; it expires after a year and uploads stop until it
+  is renewed (SETUP.md step 2 and 6). Zips older than 90 days are
+  deleted by the Worker's daily cron; issues stay.
+  **Only on Send, after the confirm box says what goes** (callsign and
+  grid included), and only from this machine. The upload runs on
+  `diagnostics.Sender`'s thread, never a request thread (invariant 4);
+  a copy stays on disk, so a failure loses nothing.
+  `tests/test_report_send.py`, `tests/js/report-worker.test.js`.
 
 - **The stock `RotatingFileHandler` drops every record on Windows while
   it cannot rename** - something holding the file open, such as

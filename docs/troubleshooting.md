@@ -11,11 +11,15 @@ Where to look first, and the failure modes that are worth knowing about before t
 
 ## If something goes wrong
 
-**The quickest way to get help:** open **Settings → Help**, press **Make a
-problem report**, then **Open a GitHub issue** and drag the zip it saved
-into the issue. If the trouble is with a radio, tick **Debug logging**, save,
-and press **Test my radio** before you make the report — that records what
-the radio actually said, which is usually the whole answer.
+**The quickest way to get help:** open **Settings → Help**, write a line
+about what went wrong, and press **Send a problem report**. It says what is
+in the report before anything leaves, then gives you a reference - quote it
+if you write to us. No account is needed. If the trouble is with a radio,
+tick **Debug logging**, save, and press **Test my radio** first — that
+records what the radio actually said, which is usually the whole answer.
+
+With a GitHub account you can instead **Save a problem report** (under
+*Other ways*), open a GitHub issue and drag the zip into it.
 
 - **Debug logging** writes everything hamdash says to the radio, and what
   came back, to `hamdash-debug-YYYY-MM-DD.log` files beside the main log.
@@ -28,8 +32,11 @@ the radio actually said, which is usually the whole answer.
   radios, sound devices and cards, saved under `<config dir>/reports` (the
   newest five are kept). Passwords and API keys are taken out; your
   callsign, grid and the stations you have looked up are still in the logs,
-  so read it first if that matters to you. hamdash sends it nowhere itself,
-  and it can only be made on the machine hamdash runs on.
+  so read it first if that matters to you. It is sent only when you press
+  **Send** and confirm, to the project's report service, which keeps it in a
+  private place only the developers can read and deletes it after 90 days.
+  A copy stays in the reports folder either way. Reports can only be made
+  or sent from the machine hamdash runs on.
 
 There is a log: `<config dir>/hamdash.log`. It rolls over at 1 MB and keeps
 the five before it (`hamdash.log.1` to `.5`). It records the Python and

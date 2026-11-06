@@ -347,17 +347,37 @@
       changes a setting and never transmits.</p>
     <pre class="diag-out mono" id="s-diag-out" hidden></pre>
     <h3>Report a problem</h3>
+    <label>What went wrong? <span class="sheet-note">(optional, but it helps)</span>
+      <textarea id="s-report-what" rows="3" maxlength="4000"
+                placeholder="What you were doing, and what happened instead"></textarea></label>
     <div class="row-btns">
-      <button class="btn btn-quiet" id="s-report-make" type="button">Make a problem report</button>
-      <button class="btn btn-quiet" id="s-report-folder" type="button" hidden>Open the folder</button>
-      <a class="btn btn-quiet" id="s-report-download" hidden>Download it</a>
-      <button class="btn btn-quiet" id="s-report-issue" type="button" hidden>Open a GitHub issue</button>
+      <button class="btn" id="s-report-send" type="button">Send a problem report</button>
     </div>
-    <p class="sheet-note" id="s-report-note"></p>
-    <p class="sheet-note">The report holds the last two days of logs, your
-      versions, radios, sound devices and cards. Passwords and API keys are
-      taken out; your callsign, grid and the stations you have looked up are
-      still in the logs. Open a GitHub issue and drag the zip into it.</p>
+    <div class="report-confirm" id="s-report-confirm" hidden>
+      <p class="sheet-note">This sends the last two days of logs, your
+        versions, radio settings, sound devices and cards to the hamdash
+        developers - which includes <strong>your callsign and grid</strong>,
+        and the stations you have looked up. Passwords and API keys are taken
+        out first. It is kept privately and deleted after 90 days.</p>
+      <div class="row-btns">
+        <button class="btn" id="s-report-yes" type="button">Send it</button>
+        <button class="btn btn-quiet" id="s-report-no" type="button">Cancel</button>
+      </div>
+    </div>
+    <p class="sheet-note" id="s-report-sent" aria-live="polite"></p>
+    <details class="report-other">
+      <summary>Other ways: save it, or post it on GitHub</summary>
+      <div class="row-btns">
+        <button class="btn btn-quiet" id="s-report-make" type="button">Save a problem report</button>
+        <button class="btn btn-quiet" id="s-report-folder" type="button" hidden>Open the folder</button>
+        <a class="btn btn-quiet" id="s-report-download" hidden>Download it</a>
+        <button class="btn btn-quiet" id="s-report-issue" type="button" hidden>Open a GitHub issue</button>
+      </div>
+      <p class="sheet-note" id="s-report-note"></p>
+      <p class="sheet-note">Saved, the report is a zip in hamdash's reports
+        folder. With a GitHub account you can open an issue and drag the zip
+        into it.</p>
+    </details>
   </section>
   </div>
 

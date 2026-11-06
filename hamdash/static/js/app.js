@@ -1052,6 +1052,49 @@
       note.className = 'sheet-note warn';
     }
   };
+  // Send: one press, a confirmation that says what goes, then the reference.
+  // The upload runs on the host's own thread, so this polls until it is done.
+  $('#s-report-send').onclick = () => {
+    $('#s-report-confirm').hidden = false;
+    $('#s-report-send').disabled = true;
+    $('#s-report-sent').textContent = '';
+  };
+  $('#s-report-no').onclick = () => {
+    $('#s-report-confirm').hidden = true;
+    $('#s-report-send').disabled = false;
+  };
+  $('#s-report-yes').onclick = async () => {
+    const out = $('#s-report-sent');
+    $('#s-report-confirm').hidden = true;
+    out.className = 'sheet-note';
+    out.textContent = 'Gathering logs and settings, then sending…';
+    try {
+      await saveSettings({ quiet: true });
+      let s = await HD.post('/api/diag/send', { note: $('#s-report-what').value });
+      const kb = Math.max(1, Math.round((s.size || 0) / 1024));
+      out.textContent = `Sending the report (${kb} kB)…`;
+      while (s.state === 'sending') {
+        await new Promise((r) => setTimeout(r, 1000));
+        s = await HD.get('/api/diag/send');
+      }
+      if (s.state === 'sent') {
+        out.className = 'sheet-note good';
+        out.textContent = `Sent - thank you. Your reference is ${s.reference}; `
+                        + 'mention it if you write to us about this problem.';
+        $('#s-report-what').value = '';
+      } else {
+        out.className = 'sheet-note warn';
+        out.textContent = `Not sent: ${s.error}. The report is saved on this `
+                        + 'computer, so nothing is lost - try again later, or '
+                        + 'use "Other ways" below.';
+      }
+    } catch (e) {
+      out.className = 'sheet-note warn';
+      out.textContent = e.message;
+    } finally {
+      $('#s-report-send').disabled = false;
+    }
+  };
   $('#s-report-folder').onclick = async () => {
     try { await HD.post('/api/diag/reveal', {}); } catch (e) {
       $('#s-report-note').textContent = e.message;
