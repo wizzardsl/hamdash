@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.6.0]
+
 ### Added
 - **hamdash is a proper Mac app.** The macOS download is now **hamdash.app**,
   with its icon, to drag into Applications - it was a bare program in a
