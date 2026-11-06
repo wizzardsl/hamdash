@@ -6,7 +6,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
-## [1.6.1]
+## [1.6.2]
+
+1.6.1 was tagged but never released: a test caught the last fix below
+on the release run. Everything meant for 1.6.1 is here.
 
 ### Fixed
 - **On a phone, the Decoder keeps decoding FT8 and FT4 while you look at
@@ -20,6 +23,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - **A slow answer about this computer's own network addresses can no longer
   overwrite a newer one**, which could briefly make stopping hamdash or
   making a problem report refuse a request from this machine.
+- **In its first minute after the computer starts, hamdash now recognises
+  requests from the computer's own network address.** Until then it
+  treated them as coming from elsewhere, so stopping it or making a
+  problem report from its own network address was refused.
 
 ## [1.6.0]
 
