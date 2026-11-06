@@ -45,7 +45,11 @@ _local = threading.local()
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 OWN_TTL = 60.0          # how long the machine's own addresses are trusted
 OWN_WAIT = 2.0          # how long a request may wait to learn them
-_own = {"at": 0.0, "addrs": set(), "busy": False, "gen": 0}
+# "at" starts at minus infinity, not 0: the clock counts from boot, so on
+# a machine up for under OWN_TTL a 0 read as "looked just now" and nothing
+# was ever looked up - which failed the 1.6.1 release run on a fresh VM.
+NEVER = float("-inf")
+_own = {"at": NEVER, "addrs": set(), "busy": False, "gen": 0}
 _own_lock = threading.Lock()
 
 

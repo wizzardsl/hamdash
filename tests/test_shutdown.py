@@ -230,7 +230,7 @@ class TestTheCheckNeverStalls(unittest.TestCase):
         self.saved = dict(appmod._own)
         # A new generation: any lookup an earlier test left running is
         # now stale, and must not be able to answer for this one.
-        appmod._own.update(at=0.0, addrs=set(), busy=False,
+        appmod._own.update(at=appmod.NEVER, addrs=set(), busy=False,
                            gen=appmod._own["gen"] + 1)
         self.addCleanup(appmod._own.update, self.saved)
         self.release = threading.Event()
@@ -260,6 +260,16 @@ class TestTheCheckNeverStalls(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(self.appmod.is_this_machine("192.0.2.10"),
                         "...and the next request has its answer")
+
+    def test_a_machine_just_booted_still_looks(self):
+        """The clock counts from boot. With "never looked" stored as 0, a
+        machine up for under OWN_TTL read it as fresh and never looked -
+        which failed the 1.6.1 release run on a new VM, and would leave a
+        station that just booted unable to stop itself from its LAN
+        address for a minute."""
+        with mock.patch.object(self.appmod.time, "monotonic", lambda: 5.0):
+            self.release.set()
+            self.assertTrue(self.appmod.is_this_machine("192.0.2.10"))
 
     def test_a_stale_lookup_cannot_overwrite_a_newer_one(self):
         """What failed the 1.6.0 release run: a slow lookup from an earlier
