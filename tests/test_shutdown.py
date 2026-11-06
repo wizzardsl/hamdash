@@ -228,7 +228,10 @@ class TestTheCheckNeverStalls(unittest.TestCase):
         import hamdash.app as appmod
         self.appmod = appmod
         self.saved = dict(appmod._own)
-        appmod._own.update(at=0.0, addrs=set(), busy=False)
+        # A new generation: any lookup an earlier test left running is
+        # now stale, and must not be able to answer for this one.
+        appmod._own.update(at=0.0, addrs=set(), busy=False,
+                           gen=appmod._own["gen"] + 1)
         self.addCleanup(appmod._own.update, self.saved)
         self.release = threading.Event()
         self.addCleanup(self.release.set)
@@ -257,6 +260,16 @@ class TestTheCheckNeverStalls(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(self.appmod.is_this_machine("192.0.2.10"),
                         "...and the next request has its answer")
+
+    def test_a_stale_lookup_cannot_overwrite_a_newer_one(self):
+        """What failed the 1.6.0 release run: a slow lookup from an earlier
+        test landed last and replaced the answer this one was waiting for."""
+        gen = self.appmod._own["gen"]
+        self.appmod._own["gen"] = gen + 5
+        with mock.patch.object(self.appmod.socket, "gethostbyname_ex",
+                               lambda _n: ("x", [], ["198.51.100.9"])):
+            self.appmod._resolve_own(gen)               # an old lookup
+        self.assertNotIn("198.51.100.9", self.appmod._own["addrs"])
 
 
 if __name__ == "__main__":

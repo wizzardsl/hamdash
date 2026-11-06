@@ -45,18 +45,22 @@ _local = threading.local()
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 OWN_TTL = 60.0          # how long the machine's own addresses are trusted
 OWN_WAIT = 2.0          # how long a request may wait to learn them
-_own = {"at": 0.0, "addrs": set(), "busy": False}
+_own = {"at": 0.0, "addrs": set(), "busy": False, "gen": 0}
 _own_lock = threading.Lock()
 
 
-def _resolve_own() -> None:
+def _resolve_own(gen: int) -> None:
     try:
         name = socket.gethostname()
         addrs = {name, *socket.gethostbyname_ex(name)[2]}
     except OSError:                                     # no DNS, no matter
         addrs = set()
     with _own_lock:
-        _own.update(at=time.monotonic(), addrs=addrs, busy=False)
+        # Only the newest lookup may answer: a slow one started earlier
+        # must not land afterwards and replace a newer answer - the same
+        # rule as audio.devices(), and what made the test flaky on CI.
+        if gen == _own["gen"]:
+            _own.update(at=time.monotonic(), addrs=addrs, busy=False)
 
 
 def _local_addresses() -> set[str]:
@@ -80,8 +84,10 @@ def _local_addresses() -> set[str]:
         start = not fresh and not _own["busy"]
         if start:
             _own["busy"] = True
+            _own["gen"] += 1
+            gen = _own["gen"]
     if start:
-        t = threading.Thread(target=_resolve_own, daemon=True,
+        t = threading.Thread(target=_resolve_own, args=(gen,), daemon=True,
                              name="own-addresses")
         t.start()
         t.join(OWN_WAIT)

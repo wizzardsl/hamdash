@@ -3076,7 +3076,9 @@ committed files differ, so edit the script and rerun it, never the files.
   machine's own name, which goes through local-network lookup there and
   did not return. Loopback is now decided without asking
   (`is_this_machine`), and the lookup is cached, off-thread and capped at
-  `OWN_WAIT` - the problem-report buttons run the same check.
+  `OWN_WAIT` - the problem-report buttons run the same check. Each
+  lookup carries a generation and only the newest may answer: a slow one
+  left over from earlier landing last failed the 1.6.0 release run.
 
 ## Problem reports
 
