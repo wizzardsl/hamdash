@@ -444,12 +444,14 @@ function visible() {
     if (filters.mode && r.mode !== filters.mode) return false;
     if (filters.snr !== '' && (r.snr === null || r.snr < Number(filters.snr))) return false;
     if (filters.country) {
-      const far = r.is_tx ? r.rx_dxcc : r.tx_dxcc;
+      // By name, from the callsigns (the card adds them): the feed's DXCC
+      // numbers meant nothing to read, and reports decoded here have none.
+      const far = r.is_tx ? r.rx_country : r.tx_country;
       // With no side established - a grid query watching everybody - either
       // end matching is a match.
       if (r.is_tx || r.is_rx) {
         if (far !== filters.country) return false;
-      } else if (r.tx_dxcc !== filters.country && r.rx_dxcc !== filters.country) {
+      } else if (r.tx_country !== filters.country && r.rx_country !== filters.country) {
         return false;
       }
     }
@@ -499,12 +501,12 @@ function fillChoices() {
   };
   fill('#band', uniq((r) => r.band), 'Any band', tally((r) => r.band));
   fill('#mode', uniq((r) => r.mode), 'Any mode', tally((r) => r.mode));
-  fill('#country', [...new Set(all.flatMap((r) => [r.tx_dxcc, r.rx_dxcc])
+  fill('#country', [...new Set(all.flatMap((r) => [r.tx_country, r.rx_country])
                                   .filter(Boolean))].sort(), 'Anywhere',
        // Either end counts: a report is one sighting of that country
        // however it was worked, and a station is not two because both
        // ends happen to be in the same place.
-       tally((r) => [...new Set([r.tx_dxcc, r.rx_dxcc])]));
+       tally((r) => [...new Set([r.tx_country, r.rx_country])]));
 }
 
 // ---- fetching --------------------------------------------------------------

@@ -436,6 +436,22 @@ class TestTheOtherAudioCardsStillLetGo(unittest.TestCase):
         self.assertIn("/api/stop", page[i:i + 400],
                       "a decoder parked behind a tab holds the sound card")
 
+    def test_except_ft8_and_ft4_which_have_other_readers(self):
+        """FT8 and FT4 decodes feed the PSK Reporter map and the uploader,
+        and on a phone looking at that map is exactly when the decoder is
+        hidden - so in a slot mode a hidden page neither stops nor stops
+        polling. CW, RTTY and PSK31 still let go: their text is read here
+        or nowhere."""
+        page = (CARD.parent / "decoder" / "index.html").read_text(encoding="utf-8")
+        i = page.index("HD.onVisible(")
+        handler = page[i:page.index("});", i)]
+        self.assertIn("slotMode()", handler.split("\n")[1],
+                      "a slot mode must return before the stop")
+        t = page.index("async function tick()")
+        body = page[t:page.index("\n}\n", t)]
+        self.assertLess(body.index("tickSlots()"), body.index("HD.hidden"),
+                        "a hidden FT8 page must still poll its decodes")
+
     def test_the_spectrum_stops_asking_when_hidden(self):
         page = (CARD.parent / "spectrum" / "index.html").read_text(encoding="utf-8")
         self.assertIn("HD.hidden", page,

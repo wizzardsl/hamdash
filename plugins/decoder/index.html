@@ -514,8 +514,11 @@ document.addEventListener('hamdash:units', () => {
 });
 
 async function tick() {
-  if (!running || HD.hidden) return;
+  if (!running) return;
+  // FT8 and FT4 go on decoding out of sight; the other modes do not. See
+  // the visibility handler below for why.
   if (slotMode()) return tickSlots();
+  if (HD.hidden) return;
   let d;
   try {
     d = await HD.card('decoder', `/api/text?since=${seq}&who=${WHO}`);
@@ -576,12 +579,17 @@ function applyWrap() {
 
 $('#run').onclick = () => setRunning(!running);
 
-// Behind another tab, the sound card goes back - the same release Stop does,
-// without changing what Stop is set to, so coming back resumes rather than
-// needing a press. Without this a decoder parked on a background tab holds
-// the radio's audio against WSJT-X for as long as the board is open.
+// Behind another tab, CW, RTTY and PSK31 give the sound card back - the
+// same release Stop does, without changing what Stop is set to, so coming
+// back resumes rather than needing a press. Their output is text somebody
+// reads, so out of sight they have no job, and holding the radio's audio
+// against WSJT-X for that would be the wrong trade.
+// FT8 and FT4 do not stop. Their decodes have readers that are not this
+// page - the PSK Reporter card's map and the uploader - and on a phone, where
+// only one card is on screen, looking at that map is exactly when this tile
+// is hidden. Stop is still the way to let the input go.
 HD.onVisible((on) => {
-  if (!running) return;
+  if (!running || slotMode()) return;
   if (on) { seq = 0; dseq = 0; tick(); }
   else HD.card('decoder', `/api/stop?who=${WHO}`, {}).catch(() => {});
 });

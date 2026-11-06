@@ -41,6 +41,7 @@ import time
 import mqtt
 
 from hamdash.sdk import Card
+from hamdash.services import dxcc
 from store import RETAIN, Store, band_for
 
 card = Card(__file__)
@@ -324,7 +325,7 @@ def reports():
 
     LIVE.ensure(watch, as_grid)
     LIVE.flush()                # so a spot that just arrived is in the answer
-    rows = STORE.since(watch, window)
+    rows = with_countries(STORE.since(watch, window))
     feed = LIVE.status(watch)
     return {
         "ok": True, "reports": rows, "watch": watch, "as_grid": as_grid,
@@ -333,6 +334,27 @@ def reports():
         "live": feed, "source": "pskreporter.info live feed (MQTT)",
         "error": feed.get("error", ""),
     }
+
+def with_countries(rows: list) -> list:
+    """Each end's country, from its callsign, for the Country filter.
+
+    The feed carries PSK Reporter's DXCC entity numbers ("291", "108") and
+    the filter used those - which showed the operator a list of numbers,
+    and dropped every report decoded here, which has none. A name from the
+    callsign is the same answer for both, and the one the decoder's Where
+    column and the Spots card already give. Attached when served, like
+    theirs, so a row from yesterday gets today's prefix table."""
+    seen: dict = {}
+
+    def country(call: str) -> str:
+        if call not in seen:
+            seen[call] = dxcc.for_call(call).get("country") or "" if call else ""
+        return seen[call]
+    for r in rows:
+        r["tx_country"] = country(r.get("tx") or "")
+        r["rx_country"] = country(r.get("rx") or "")
+    return rows
+
 
 def _looks_like_grid(s: str) -> bool:
     """A grid square, not a callsign. Four or six characters, no digits first.

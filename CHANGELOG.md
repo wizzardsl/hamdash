@@ -6,6 +6,16 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **On a phone, the Decoder keeps decoding FT8 and FT4 while you look at
+  another card**, so the PSK Reporter map goes on filling with what your
+  radio hears. It stopped as soon as it was out of sight. CW, RTTY and PSK31
+  still let the sound card go when nobody is looking; **Stop** is how to
+  let it go in FT8.
+- **The PSK Reporter card's Country filter keeps the stations your own
+  decoder heard.** Choosing a country hid all of them, and the list showed
+  numbers instead of country names.
+
 ## [1.6.0]
 
 ### Added

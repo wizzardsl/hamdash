@@ -1360,6 +1360,13 @@ it. Reach for a new transport only if a measurement says this one failed.
   has no job, and holding the radio's input against WSJT-X or fldigi
   for a whole board session to do it is the wrong trade. Do not
   'fix' it.
+  **FT8 and FT4 are the exception, by the operator's later call.** Their
+  decodes have readers that are not the page - the PSK Reporter card's
+  map and the uploader - and on the phone, where one card is on screen,
+  looking at that map is precisely when the decoder is hidden; it stopped
+  and the map stopped filling. So in a slot mode a hidden page keeps
+  polling and sends no `/api/stop`; CW, RTTY and PSK31 still let go. Stop
+  remains the way to hand the input back. `tests/test_rx_audio.py`.
 - **A card that loses a stream holds the device for the life of its
   process, and blames somebody else.** Reported as "something holding
   listen open again". Measured: a standalone process could open the USB
@@ -2309,7 +2316,10 @@ WSJT-X's "Enable PSK Reporter Spotting" does, from the Decoder card's
   and FT4 slots never share a start). Same exclusions as the uploader:
   hashed calls, our own call, OSD decodes, and nothing without a real
   radio frequency (mock, simulator). Our rows have no PSK Reporter DXCC
-  number, so a country filter hides them.
+  number, so the **country filter is by name, from the callsign**
+  (`with_countries`, `dxcc.for_call`) for every row - it filtered on the
+  feed's numbers and hid every station heard here, and the dropdown read
+  as numbers.
 - **`psk_reporter` listens now; it does not ask.** PSK Reporter publish a
   live MQTT feed, so the five minute floor, the `lastseqno` marker and the
   back-off after a rate limit are all gone with the thing they protected.

@@ -179,5 +179,32 @@ class TestHeard(unittest.TestCase):
         self.assertIn("decoder.decoded", manifest["subscribes"])
 
 
+
+class TestEveryRowHasACountry(unittest.TestCase):
+    """The Country filter used the feed's DXCC numbers, which our own decodes
+    do not have - so choosing a country hid every station heard here, and
+    the dropdown read as numbers. Both ends get a name from the callsign,
+    the same table the flags come from, for feed rows and ours alike."""
+
+    def test_names_from_callsigns(self):
+        card = _card()
+        rows = card.with_countries([
+            {"tx": "KC0REW", "rx": "VA7SLL"},
+            {"tx": "PY1SX", "rx": "VE7PPE"},
+            {"tx": "<...>", "rx": ""},
+        ])
+        self.assertEqual((rows[0]["tx_country"], rows[0]["rx_country"]),
+                         ("United States", "Canada"))
+        self.assertEqual(rows[1]["tx_country"], "Brazil")
+        self.assertEqual((rows[2]["tx_country"], rows[2]["rx_country"]), ("", ""))
+
+    def test_the_page_filters_on_the_name(self):
+        page = (PLUGIN / "index.html").read_text(encoding="utf-8")
+        self.assertIn("tx_country", page)
+        self.assertIn("rx_country", page)
+        i = page.index("function visible(")
+        self.assertNotIn("_dxcc", page[i:page.index("\n}\n", i)],
+                         "a local decode has no DXCC number to match")
+
 if __name__ == "__main__":
     unittest.main()

@@ -154,6 +154,13 @@ remembers, so one left stopped is still stopped after a restart, and two
 tiles listening to the same input are counted separately — stopping one
 leaves the other running.
 
+**Out of sight**, in a background tab or on a phone while another card is
+showing, CW, RTTY and PSK31 let the input go and pick up again when you come
+back: their text is for reading, and nobody is reading it. **FT8 and FT4 go
+on decoding**, because their decodes also go to the PSK Reporter card's map
+and, if it is on, to PSK Reporter - on a phone, watching that map is
+exactly when the Decoder is out of sight. Press **Stop** to let the input go.
+
 The lamp is lit while there is a signal to hear. Beside it are the speed and
 the tone the decoder has settled on, and the signal-to-noise ratio it is
 working with. **Clear** empties the window and leaves the speed estimate
@@ -307,9 +314,9 @@ reports to PSK Reporter - under your callsign and your grid square, marked
 on, PSK Reporter sends those same reports back on its feed; the card keeps
 yours and drops the echo, so nothing is counted twice and your copy keeps
 the signal report the upload does not carry. They need the radio's
-frequency, so nothing is added from the simulated radio or the mock. They
-carry no country number of PSK Reporter's, so with a **country** filter set
-they drop out until it is cleared.
+frequency, so nothing is added from the simulated radio or the mock. The
+**country** filter works on them too: every station's country comes from its
+callsign, the same table the flags use.
 
 **The dot colours are signal strength**, and the legend in the corner says so
 with a live count per band of signal. They are not band colours, which is the
