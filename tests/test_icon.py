@@ -50,6 +50,19 @@ class TestTheFiles(unittest.TestCase):
                 self.assertTrue(data.startswith(b"\x89PNG"))
                 self.assertEqual(struct.unpack(">II", data[16:24]), (size, size))
 
+    def test_the_mac_icon_has_its_retina_sizes(self):
+        data = (ICON / "hamdash.icns").read_bytes()
+        self.assertEqual(data[:4], b"icns")
+        self.assertEqual(struct.unpack(">I", data[4:8])[0], len(data))
+        kinds, i = [], 8
+        while i < len(data):
+            kind, size = data[i:i + 4], struct.unpack(">I", data[i + 4:i + 8])[0]
+            self.assertTrue(data[i + 8:i + 16].startswith(b"\x89PNG"), kind)
+            kinds.append(kind)
+            i += size
+        for k in (b"icp4", b"ic07", b"ic08", b"ic09", b"ic10", b"ic13", b"ic14"):
+            self.assertIn(k, kinds)
+
     def test_they_are_what_the_script_draws(self):
         try:
             import numpy  # noqa: F401
@@ -63,6 +76,10 @@ class TestTheFiles(unittest.TestCase):
         made = make_icon.ico({s: make_icon.png(make_icon.render(s))
                               for s in make_icon.ICO_SIZES})
         self.assertEqual((ICON / "hamdash.ico").read_bytes(), made)
+        drawn = {s: make_icon.png(make_icon.render(s))
+                 for s in {s for _k, s in make_icon.ICNS_TYPES}}
+        self.assertEqual((ICON / "hamdash.icns").read_bytes(),
+                         make_icon.icns(drawn))
 
 
 class TestWhereItIsUsed(unittest.TestCase):
@@ -70,6 +87,25 @@ class TestWhereItIsUsed(unittest.TestCase):
         spec = (ROOT / "hamdash.spec").read_text(encoding="utf-8")
         self.assertIn('icon="hamdash/static/icon/hamdash.ico" if sys.platform == "win32"',
                       spec)
+
+    def test_macos_gets_an_app_with_it(self):
+        """A bare binary in a folder opened a Terminal beside it and had no
+        icon. The .app also has to say why it wants the microphone - the
+        radio's sound card is one to macOS - or audio input is refused."""
+        spec = (ROOT / "hamdash.spec").read_text(encoding="utf-8")
+        tail = spec[spec.index('if sys.platform == "darwin":'):]
+        self.assertIn("BUNDLE(", tail)
+        self.assertIn('icon="hamdash/static/icon/hamdash.icns"', tail)
+        self.assertIn('"NSMicrophoneUsageDescription"', tail)
+        self.assertIn('"NSAllowsLocalNetworking": True', tail)
+
+    def test_the_mac_zip_is_made_where_it_is_built(self):
+        """upload-artifact drops symlinks and execute bits; an .app is full
+        of both. ditto on the Mac, and the release copies that zip as is."""
+        build = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        self.assertIn("ditto -c -k --keepParent dist/hamdash.app", build)
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn('cp "$dir/${name}.zip" "assets/${name}-${TAG}.zip"', release)
 
     def test_the_installer_takes_it(self):
         iss = (ROOT / "installer" / "hamdash.iss").read_text(encoding="utf-8")

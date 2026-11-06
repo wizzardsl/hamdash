@@ -16,6 +16,7 @@ written directly - both are simple containers - so there is no image
 library to install. Outputs:
 
     hamdash/static/icon/hamdash.ico     Windows: the exe, the installer, shortcuts
+    hamdash/static/icon/hamdash.icns    macOS: the .app
     hamdash/static/icon/hamdash-512.png  window icon (Linux), large uses
     hamdash/static/icon/hamdash-192.png  phone home screen
     hamdash/static/icon/favicon-64.png   the board's browser tab
@@ -150,9 +151,28 @@ def ico(images: dict) -> bytes:
     return head + entries + blobs
 
 
+# icns entry types that hold a PNG, by pixel size: the plain kinds, then
+# the @2x ones a Retina display asks for, which are the same pixels.
+ICNS_TYPES = ((b"icp4", 16), (b"icp5", 32), (b"icp6", 64), (b"ic07", 128),
+              (b"ic08", 256), (b"ic09", 512), (b"ic10", 1024),
+              (b"ic11", 32), (b"ic12", 64), (b"ic13", 256), (b"ic14", 512))
+
+
+def icns(images: dict) -> bytes:
+    """Apple's container: 'icns', the total length, then (type, length,
+    PNG) entries - big-endian, lengths counting their own 8-byte header."""
+    body = b""
+    for kind, size in ICNS_TYPES:
+        data = images[size]
+        body += kind + struct.pack(">I", len(data) + 8) + data
+    return b"icns" + struct.pack(">I", len(body) + 8) + body
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "hamdash.ico").write_bytes(ico({s: png(render(s)) for s in ICO_SIZES}))
+    drawn = {s: png(render(s)) for s in set(ICO_SIZES) | {s for _k, s in ICNS_TYPES}}
+    (OUT / "hamdash.ico").write_bytes(ico({s: drawn[s] for s in ICO_SIZES}))
+    (OUT / "hamdash.icns").write_bytes(icns(drawn))
     for name, s in (("hamdash-512.png", 512), ("hamdash-192.png", 192),
                     ("favicon-64.png", 64)):
         (OUT / name).write_bytes(png(render(s)))

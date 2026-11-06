@@ -3056,9 +3056,20 @@ committed files differ, so edit the script and rerun it, never the files.
   **Do not test that with xprop on a bare Xvfb**: with no window manager
   GTK holds the icon (`get_icon()` returns it) and never publishes
   `_NET_WM_ICON` - a plain five-line GTK window reads "not found" too.
-- **macOS still has no `.app` bundle**, so no icon there: the download is
-  a bare binary in a folder. A `BUNDLE` in the spec and an `.icns` (the
-  script can write one) are the way, untried without a Mac.
+- **macOS ships `hamdash.app`** (`BUNDLE` in the spec, darwin only),
+  around the same onedir, so cards still re-exec its binary (invariant 6).
+  Two plist keys a bare binary never needed: **`NSMicrophoneUsageDescription`**
+  - the radio's sound card is an audio input, and macOS refuses input to an
+  app that does not say why, silently from the card's side - and
+  **`NSAllowsLocalNetworking`**, since the board is plain http from this
+  machine. **The zip is made on the Mac with `ditto`**: upload-artifact
+  drops symlinks and execute bits, an `.app` is full of both, and that is
+  how 1.3.1's Mac binary came out unrunnable. `release.yml` copies that zip
+  as is. `build.yml` checks the plist, the icon and `codesign --verify`
+  (PyInstaller signs ad hoc; Apple Silicon runs nothing unsigned), runs both
+  smoke tests against `Contents/MacOS`, and photographs the first run.
+  **Not notarized**, so the first open is System Settings -> Privacy &
+  Security -> Open Anyway on macOS 15+; `docs/install.md` walks it.
 
 ## Problem reports
 

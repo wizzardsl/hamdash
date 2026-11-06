@@ -6,6 +6,13 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **hamdash is a proper Mac app.** The macOS download is now **hamdash.app**,
+  with its icon, to drag into Applications - it was a bare program in a
+  folder, which opened a Terminal window beside it. It asks before using
+  your radio's sound card, as macOS requires. The install page has the
+  first-open steps for an unsigned app.
+
 ## [1.5.1]
 
 ### Added

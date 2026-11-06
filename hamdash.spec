@@ -91,3 +91,37 @@ coll = COLLECT(
     upx_exclude=[],
     name="hamdash",
 )
+
+# macOS: a real application, not a bare binary in a folder. Double-clicking
+# that opened a Terminal beside it and showed no icon; an .app is what a
+# Mac user expects to drag to Applications. The onedir COLLECT above is
+# what goes inside it, so cards still re-exec the same binary (invariant 6).
+if sys.platform == "darwin":
+    import re
+    _version = re.search(r'__version__ = "([^"]+)"',
+                         open("hamdash/__init__.py", encoding="utf-8").read()).group(1)
+    app = BUNDLE(
+        coll,
+        name="hamdash.app",
+        icon="hamdash/static/icon/hamdash.icns",
+        bundle_identifier="io.github.wizzardsl.hamdash",
+        version=_version,
+        info_plist={
+            "CFBundleName": "hamdash",
+            "CFBundleDisplayName": "hamdash",
+            "CFBundleShortVersionString": _version,
+            "CFBundleVersion": _version,
+            "LSApplicationCategoryType": "public.app-category.utilities",
+            "LSMinimumSystemVersion": "11.0",
+            "NSHighResolutionCapable": True,
+            # The radio's sound card is an audio input, and macOS will not
+            # hand one to an app that does not say why - the decoder, the
+            # waterfall and Listen would all be silent with no prompt.
+            "NSMicrophoneUsageDescription":
+                "hamdash listens to your radio's audio through its sound card "
+                "to decode signals, draw the waterfall and play it elsewhere.",
+            # The board is a page served by hamdash itself on this machine,
+            # over plain http.
+            "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
+        },
+    )

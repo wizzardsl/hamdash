@@ -72,20 +72,31 @@ Make the shortcut again after upgrading, or switch to the installer.
 ## macOS
 
 1. Download **`hamdash-macos-arm64-….zip`** (Apple-silicon Macs) and
-   double-click it to unzip.
-2. Move the `hamdash` folder somewhere permanent, for example your
-   **Applications** folder.
-3. Inside it, **right-click `hamdash` → Open**. The first time, macOS warns
-   that it is from an unidentified developer; choose **Open**. After that, a
-   double-click is enough.
+   double-click it to unzip. You get **hamdash.app**.
+2. Drag **hamdash.app** into your **Applications** folder.
+3. Open it. The first time, macOS stops it, because hamdash is not signed
+   with a paid Apple developer certificate:
+   - **macOS 15 (Sequoia) and later:** it says hamdash "was not opened".
+     Click **Done**, open **System Settings → Privacy & Security**, scroll
+     down to the message about hamdash and click **Open Anyway**, then
+     confirm with your password.
+   - **Earlier macOS:** right-click **hamdash.app → Open**, then **Open**.
 
-**To upgrade**, close hamdash, delete the old `hamdash` folder, and unzip
-the new one into the same place. Your settings are elsewhere and stay.
+   After that it opens like any other app.
+4. The first time a card listens to your radio's audio, macOS asks whether
+   hamdash may use the microphone - that is how it describes any sound
+   input, including the radio's sound card. Allow it.
 
-**Version 1.3.1 only:** that download will not start, because the file lost
-its "may run" permission on the way through the build. Open **Terminal**,
-type `chmod +x ` (with a space after it), drag the `hamdash` file from the
-folder onto the Terminal window, and press Return. Later versions are fixed.
+**To upgrade**, close hamdash and drag the new **hamdash.app** into
+Applications, replacing the old one. Your settings are elsewhere and stay.
+The new version may need the **Open Anyway** step once more.
+
+**Versions up to 1.5.1** came as a folder with a `hamdash` program inside
+rather than an app; delete that folder when you move to the app. **1.3.1
+only:** that folder's program would not start, because it lost its "may
+run" permission on the way through the build. Open **Terminal**, type
+`chmod +x ` (with a space after it), drag the `hamdash` file onto the
+Terminal window, and press Return.
 
 ## Linux
 

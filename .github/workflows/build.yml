@@ -74,6 +74,53 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a python tools/smoke_frozen.py --window
 
+      # macOS ships hamdash.app, not the bare folder: check it is one - the
+      # version and icon inside, a signature that verifies (PyInstaller signs
+      # ad hoc; an Apple Silicon Mac runs nothing unsigned) - then run the
+      # program inside it through both smoke tests, window included.
+      - name: The app (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HAMDASH_DIST: dist/hamdash.app/Contents/MacOS
+        run: |
+          test -x dist/hamdash.app/Contents/MacOS/hamdash
+          test -f dist/hamdash.app/Contents/Resources/hamdash.icns
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" dist/hamdash.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :NSMicrophoneUsageDescription" dist/hamdash.app/Contents/Info.plist
+          codesign --verify --deep --strict dist/hamdash.app && echo "signature verifies"
+          python tools/smoke_frozen.py
+          python tools/smoke_frozen.py --window
+
+      # What a Mac user sees first, photographed.
+      - name: Screenshot the app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p shots mac-home
+          HAMDASH_HOME="$PWD/mac-home" dist/hamdash.app/Contents/MacOS/hamdash --port 8790 &
+          for i in $(seq 1 90); do
+            s=$(curl -s http://127.0.0.1:8790/api/bus/stats || true)
+            case "$s" in *'"subscribers":0'*|"") sleep 2 ;; *) break ;; esac
+          done
+          sleep 12
+          screencapture -x shots/macos-first-run.png || echo "screencapture not allowed here"
+          curl -s http://127.0.0.1:8790/api/shell; echo
+          curl -s http://127.0.0.1:8790/api/health; echo
+          python run.py --stop --home "$PWD/mac-home"
+
+      # ditto, because the app is full of symlinks and execute bits that
+      # upload-artifact drops - the reason 1.3.1's Mac download would not run.
+      - name: Zip the app (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/hamdash.app dist/hamdash-${{ matrix.label }}.zip
+
+      - uses: actions/upload-artifact@v7
+        if: always() && runner.os == 'macOS'
+        with:
+          name: macos-shots
+          path: shots/
+          if-no-files-found: warn
+          retention-days: 7
+
       # The installer, from the build above. Inno Setup is on the Windows
       # runner image; installed from Chocolatey if an image ever drops it.
       - name: Installer (Windows)
@@ -134,8 +181,17 @@ jobs:
           retention-days: 14
 
       - uses: actions/upload-artifact@v7
+        if: runner.os != 'macOS'
         with:
           name: hamdash-${{ matrix.label }}
           path: dist/hamdash
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'macOS'
+        with:
+          name: hamdash-${{ matrix.label }}
+          path: dist/hamdash-${{ matrix.label }}.zip
           if-no-files-found: error
           retention-days: 14

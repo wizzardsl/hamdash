@@ -64,6 +64,12 @@ jobs:
               # The installer is one file already; a zip around it is one
               # more thing for somebody to work out.
               cp "$dir/hamdash-setup.exe" "assets/hamdash-setup-${TAG}.exe"
+            elif [ -f "$dir/${name}.zip" ]; then
+              # Zipped where it was built (macOS: ditto keeps the .app's
+              # symlinks and permissions, which this runner would lose).
+              cp "$dir/${name}.zip" "assets/${name}-${TAG}.zip"
+            elif [ "$name" = "macos-shots" ]; then
+              continue
             else
               (cd "$dir" && zip -qr "../../assets/${name}-${TAG}.zip" .)
             fi
