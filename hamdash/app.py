@@ -42,6 +42,23 @@ LOG = logging.getLogger("hamdash.app")
 # One requests.Session per server thread, for the card proxy.
 _local = threading.local()
 
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+OWN_TTL = 60.0          # how long the machine's own addresses are trusted
+OWN_WAIT = 2.0          # how long a request may wait to learn them
+_own = {"at": 0.0, "addrs": set(), "busy": False}
+_own_lock = threading.Lock()
+
+
+def _resolve_own() -> None:
+    try:
+        name = socket.gethostname()
+        addrs = {name, *socket.gethostbyname_ex(name)[2]}
+    except OSError:                                     # no DNS, no matter
+        addrs = set()
+    with _own_lock:
+        _own.update(at=time.monotonic(), addrs=addrs, busy=False)
+
+
 def _local_addresses() -> set[str]:
     """Every address that means "this machine".
 
@@ -49,15 +66,36 @@ def _local_addresses() -> set[str]:
     listen on 127.0.0.1 at all, so a request made on the host itself
     arrives from that LAN address. A request from anywhere else carries
     the caller's own address, which is not in this set.
+
+    **Resolving this machine's own name can stall.** On macOS it goes
+    through local-network name resolution, and with the "find devices on
+    local networks" prompt up it did not return at all: `--stop` timed
+    out on the Mac runner, and every problem-report button runs the same
+    check. So it is cached for OWN_TTL, looked up off the request thread,
+    and a request waits at most OWN_WAIT before going on with what is
+    known; the lookup finishes in the background for the next one.
     """
-    out = {"127.0.0.1", "::1", "localhost"}
-    try:
-        name = socket.gethostname()
-        out.add(name)
-        out.update(socket.gethostbyname_ex(name)[2])
-    except OSError:                                     # no DNS, no matter
-        pass
-    return out
+    with _own_lock:
+        fresh = time.monotonic() - _own["at"] < OWN_TTL
+        start = not fresh and not _own["busy"]
+        if start:
+            _own["busy"] = True
+    if start:
+        t = threading.Thread(target=_resolve_own, daemon=True,
+                             name="own-addresses")
+        t.start()
+        t.join(OWN_WAIT)
+    with _own_lock:
+        return LOOPBACK | _own["addrs"]
+
+
+def is_this_machine(addr: str) -> bool:
+    """Loopback is this machine without asking anything - the case every
+    ordinary request is - and only a LAN address needs the lookup."""
+    addr = addr or ""
+    if addr in LOOPBACK or addr.startswith("127."):
+        return True
+    return addr in _local_addresses()
 
 # A proxied reply at or over this streams; under it is sent as bytes.
 # 64 kB covers every JSON reply and every ordinary card page.
@@ -1469,7 +1507,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     # services/diagnostics.py. Nothing here sends anything anywhere: the
     # report is written to disk and the operator attaches it to an issue.
     def _from_here() -> bool:
-        return (request.remote_addr or "") in _local_addresses()
+        return is_this_machine(request.remote_addr or "")
 
     def _not_here():
         # The report is logs and config gathered into one file - the same
@@ -1643,7 +1681,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         local check costs nothing and needs no configuration.
         """
         who = request.remote_addr or ""
-        if who not in _local_addresses():
+        if not is_this_machine(who):
             return jsonify(
                 error="hamdash can only be stopped from the machine it is "
                       "running on; press Ctrl-C in its window, or run "

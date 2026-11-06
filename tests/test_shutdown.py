@@ -17,7 +17,10 @@ import json
 import os
 import shutil
 import tempfile
+import threading
+import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from hamdash.app import _local_addresses, create_app
@@ -213,6 +216,48 @@ class TestAPortThatIsTaken(unittest.TestCase):
 
     def test_the_message_says_what_to_do(self):
         self.assertIn("pick another with --port", RUN_PY)
+
+
+class TestTheCheckNeverStalls(unittest.TestCase):
+    """On the macOS runner `run.py --stop` timed out: resolving this
+    machine's own name goes through local-network lookup there, and with
+    the "find devices on local networks" prompt up it never returned.
+    Every problem-report button runs the same check."""
+
+    def setUp(self):
+        import hamdash.app as appmod
+        self.appmod = appmod
+        self.saved = dict(appmod._own)
+        appmod._own.update(at=0.0, addrs=set(), busy=False)
+        self.addCleanup(appmod._own.update, self.saved)
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+
+        def hang(_name):
+            self.release.wait(30)
+            return ("x", [], ["192.0.2.10"])
+        p = mock.patch.object(appmod.socket, "gethostbyname_ex", hang)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_loopback_asks_nothing(self):
+        t = time.monotonic()
+        self.assertTrue(self.appmod.is_this_machine("127.0.0.1"))
+        self.assertTrue(self.appmod.is_this_machine("::1"))
+        self.assertLess(time.monotonic() - t, 0.1)
+
+    def test_a_lan_address_waits_at_most_a_moment(self):
+        t = time.monotonic()
+        self.assertFalse(self.appmod.is_this_machine("192.0.2.10"))
+        self.assertLess(time.monotonic() - t, self.appmod.OWN_WAIT + 1)
+        self.release.set()                          # the lookup finishes...
+        for _ in range(50):
+            if not self.appmod._own["busy"]:
+                break
+            time.sleep(0.05)
+        self.assertTrue(self.appmod.is_this_machine("192.0.2.10"),
+                        "...and the next request has its answer")
+
 
 if __name__ == "__main__":
     unittest.main()

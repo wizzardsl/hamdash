@@ -3070,6 +3070,13 @@ committed files differ, so edit the script and rerun it, never the files.
   smoke tests against `Contents/MacOS`, and photographs the first run.
   **Not notarized**, so the first open is System Settings -> Privacy &
   Security -> Open Anyway on macOS 15+; `docs/install.md` walks it.
+  macOS 15 also asks about the local network on first run, so
+  `NSLocalNetworkUsageDescription` says why. **That prompt is what hung
+  `--stop` on the Mac runner**: `_local_addresses` resolved this
+  machine's own name, which goes through local-network lookup there and
+  did not return. Loopback is now decided without asking
+  (`is_this_machine`), and the lookup is cached, off-thread and capped at
+  `OWN_WAIT` - the problem-report buttons run the same check.
 
 ## Problem reports
 

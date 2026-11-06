@@ -98,6 +98,7 @@ class TestWhereItIsUsed(unittest.TestCase):
         self.assertIn('icon="hamdash/static/icon/hamdash.icns"', tail)
         self.assertIn('"NSMicrophoneUsageDescription"', tail)
         self.assertIn('"NSAllowsLocalNetworking": True', tail)
+        self.assertIn('"NSLocalNetworkUsageDescription"', tail)
 
     def test_the_mac_zip_is_made_where_it_is_built(self):
         """upload-artifact drops symlinks and execute bits; an .app is full

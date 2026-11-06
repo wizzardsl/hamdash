@@ -13,6 +13,10 @@ versions follow [SemVer](https://semver.org/). The version of record is
   your radio's sound card, as macOS requires. The install page has the
   first-open steps for an unsigned app.
 
+### Fixed
+- **Stopping hamdash, or making a problem report, could hang on a Mac**
+  while it looked up the computer's own name on the local network.
+
 ## [1.5.1]
 
 ### Added

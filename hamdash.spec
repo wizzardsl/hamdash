@@ -120,6 +120,14 @@ if sys.platform == "darwin":
             "NSMicrophoneUsageDescription":
                 "hamdash listens to your radio's audio through its sound card "
                 "to decode signals, draw the waterfall and play it elsewhere.",
+            # macOS 15 asks before an app talks to the local network, and
+            # without this says only "find devices on local networks". It
+            # is what lets hamdash reach flrig, rigctld or WSJT-X on another
+            # computer, and a board opened from another room.
+            "NSLocalNetworkUsageDescription":
+                "hamdash talks to your radio's control software (flrig, "
+                "rigctld, WSJT-X) and serves the board to other computers "
+                "on your network.",
             # The board is a page served by hamdash itself on this machine,
             # over plain http.
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
