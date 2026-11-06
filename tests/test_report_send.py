@@ -188,6 +188,8 @@ class TestThePage(unittest.TestCase):
         for words in ("callsign and grid", "Passwords and API keys",
                       "deleted after 90 days"):
             self.assertIn(words, box)
+        self.assertNotIn("Nothing is sent anywhere", self.HTML,
+                         "the Help tab must not promise what Send breaks")
         send = self.JS[self.JS.index("$('#s-report-send').onclick"):]
         send = send[:send.index("};")]
         self.assertNotIn("/api/diag/send", send, "the first press only asks")
