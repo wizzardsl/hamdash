@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.5.1]
+
 ### Added
 - **An icon.** An antenna mast sending and receiving - amber and teal, the
   board's own colours - on the program, the installer, the Start menu and
