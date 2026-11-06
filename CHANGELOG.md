@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.6.1]
+
 ### Fixed
 - **On a phone, the Decoder keeps decoding FT8 and FT4 while you look at
   another card**, so the PSK Reporter map goes on filling with what your
@@ -15,6 +17,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 - **The PSK Reporter card's Country filter keeps the stations your own
   decoder heard.** Choosing a country hid all of them, and the list showed
   numbers instead of country names.
+- **A slow answer about this computer's own network addresses can no longer
+  overwrite a newer one**, which could briefly make stopping hamdash or
+  making a problem report refuse a request from this machine.
 
 ## [1.6.0]
 
