@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Fixed
+- **The Help tab no longer says nothing is ever sent.** Since problem reports
+  can be sent, it says what is true: nothing leaves your computer until you
+  press Send and confirm.
+
 ## [1.5.0]
 
 ### Added
