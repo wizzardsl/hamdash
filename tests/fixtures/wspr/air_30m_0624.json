@@ -1,0 +1,9 @@
+{
+ "note": "30 m, 10.1387 MHz USB, 2026-11-07 06:24 UTC, FT-900 at DO00 - the WSPR window held only FST4W-120 beacons",
+ "wsprd": [],
+ "fst4w_jt9": [
+  "1200 -23 0.3 1472 ` W8GPS EM79 30",
+  "1200 -26 0.8 1572 ` W3PM EM64 37"
+ ],
+ "made_with": "WSJT-X wsprd and jt9 3.0.2"
+}

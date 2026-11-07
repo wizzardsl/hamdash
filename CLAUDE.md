@@ -1806,10 +1806,35 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   (a 3 Hz drift reads 3, which tells it from per-minute), and the
   frequency **where the signal began** - half the drift from the middle.
   That frequency is what WSPRnet holds for everybody else's spots.
-- **Measured, simulated only**: level with wsprd to -29 dB, about half a
-  decibel behind at -30/-31, nothing false in 60 noise slots or the busy
-  sets. A slot takes 1-13 s. **Not yet checked against wsprd on signals
-  off the air** - worth doing on 30 m before trusting the numbers.
+- **Off the air, the signal is smeared, and two things tuned on clean
+  synthesis were wrong.** 80 m at night spread WW0WWV's energy into its
+  neighbouring tones - 77% in the right one, 61% by the end, the carrier
+  phase wandering radians in 14 s, and a search with the true symbols
+  could not do better, so it is the signal and not the fit. (1) **SNR
+  from the other three tones** read a -9 dB station at -21: they hold
+  the smear. It is the band's floor now (`_candidates`' 30th percentile)
+  against all four tones' energy - exact on synthesis, 1-3 dB under
+  wsprd off the air. `_soft` keeps the other pair as its noise on
+  purpose: there it decodes better. (2) **A path-metric floor of 5**
+  threw away KG7RDR at -5 dB (metric -4); real decodes ran down to -47.
+  Pure noise never reaches the end of the tree at all (0 of 750), so the
+  floor is -60 and `HARD_MAX` is the guard (real decodes: 3-29 of 162).
+  Lowering it also took simulated -30 dB from 17 to 23 of 24 - it had
+  been discarding correct weak decodes all along.
+  **Coherent blocks fail on such a signal** (the phase does not hold for
+  two seconds), which is why the fallback to single symbols matters.
+- **FST4W-120 shares the window**: the same 1.46 Hz spacing on the same
+  frequencies, and on 30 m one night it was everything there. `jt9 -W -p
+  120` reads it; wsprd and this do not, correctly. The first sign was two
+  perfect 4-line humps that neither decoder would touch - check jt9
+  before suspecting the decoder. Decoding FST4W is an open thread.
+- **The real slots are fixtures, as baseband** (`air_*.npz`, 333 kB each,
+  `decode_baseband`; `tools/wspr_fixtures.py --air`): 80 m with three
+  stations and FST4W beside them, and 30 m with only FST4W.
+- **Measured**: off the air, every station wsprd heard in three 80 m slots.
+  Simulated: 24/24 at -29 dB (wsprd 23), 23/24 at -30 (11), 10/24 at -31
+  (4); 58 of 60 on twenty overlapping stations (45); nothing from 40
+  noise slots. A slot takes 1-13 s.
 - **The slot machinery is ftx's**: `wspr.SlotDecoder` subclasses
   `ftx.SlotDecoder` and replaces `_run` and `_line`, so the clock, the
   buffer and the thread are the ones FT8 proved. Built on first use, so
@@ -3332,6 +3357,11 @@ radios nobody here owns can send what is needed to fix them.
   watched doing each job on one radio. What is still unproven anywhere is a
   *second* rig model - everything here is one FT-890/900 - so anything that
   looks like a rig quirk should be suspected of being this rig's quirk.
+- **FST4W**, the WSPR window's other tenant (see WSPR): `wspr.py` has the
+  slot, the search and the sequential decoder's place in the pipeline,
+  but FST4W is LDPC(240,101) with a CRC-24, nearer `ftx.py` than this.
+  WSPRnet takes FST4W spots too (`mode` 3 for FST4W-120). `wsprstat`, the
+  empty-slot heartbeat WSJT-X sends, is not here either.
 - The decoder's other modes. RTTY at other speeds and shifts (50 and 75 baud, 425 and 850 Hz) is a
   constructor argument away in `rtty.py` and untested. QPSK31 and PSK63
   are a few lines away in `psk.py` and untested.

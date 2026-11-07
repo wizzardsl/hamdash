@@ -392,8 +392,17 @@ SYNC_MIN = 0.12                 # the normalised sync metric to try one
 BLOCKS = (3, 2, 1)              # tried in turn; see _soft
 PASSES = 3
 STACK_LIMIT = 40000             # node expansions before giving up
-METRIC_MIN = 5.0                # path metric of a believable decode
-HARD_MAX = 45                   # channel bits the decode may disagree with
+# What makes a decode believable. On real signals the path metric is
+# not it: 80 m at night smears a station's energy into its neighbouring
+# tones, and three stations wsprd also heard came out at -4, -8 and -47
+# (KG7RDR, a -5 dB signal, was thrown away at a floor of 5). Noise does
+# not get there at all - 750 attempts on pure noise, none reached the end
+# of the tree within STACK_LIMIT - so the floor is only below anything
+# real. HARD_MAX is the guard that matters: the decode re-encoded may
+# disagree with the received bits in at most this many places; the real
+# decodes measured were 3 to 29.
+METRIC_MIN = -60.0
+HARD_MAX = 45
 
 
 @dataclass
@@ -681,15 +690,23 @@ def stack_decode(llr_coded: np.ndarray, limit: int = STACK_LIMIT
     return None, 0.0, expanded
 
 
-def _snr(c: np.ndarray, symbols: np.ndarray) -> float:
-    """Signal against noise in 2500 Hz: the sent tone's power over the
-    other three's, which carry only noise. One tone bin is 1.46 Hz wide."""
-    idx = np.arange(NSYM)
-    p = _powers(c)
-    sent = p[idx, symbols]
-    others = (p.sum(axis=1) - sent) / 3
-    noise = float(np.median(others)) or 1e-12
-    sig = max(float(sent.mean()) - noise, 1e-12)
+def _snr(c: np.ndarray, symbols: np.ndarray, floor: float) -> float:
+    """Signal against noise in 2500 Hz, from the station's power in its
+    four tones and the band's own noise floor per tone bin (1.46 Hz).
+
+    **Not from the other three tones.** They looked like the obvious noise
+    measure and are exactly that on a synthesised signal - and on a real
+    one they are not: 80 m at night smeared WW0WWV's energy into its
+    neighbouring tones (77% in the right one, 61% by the end), the other
+    three read 9 dB over the true floor, and a -9 dB station was reported
+    at -21. The floor is measured away from every signal. The likelihoods
+    in `_soft` keep the other pair as their noise on purpose: there it
+    decodes better, because leakage is part of what a bit must survive."""
+    noise = floor or 1e-12
+    # All four tones, not just the one sent: what the smearing moved into
+    # the neighbours is still the station's power, and counting only the
+    # sent tone read 2-5 dB under wsprd on every real 80 m station.
+    sig = max(float(_powers(c).sum(axis=1).mean()) - 4 * noise, 1e-12)
     return 10 * math.log10(sig / (noise * 2500 / SPACING))
 
 
@@ -723,15 +740,25 @@ def decode(audio: np.ndarray, rate: int = RATE, hashes: Hashes | None = None,
     pass searches what is left. Two stations a few hertz apart, or a weak
     one on a strong one's skirt, are a pair the first pass can only hear
     half of."""
-    import time as _time
     if rate != RATE:
         raise ValueError(f"wspr.decode wants {RATE} Hz audio")
-    bb = _baseband(np.asarray(audio, dtype=float), rate)
+    return decode_baseband(_baseband(np.asarray(audio, dtype=float), rate),
+                           hashes, deadline, known_call, passes)
+
+
+def decode_baseband(bb: np.ndarray, hashes: Hashes | None = None,
+                    deadline: float | None = None, known_call=None,
+                    passes: int = PASSES) -> list:
+    """`decode`, from the 375 Hz complex baseband `_baseband` makes - which
+    is a sixteenth the size of the audio, and so what a recording off the
+    air is kept as in the test fixtures."""
+    import time as _time
+    bb = np.array(bb, dtype=complex)
     found: list = []
     seen: set = set()
     for passno in range(1, passes + 1):
         power = _spectrogram(bb)
-        cands, _floor = _candidates(power)
+        cands, floor = _candidates(power)
         tried: set = set()
         new = 0
         for cbin, _snr_spec in cands:
@@ -741,7 +768,7 @@ def decode(audio: np.ndarray, rate: int = RATE, hashes: Hashes | None = None,
             if sync < SYNC_MIN or (lag // 4, b0, drift) in tried:
                 continue
             tried.add((lag // 4, b0, drift))
-            got = _try(bb, lag, b0, drift, hashes, known_call)
+            got = _try(bb, lag, b0, drift, hashes, known_call, floor)
             if got is None:
                 continue
             d, c, sent, start, f0 = got
@@ -757,7 +784,7 @@ def decode(audio: np.ndarray, rate: int = RATE, hashes: Hashes | None = None,
     return found
 
 
-def _try(bb, lag, b0, drift, hashes, known_call):
+def _try(bb, lag, b0, drift, hashes, known_call, floor):
     """Fit, demodulate and decode one candidate: the Decode and what is
     needed to subtract it, or None."""
     sync, start, f0, drift = _fine(bb, lag, b0, drift)
@@ -786,7 +813,7 @@ def _try(bb, lag, b0, drift, hashes, known_call):
     # WSPRnet has every other spot: f0 is the middle of a drifting
     # transmission, and half its drift away from the start.
     freq = CENTRE + f0 + 1.5 * SPACING - drift / 2
-    d = Decode(text, fields, int(round(_snr(c, sent))),
+    d = Decode(text, fields, int(round(_snr(c, sent, floor))),
                start / BB_RATE - START, freq, drift, sync, metric, cycles,
                block)
     return d, c, sent, start, f0

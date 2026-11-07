@@ -1,6 +1,7 @@
 """Make the WSPR test fixtures, with WSJT-X as the referee.
 
     python tools/wspr_fixtures.py           # needs WSJT-X: wsprcode, wsprd
+    python tools/wspr_fixtures.py --air SLOT.wav NAME [NOTE]
 
 Writes `tests/fixtures/wspr/codes.json` - what `wsprcode` makes of a set
 of messages of all three types: the 50-bit source encoding and the 162
@@ -15,6 +16,14 @@ NumPy's default generator promises the same stream for the same seed
 across versions. So the test decodes exactly the audio wsprd did and is
 held to wsprd's answers - which is what makes the SNR, DT and frequency
 conventions WSJT-X's rather than this tree's own guess.
+
+`--air` keeps a real two-minute slot off the air (a 12 kHz WAV starting
+on the even minute) as `NAME.npz`, its 375 Hz complex baseband - 360 kB,
+a sixteenth of the audio and everything the decoder reads - beside
+`NAME.json` with what wsprd decoded from the full audio, and what jt9
+made of it as FST4W, because a WSPR window on the air holds both.
+Simulated audio cannot be smeared by the ionosphere; these can, and they
+found the two things simulation missed (see CLAUDE.md, WSPR).
 """
 from __future__ import annotations
 
@@ -93,8 +102,44 @@ def wsprd(audio: np.ndarray) -> list:
     return got
 
 
+def fst4w(audio: np.ndarray) -> list:
+    """jt9's FST4W-120 decodes of the slot: what else is in the window."""
+    with tempfile.TemporaryDirectory() as tmp:
+        fn = Path(tmp) / "260106_1200.wav"
+        with wave.open(str(fn), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(wspr.RATE)
+            w.writeframes((audio / max(np.abs(audio).max(), 1e-9) * 0.5 * 32767)
+                          .astype("<i2").tobytes())
+        text = subprocess.run(["jt9", "-W", "-p", "120", "-L", "1300", "-H",
+                               "1700", "-f", "1500", "-F", "200", "-a", tmp,
+                               "-t", tmp, str(fn)], capture_output=True,
+                              text=True, cwd=tmp).stdout
+    return [" ".join(l.split()) for l in text.splitlines()
+            if l.strip() and not l.startswith("<")]
+
+
+def air(path: str, name: str, note: str = "") -> None:
+    with wave.open(path, "rb") as w:
+        assert w.getframerate() == wspr.RATE and w.getsampwidth() == 2
+        audio = (np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+                 .astype(np.float32) / 32768)
+    bb = wspr._baseband(audio.astype(float), wspr.RATE).astype(np.complex64)
+    np.savez_compressed(OUT / f"{name}.npz", bb=bb)
+    doc = {"note": note,
+           "wsprd": wsprd(audio / max(np.abs(audio).max(), 1e-9) * 0.5),
+           "fst4w_jt9": fst4w(audio),
+           "made_with": "WSJT-X wsprd and jt9 3.0.2"}
+    (OUT / f"{name}.json").write_text(json.dumps(doc, indent=1) + "\n")
+    print(name, doc)
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
+    if len(sys.argv) >= 4 and sys.argv[1] == "--air":
+        air(sys.argv[2], sys.argv[3], " ".join(sys.argv[4:]))
+        return 0
     (OUT / "codes.json").write_text(json.dumps(codes(), indent=1) + "\n")
     for name, seed, msgs in SLOTS:
         audio = wspr.slot_audio(msgs, seed=seed)

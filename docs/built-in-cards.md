@@ -313,13 +313,19 @@ that carries a six-character grid names the station only by a hash: it
 shows as `<...>` until the station's full callsign has been heard, then by
 name.
 
-What to expect of it, measured against WSJT-X 3.0.2's own `wsprd` on the
-same synthesised audio: level with it down to about -29 dB, and about half
-a decibel behind it at -30 and -31, where both are finding only some of
-the signals; on a crowded band of twenty overlapping stations in 200 Hz it
-found 57 of 60 to wsprd's 45, by taking each station it decodes out of the
-audio and looking again. In 60 slots of noise it decoded nothing. **It has
-not yet been checked against wsprd on signals off the air.**
+What to expect of it, measured against WSJT-X 3.0.2's own `wsprd`. Off the
+air on 80 m at night it decoded every station wsprd did, slot for slot,
+with the SNR reading 1-3 dB under wsprd's. On synthesised audio it hears
+deeper than wsprd: at -30 dB, 23 of 24 signals to wsprd's 11; at -31, 10
+to 4. On a crowded band of twenty overlapping stations in 200 Hz it found
+58 of 60 to wsprd's 45, by taking each station it decodes out of the
+audio and looking again. In 40 slots of noise it decoded nothing.
+
+**FST4W shares the WSPR window, and is not decoded.** It is WSJT-X's newer
+beacon mode, with the same tone spacing on the same frequencies, and on
+some bands it is most of what is there - on 30 m one night the window held
+nothing else. Those signals are not WSPR, so nothing is printed for them;
+wsprd does not decode them either.
 
 WSPR decodes are published as `decoder.decoded` like FT8's, added to the
 PSK Reporter card's map as heard here, and - if you turn it on - uploaded

@@ -9,8 +9,9 @@ versions follow [SemVer](https://semver.org/). The version of record is
 ### Added
 - **WSPR in the Decoder card.** Pick WSPR and every beacon in the WSPR
   window is decoded each two minutes, with its callsign, grid, power,
-  SNR and drift. Measured against WSJT-X's own decoder on the same audio:
-  level with it down to about -29 dB, and better on a crowded band.
+  SNR and drift. Checked against WSJT-X's own decoder off the air on
+  80 m, where it heard every station WSJT-X did, and on simulated signals,
+  where it hears weaker ones than WSJT-X and more of a crowded band.
   **Band buttons** tune the radio to each band's WSPR frequency, 2200 m
   to 6 m.
 - **WSPR stations you hear are on the PSK Reporter card's map**, as heard

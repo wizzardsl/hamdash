@@ -170,6 +170,58 @@ class TestWhatMadeItWork(unittest.TestCase):
         self.assertLess(len(once), 2)
 
 
+def air(name):
+    bb = np.load(FIX / f"{name}.npz")["bb"]
+    return bb, json.loads((FIX / f"{name}.json").read_text())
+
+
+class TestOffTheAir(unittest.TestCase):
+    """Real slots from the station's FT-900, kept as baseband. These are the
+    only fixtures that can disagree with the code about what a signal is
+    like: the ionosphere smears a real one, and simulation does not."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bb80, cls.doc80 = air("air_80m_0632")
+        cls.got80 = {d.text: d for d in wspr.decode_baseband(cls.bb80)}
+
+    def test_80m_gives_what_wsprd_gave(self):
+        got, doc = self.got80, self.doc80
+        ref = {" ".join(r["text"].split()): r for r in doc["wsprd"]}
+        self.assertEqual(set(got), set(ref))
+        for text, r in ref.items():
+            d = got[text]
+            with self.subTest(text=text):
+                # Real SNRs read 1-3 dB under wsprd's; simulated ones match.
+                self.assertLessEqual(abs(d.snr - r["snr"]), 4)
+                self.assertLessEqual(abs(d.dt - r["dt"]), 0.3)
+                self.assertLessEqual(abs(d.freq - r["freq"]), 1.5)
+
+    def test_a_smeared_station_is_not_thrown_away(self):
+        """KG7RDR at -5 dB decodes with a path metric of about -4: the
+        old floor of 5, tuned on clean synthetic signals, discarded it."""
+        saved = wspr.METRIC_MIN
+        try:
+            wspr.METRIC_MIN = 5.0
+            old = {d.text for d in wspr.decode_baseband(self.bb80)}
+        finally:
+            wspr.METRIC_MIN = saved
+        self.assertNotIn("KG7RDR DN31 30", old)
+        self.assertIn("KG7RDR DN31 30", self.got80)
+
+    def test_snr_is_against_the_band_floor(self):
+        """Measured from the other three tones, a -9 dB station read -21:
+        on a real signal they hold its smeared energy, not just noise."""
+        self.assertGreaterEqual(self.got80["WW0WWV DN70 30"].snr, -13)
+
+    def test_fst4w_in_the_window_decodes_to_nothing(self):
+        """30 m that night held only FST4W-120 beacons - same tone spacing,
+        same frequencies - which jt9 read and wsprd did not."""
+        bb, doc = air("air_30m_0624")
+        self.assertTrue(doc["fst4w_jt9"])
+        self.assertEqual(wspr.decode_baseband(bb), [])
+
+
 class TestNoiseDecodesToNothing(unittest.TestCase):
     def test_twelve_slots_of_noise(self):
         for seed in range(12):
