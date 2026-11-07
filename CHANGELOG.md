@@ -6,6 +6,8 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+## [1.7.0]
+
 ### Added
 - **WSPR in the Decoder card.** Pick WSPR and every beacon in the WSPR
   window is decoded each two minutes, with its callsign, grid, power,
