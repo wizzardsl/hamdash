@@ -169,6 +169,20 @@ class TestHeard(unittest.TestCase):
         self.assertEqual(self.heard.offer(self.slot([self.decode()],
                                                     source="mock:ft8")), 0)
 
+    def test_wspr_is_heard_here_too(self):
+        """A WSPR beacon decoded here is a reception report like an FT8
+        station, and the map's mode filter tells them apart. A type 3
+        message whose call is only an unheard hash names nobody."""
+        n = self.heard.offer(self.slot(
+            [self.decode(call="K1ABC", grid="FN42", snr=-24,
+                         rf_hz=10140185),
+             self.decode(call="", grid="FK52UD", rf_hz=10140100)],
+            mode="WSPR", dial_hz=10138700))
+        self.assertEqual(n, 2)                 # one report, two targets
+        (row,) = self.store.since("VA7SLL", 10 ** 9)
+        self.assertEqual((row["tx"], row["mode"], row["snr"], row["hz"]),
+                         ("K1ABC", "WSPR", -24, 10140185))
+
     def test_nothing_without_a_callsign(self):
         h = self.card.Heard(self.store, station=lambda: {"callsign": ""})
         self.assertEqual(h.offer(self.slot([self.decode()])), 0)

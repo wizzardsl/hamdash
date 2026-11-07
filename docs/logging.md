@@ -96,6 +96,26 @@ anything. The card goes back to the first page when one arrives, because
 that is where a new contact sorts; if you have a search running it is left
 alone, so the answer on screen stays the answer to the question you asked.
 
+## Uploading WSPR spots to WSPRnet
+
+Tick **Settings → Integrations → WSPRnet** and the stations the
+[Decoder card](built-in-cards.md#wspr) copies on WSPR are uploaded to
+[wsprnet.org](https://www.wsprnet.org/) with your callsign and locator,
+so they appear on every WSPR map. It is what WSJT-X calls *Upload spots*.
+
+**It is off until you tick it**, for the same reason as PSK Reporter
+below, and it needs a callsign and a grid in the Station tab. Only with
+the radio's frequency known - the Decoder on the radio's own audio, and
+the radio not retuned during the slot - and never from the mock or the
+simulated radio. A station whose callsign is only a hash nobody has heard
+in full is not sent; never your own callsign.
+
+Each spot is sent on its own as it is decoded. If WSPRnet or your internet
+is down they wait and are sent when it comes back, the newest 2000 kept;
+if WSPRnet refuses one, that one is dropped and what it said is shown
+under the box. If WSJT-X uploads from the same radio too, turn one of them
+off.
+
 ## Reporting to PSK Reporter
 
 Tick **Settings → Integrations → PSK Reporter** and the stations the

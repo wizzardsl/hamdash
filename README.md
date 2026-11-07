@@ -105,8 +105,8 @@ Eleven cards ship with it, and a tile can hold any of them:
 - **Path to Station** — bearing and distance to the station you are
   looking at.
 - **Spectrum** — a waterfall from the radio's sound card.
-- **Decoder** — CW, RTTY and PSK31 off the air, and FT8 and FT4 a slot at a
-  time, held to WSJT-X's own decoder on the same audio.
+- **Decoder** — CW, RTTY and PSK31 off the air, and FT8, FT4 and WSPR a slot
+  at a time, held to WSJT-X's own decoders on the same audio.
 - **Web Page** — any page in a tile. **Cards → New from URL…** makes a named
   card out of one without your writing anything, and deletes it again.
 - **Hello Card** — the example, in about thirty lines.
@@ -151,7 +151,7 @@ own feed, with every filter running against what is already on your disk.
 | **[Using the board](docs/board.md)** | moving cards, stacking them into tabs, popping one out, tile settings, themes |
 | **[Radios](docs/radios.md)** | flrig, OmniRig, Hamlib and rigctld; VFOs, split, the meter, and the transmitter rules |
 | **[Logging and callsigns](docs/logging.md)** | the log, syncing it with LoTW, QRZ and WRL, lookups, grids and flags |
-| **[The cards that come with it](docs/built-in-cards.md)** | memories, listening, spectrum, the CW/RTTY/PSK31/FT8/FT4 decoder, PSK Reporter, satellites, spots |
+| **[The cards that come with it](docs/built-in-cards.md)** | memories, listening, spectrum, the CW/RTTY/PSK31/FT8/FT4/WSPR decoder, PSK Reporter, satellites, spots |
 | **[Writing a card](docs/cards.md)** | the whole extension contract, with a [template](docs/card-template) you can copy |
 | **[The bus](docs/bus.md)** | one pub/sub channel for the board, and who may say what |
 | **[When something goes wrong](docs/troubleshooting.md)** | where to look, and the failure modes worth knowing |

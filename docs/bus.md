@@ -59,8 +59,8 @@ Most of what crosses the bus is the host's (`radio.state`, `log.qso_added`,
 `lookup.result`, ...). One built-in card publishes something meant for
 others:
 
-**`decoder.decoded`** - a slot's FT8 or FT4 decodes, once per slot that
-decoded anything:
+**`decoder.decoded`** - a slot's FT8, FT4 or WSPR decodes, once per slot
+that decoded anything:
 
 ```json
 {"mode": "FT8", "slot": "2026-11-03T07:28:15Z", "slot_ts": 1793690895.0,
@@ -70,6 +70,18 @@ decoded anything:
               "grid": "CN89", "snr": -12, "dt": 0.1, "audio_hz": 1180.0,
               "rf_hz": 7075180, "kind": "standard"}]}
 ```
+
+A WSPR decode carries the station's power and drift as well, and no `to`:
+
+```json
+{"text": "K1ABC FN42 37", "call": "K1ABC", "grid": "FN42", "dbm": 37,
+ "drift": -1.2, "snr": -24, "dt": 0.3, "audio_hz": 1484.6,
+ "rf_hz": 10140185, "kind": 1}
+```
+
+`kind` there is WSPR's message type: 1 a call, a grid and a power; 2 a
+compound call and a power; 3 a six-character grid with the call as a hash,
+whose `call` is empty until the full call has been heard.
 
 **`decoder.picked`** - the operator clicked an FT8 or FT4 line, which is
 saying "this station":

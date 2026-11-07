@@ -6,6 +6,18 @@ versions follow [SemVer](https://semver.org/). The version of record is
 
 ## [Unreleased]
 
+### Added
+- **WSPR in the Decoder card.** Pick WSPR and every beacon in the WSPR
+  window is decoded each two minutes, with its callsign, grid, power,
+  SNR and drift. Measured against WSJT-X's own decoder on the same audio:
+  level with it down to about -29 dB, and better on a crowded band.
+  **Band buttons** tune the radio to each band's WSPR frequency, 2200 m
+  to 6 m.
+- **WSPR stations you hear are on the PSK Reporter card's map**, as heard
+  here, beside your FT8 and FT4 - the mode filter separates them.
+- **Upload WSPR spots to WSPRnet**, in Settings → Integrations, like
+  WSJT-X's *Upload spots*. Off until you turn it on.
+
 ## [1.6.2]
 
 1.6.1 was tagged but never released: a test caught the last fix below

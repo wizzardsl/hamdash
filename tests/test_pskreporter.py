@@ -309,6 +309,12 @@ class TestThePolicy(unittest.TestCase):
                for rec in parse(m)["records"][p.TX_TEMPLATE]]
         self.assertEqual(got, ["W9XYZ"])
 
+    def test_wspr_is_wsprnets(self):
+        """WSPR goes to WSPRnet (services/wsprnet.py), as WSJT-X sends it,
+        and not here."""
+        self.assertEqual(self.r.offer(event(heard("K1ABC"), mode="WSPR")), 0)
+        self.assertEqual(self.r.skipped.get("not FT8 or FT4"), 1)
+
     def test_a_failed_send_keeps_the_spots(self):
         def fail(_msg):
             raise OSError("network is unreachable")

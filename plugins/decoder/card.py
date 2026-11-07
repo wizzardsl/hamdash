@@ -64,6 +64,7 @@ import ftx
 import psk
 import rtty
 import where
+import wspr
 
 card = Card(__file__)
 
@@ -109,8 +110,9 @@ MODES = [
     {"id": "psk31", "name": "PSK31", "ready": True},
     {"id": "ft8", "name": "FT8", "ready": True},
     {"id": "ft4", "name": "FT4", "ready": True},
+    {"id": "wspr", "name": "WSPR", "ready": True},
 ]
-SLOT_MODES = ("ft8", "ft4")
+SLOT_MODES = ("ft8", "ft4", "wspr")
 
 _lock = threading.Lock()
 _listeners: dict[str, "Listener"] = {}
@@ -145,7 +147,8 @@ class Listener:
         self.started_at = time.time()
         # The FT mocks are made at the rate the decoder works at; the rest
         # at the rate the old capture used.
-        self.samplerate = (ftx.RATE if device.startswith("mock:ft")
+        self.samplerate = (ftx.RATE if device in ("mock:ft8", "mock:ft4",
+                                                  "mock:wspr")
                            else 48000)
         self.status = "starting"
         self.error = ""
@@ -178,7 +181,12 @@ class Listener:
             self._run_mock(_mock_psk(self.samplerate))
             return
         if self.device in ("mock:ft8", "mock:ft4"):
-            self._run_slot_mock(ftx.MODES[self.device[5:]])
+            mode = ftx.MODES[self.device[5:]]
+            self._run_slot_mock(mode.slot, lambda slot, rate:
+                                ftx.mock_slot_audio(slot, mode, rate))
+            return
+        if self.device == "mock:wspr":
+            self._run_slot_mock(wspr.SLOT, wspr.mock_slot_audio)
             return
         # Not opened here. The radio's input is opened once, by the
         # rx_audio engine, and read from it - so the decoder, the
@@ -236,12 +244,13 @@ class Listener:
             self._feed(noisy)
             time.sleep(BLOCK / self.samplerate)
 
-    def _run_slot_mock(self, mode: ftx.Mode) -> None:
-        """An FT8 or FT4 QSO, slot by slot, on the UTC clock - a slot mode
-        means nothing unless the signals start when the slots do."""
+    def _run_slot_mock(self, slot_s: float, make) -> None:
+        """An FT8 or FT4 QSO, or a band of WSPR beacons, slot by slot, on
+        the UTC clock - a slot mode means nothing unless the signals start
+        when the slots do. `make(slot_index, rate)` is one slot's audio."""
         self.status = "running"
         rate = self.samplerate
-        per_slot = int(mode.slot * rate)
+        per_slot = int(slot_s * rate)
         block = rate // 10
         made: dict[int, np.ndarray] = {}
         pos = int(time.time() * rate)
@@ -249,7 +258,7 @@ class Listener:
             slot = pos // per_slot
             if slot not in made:
                 made.clear() if len(made) > 2 else None
-                made[slot] = ftx.mock_slot_audio(slot, mode, rate)
+                made[slot] = make(slot, rate)
             off = pos - slot * per_slot
             chunk = made[slot][off:off + block]
             if chunk.size < block:
@@ -404,6 +413,13 @@ def _known_call(call: str, grid: str = "") -> bool:
 
 
 def make_decoder(spec: dict, samplerate: int, stream: "Stream | None" = None):
+    if spec.get("mode") == "wspr":
+        return wspr.SlotDecoder(
+            samplerate, known_call=_known_call,
+            on_slot=(lambda t, rows: on_slot(stream, t, rows)) if stream
+            else None,
+            on_slot_start=(lambda t: on_slot_start(stream, t)) if stream
+            else None)
     if spec.get("mode") in SLOT_MODES:
         return ftx.SlotDecoder(
             samplerate, spec["mode"], ap=True, mycall=_my_call,
@@ -571,7 +587,7 @@ def on_slot(stream: "Stream", t: float, rows: list) -> None:
         PLACES.heard_grid(r.get("call", ""), r.get("grid", ""))
         d = {k: r[k] for k in ("text", "call", "to", "grid", "report",
                                "ack", "snr", "dt", "freq", "kind", "osd",
-                               "ap")
+                               "ap", "dbm", "drift")
              if k in r}
         d["audio_hz"] = d.pop("freq")
         d["rf_hz"] = int(dial + r["freq"]) if dial else None

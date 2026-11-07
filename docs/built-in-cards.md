@@ -3,7 +3,7 @@
 What each bundled card does, and the decisions inside the ones that have a few.
 
 - [Spectrum and waterfall](#spectrum-and-waterfall)
-- [Decoding CW, RTTY, PSK31, FT8 and FT4](#decoding-cw-rtty-psk31-ft8-and-ft4)
+- [Decoding CW, RTTY, PSK31, FT8, FT4 and WSPR](#decoding-cw-rtty-psk31-ft8-ft4-and-wspr)
 - [PSK Reporter](#psk-reporter)
 - [Spots](#spots)
 
@@ -133,16 +133,16 @@ next coffee shop's. Naming one address is the better habit.
 Transmitting from the browser is not supported. A microphone needs a
 secure context, which means HTTPS with a certificate; receiving has no
 such restriction.
-## Decoding CW, RTTY, PSK31, FT8 and FT4
+## Decoding CW, RTTY, PSK31, FT8, FT4 and WSPR
 
 The `decoder` card reads digital modes out of the radio's audio: CW, RTTY,
-PSK31, FT8 and FT4.
+PSK31, FT8, FT4 and WSPR.
 
 Pick the input at the top of the tile. **Radio's audio in** uses whatever
 sound device the rig in use is set to in Settings → Radio, which is the one
 worth choosing: it follows you when you switch radios. **Mock** synthesises
-a signal in the chosen mode - Morse, an RTTY or PSK31 exchange, or an FT8 or FT4
-QSO a slot at a time - so the card works
+a signal in the chosen mode - Morse, an RTTY or PSK31 exchange, an FT8 or FT4
+QSO a slot at a time, or a band of WSPR beacons - so the card works
 with no radio attached. Anything else is a sound card by name. Two tiles on
 one input can decode different modes at once.
 
@@ -156,8 +156,8 @@ leaves the other running.
 
 **Out of sight**, in a background tab or on a phone while another card is
 showing, CW, RTTY and PSK31 let the input go and pick up again when you come
-back: their text is for reading, and nobody is reading it. **FT8 and FT4 go
-on decoding**, because their decodes also go to the PSK Reporter card's map
+back: their text is for reading, and nobody is reading it. **FT8, FT4 and
+WSPR go on decoding**, because their decodes also go to the PSK Reporter card's map
 and, if it is on, to PSK Reporter - on a phone, watching that map is
 exactly when the Decoder is out of sight. Press **Stop** to let the input go.
 
@@ -292,6 +292,40 @@ slot (see [the bus](bus.md#topics-the-built-in-cards-publish)). Only FT8
 and FT4: their CRC makes a decoded callsign one that was really sent,
 where CW, RTTY and PSK31 print whatever the noise spells.
 
+### WSPR
+
+WSPR beacons, decoded every two minutes on the even minute, the way
+WSJT-X's WSPR mode does. Each line is a station: the time, SNR, DT, the
+audio frequency where the signal began, its drift, and the message - a
+callsign, a grid square and the power it is running. Hover over the
+message for the power in watts and the drift. Where and Dist work as for
+FT8.
+
+**Band buttons** tune the radio to each band's WSPR frequency, from 2200 m
+to 6 m, in USB data mode, mode first. There is no 60 m button: WSPR's
+frequency there differs by country, and a button that tunes somewhere
+your licence may not allow is worse than none.
+
+A transmission lasts nearly two minutes, so nothing appears until the slot
+after it has started; a slot takes a few seconds to decode. Stations with
+compound callsigns (`PJ4/K1ABC`) send two messages in turn, and the one
+that carries a six-character grid names the station only by a hash: it
+shows as `<...>` until the station's full callsign has been heard, then by
+name.
+
+What to expect of it, measured against WSJT-X 3.0.2's own `wsprd` on the
+same synthesised audio: level with it down to about -29 dB, and about half
+a decibel behind it at -30 and -31, where both are finding only some of
+the signals; on a crowded band of twenty overlapping stations in 200 Hz it
+found 57 of 60 to wsprd's 45, by taking each station it decodes out of the
+audio and looking again. In 60 slots of noise it decoded nothing. **It has
+not yet been checked against wsprd on signals off the air.**
+
+WSPR decodes are published as `decoder.decoded` like FT8's, added to the
+PSK Reporter card's map as heard here, and - if you turn it on - uploaded
+to [WSPRnet](logging.md#uploading-wspr-spots-to-wsprnet). They are not sent
+to PSK Reporter, which is where WSJT-X does not send them either.
+
 ## PSK Reporter
 
 The `psk_reporter` card draws reception reports from
@@ -306,8 +340,8 @@ that square and watches it. The box commits on Enter or when you click away.
 **Reset filters** puts every filter back to everything and leaves the place
 being watched alone.
 
-**Stations your own radio decodes are on the map too.** Every FT8 and FT4
-station the Decoder card copies is a report of you hearing them, so it is
+**Stations your own radio decodes are on the map too.** Every FT8, FT4 and
+WSPR station the Decoder card copies is a report of you hearing them, so it is
 added straight away - no internet needed, and whether or not you send
 reports to PSK Reporter - under your callsign and your grid square, marked
 **heard here** in the dot's tooltip and popup. If PSK Reporter spotting is

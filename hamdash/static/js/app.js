@@ -1554,6 +1554,8 @@
     refreshWsjtx();
     $('#s-pskr-enabled').checked = !!(config.pskreporter || {}).enabled;
     refreshPskr();
+    $('#s-wn-enabled').checked = !!(config.wsprnet || {}).enabled;
+    refreshWsprnet();
     $('#s-debug').checked = !!(config.debug || {}).enabled;
     $('#s-upd-check').checked = (config.updates || {}).check !== false;
     gridNote('');
@@ -1700,6 +1702,43 @@
     el.className = 'sheet-note' + (kind ? ` ${kind}` : '');
   }
 
+  async function refreshWsprnet() {
+    const el = $('#s-wn-status');
+    if (!el) return;
+    let s;
+    try { s = await HD.get('/api/wsprnet'); } catch (e) { return; }
+    let msg;
+    let kind = '';
+    if (!s.enabled) {
+      msg = 'Off. Nothing is sent.';
+    } else if (s.blocked === 'no callsign') {
+      msg = 'On, but nothing can be sent: there is no callsign in the Station tab.';
+      kind = 'bad';
+    } else if (s.blocked === 'no locator') {
+      msg = 'On, but nothing can be sent: there is no grid locator in the Station tab.';
+      kind = 'bad';
+    } else {
+      msg = s.total_sent ? `${s.total_sent} spot${s.total_sent === 1 ? '' : 's'} uploaded since start`
+                         : 'On. Nothing uploaded yet';
+      if (s.queued) msg += ` · ${s.queued} waiting`;
+      if (s.rejected) msg += ` · ${s.rejected} refused`;
+      if (s.error) { msg += ` · ${s.error}`; kind = 'bad'; }
+      const skipped = s.skipped || {};
+      if (!s.total_sent && !s.queued) {
+        if (skipped['no dial frequency']) {
+          msg += ` · ${skipped['no dial frequency']} heard but not uploadable: `
+               + "the Decoder is not on the radio's own audio, or the "
+               + "radio's frequency is unknown";
+        } else if (skipped.simulated) {
+          msg += ' · only the mock or the simulated radio heard so far, '
+               + 'which are never uploaded';
+        }
+      }
+    }
+    el.textContent = msg;
+    el.className = 'sheet-note' + (kind ? ` ${kind}` : '');
+  }
+
   // Polled only while the sheet is open: a heartbeat is every 15 s and
   // there is nothing to show when nobody is looking at it.
   function watchWsjtx(on) {
@@ -1708,7 +1747,10 @@
     if (on) {
       refreshWsjtx();
       refreshPskr();
-      wsjtxTimer = setInterval(() => { refreshWsjtx(); refreshPskr(); }, 5000);
+      refreshWsprnet();
+      wsjtxTimer = setInterval(() => {
+        refreshWsjtx(); refreshPskr(); refreshWsprnet();
+      }, 5000);
     }
   }
 
@@ -1867,6 +1909,7 @@
       }, 'password', '#s-lk-pass'),
       debug: { enabled: $('#s-debug').checked },
       pskreporter: { enabled: $('#s-pskr-enabled').checked },
+      wsprnet: { enabled: $('#s-wn-enabled').checked },
       updates: { check: $('#s-upd-check').checked },
       wsjtx: {
         enabled: $('#s-wx-enabled').checked,

@@ -49,11 +49,11 @@ hamdash/registry.py reads card.json from plugins/ and <home>/cards/
 hamdash/windows.py  native pop-out windows (pywebview js_api bridge)
 hamdash/config.py   config.json, layout.json, tile settings, search paths
 hamdash/services/   radio/rigs, audio, callsign, logbook, bands, grid math,
-                    wsjtx (UDP in), pskreporter (UDP out)
+                    wsjtx (UDP in), pskreporter (UDP out), wsprnet (HTTP out)
 hamdash/sdk/        what a card author imports
 hamdash/static/     board, drag/resize/pop-out, themes, settings forms
 plugins/            rig_control, logbook, beacon_map, spectrum, path_map,
-                    psk_reporter, decoder (CW/RTTY/PSK31/FT8/FT4), spots,
+                    psk_reporter, decoder (CW/RTTY/PSK31/FT8/FT4/WSPR), spots,
                     web_embed, hello_card
 hamdash/static/js/hdmap.js   the shared map machinery (see "Maps")
 hamdash/static/vendor/       leaflet, proj4, the world outline
@@ -1360,7 +1360,7 @@ it. Reach for a new transport only if a measurement says this one failed.
   has no job, and holding the radio's input against WSJT-X or fldigi
   for a whole board session to do it is the wrong trade. Do not
   'fix' it.
-  **FT8 and FT4 are the exception, by the operator's later call.** Their
+  **FT8, FT4 and WSPR are the exception, by the operator's later call.** Their
   decodes have readers that are not the page - the PSK Reporter card's
   map and the uploader - and on the phone, where one card is on screen,
   looking at that map is precisely when the decoder is hidden; it stopped
@@ -1759,6 +1759,83 @@ edges on the exact fractional sample grid). SNR in that file is per 2.5 kHz.
   so a button cannot tune somewhere its label does not say. Mode before
   frequency as everywhere; `PKTUSB` first and plain `USB` if the radio
   refuses it - flrig on an FT-900 has no data mode.
+
+### WSPR (`plugins/decoder/wspr.py`, `tests/test_wspr.py`)
+
+- **WSJT-X is the referee again, and the fixtures hold no audio.**
+  `wsprcode` gave the packing and the 162 symbols of 21 messages of all
+  three types, matched bit for bit; `wsprd` decodes a slot this tree
+  synthesises. A two-minute slot is 2.9 MB, so `sim_band.json` keeps the
+  slot's *inputs* and wsprd's answers, and the test rebuilds the samples
+  - NumPy's generator promises the same stream for the same seed.
+  `tools/wspr_fixtures.py` makes both. Nothing is from WSJT-X's source.
+- **The packing was read off wsprcode, not guessed**: the grid field is
+  `(179 - 10*L1 - D1) * 180 + 10*L2 + D2` (the obvious reading swaps the
+  digits), a prefix is right-aligned base 37 in three characters, a
+  suffix sits from 60000 (a letter or digit) and 60026 + nn (two digits),
+  and the power's last digit, always 0, 3 or 7 in a type 1, is what says
+  a message is type 2 or 3. The call hash is Jenkins' lookup3, seed 146.
+- **K=32 is sequential decoding**: a stack decoder over the Fano metric
+  (`stack_decode`), bounded at `STACK_LIMIT` expansions. Python is fast
+  enough because a good signal takes a few hundred nodes.
+- **Coherent blocks are the difference between this and wsprd.** Judged
+  symbol by symbol it was 2 dB behind, and the soft-bit scaling was not
+  why: proper non-coherent likelihoods from measured noise changed
+  nothing. WSPR's tones are exactly 1/T apart and its phase continuous,
+  so if the carrier is followed by the *integral* of its frequency (not
+  frequency times time, which jumps every symbol under drift) a signal
+  has one phase in every symbol, and three symbols can be judged as one
+  coherent sum over the 8 data patterns. At the true position that took
+  -29 dB from 15 of 24 to 24 of 24, and the decoder needs a hundred times
+  fewer nodes. Blocks of 3, then 2, then 1, for a phase that wanders.
+- **The other sync pair is free noise.** Each symbol's sync bit says which
+  two of the four tones it can be on, so the other two only ever hold
+  noise - an exact noise measure for the likelihoods.
+- **Then the search was the loss**, and the estimate always scored better
+  than the truth: maximising the per-symbol sync metric fits the noise.
+  At -29.5 dB it put the start 20 samples out on average (8% of a
+  symbol). Scoring pairs of symbols coherently put every one within 8,
+  averaging 4. Measure the estimator's error, not the metric's value.
+- **Peaks from a light smoothing, SNR from a heavy one**, and decoded
+  stations subtracted before the next pass (`PASSES`). Smoothing over the
+  signal's width merged two stations a few hertz apart into one
+  candidate; on twenty overlapping stations the two changes took it from
+  31 of 60 (wsprd 45) to 57.
+- **wsprd's conventions, read off its output**: SNR in 2500 Hz, DT from
+  one second into the slot, drift in hertz over the whole transmission
+  (a 3 Hz drift reads 3, which tells it from per-minute), and the
+  frequency **where the signal began** - half the drift from the middle.
+  That frequency is what WSPRnet holds for everybody else's spots.
+- **Measured, simulated only**: level with wsprd to -29 dB, about half a
+  decibel behind at -30/-31, nothing false in 60 noise slots or the busy
+  sets. A slot takes 1-13 s. **Not yet checked against wsprd on signals
+  off the air** - worth doing on 30 m before trusting the numbers.
+- **The slot machinery is ftx's**: `wspr.SlotDecoder` subclasses
+  `ftx.SlotDecoder` and replaces `_run` and `_line`, so the clock, the
+  buffer and the thread are the ones FT8 proved. Built on first use, so
+  importing the codec does not import ftx.
+- **No 60 m band button**: WSPR's frequency there differs by country.
+
+## WSPRnet uploads
+
+`hamdash/services/wsprnet.py`, `tests/test_wsprnet.py`. What WSJT-X's
+"Upload spots" does, from `decoder.decoded` - the PSK Reporter uploader's
+shape, a host service on `Bus.listen`, off by default.
+
+- **WSPRnet does not document its upload**, so the form was read off
+  WSJT-X's client as facts about the wire: one POST per spot to
+  `http://wsprnet.org/post/`, `function=wspr`, MHz to six decimals,
+  `date` yymmdd and `time` HHMM of the slot, `mode=2`, and success is a
+  reply containing `spot(s) added`. Plain HTTP because that is what it
+  takes. No `wsprstat` heartbeat for empty slots yet - WSJT-X sends one.
+- **A network failure keeps the queue; a refusal drops that spot.**
+  WSJT-X clears its whole queue on either, which loses a night's spots
+  to a blip. A reply that is not `spot(s) added` is WSPRnet saying no to
+  that spot, and asking again would get the same answer.
+- **Never sent to the live server from development**; the tests post to
+  a list. The first real upload is the operator's.
+- **PSK Reporter does not get WSPR**, and its uploader's mode check is
+  what says so (`test_wspr_is_wsprnets`).
 
 ## Logbook sync
 
@@ -3258,13 +3335,13 @@ radios nobody here owns can send what is needed to fix them.
 - The decoder's other modes. RTTY at other speeds and shifts (50 and 75 baud, 425 and 850 Hz) is a
   constructor argument away in `rtty.py` and untested. QPSK31 and PSK63
   are a few lines away in `psk.py` and untested.
-- **CW, RTTY and PSK31 publish nothing; FT8 and FT4 do** (`decoder.decoded`),
+- **CW, RTTY and PSK31 publish nothing; FT8, FT4 and WSPR do** (`decoder.decoded`),
   because their CRC says the callsign was sent. A callsign copied by the
   others would be worth putting on the bus only once it can say how sure
   it is: `lookup.result` is the "what are we looking at" event and feeding
   it guesses would be worse than silence. Nothing subscribes to
-  `decoder.decoded` but the PSK Reporter uploader and the PSK Reporter
-  card's "heard here". A map plotting the band from it is the obvious
+  `decoder.decoded` but the PSK Reporter and WSPRnet uploaders and the
+  PSK Reporter card's "heard here". A map plotting the band from it is the obvious
   next use. A-priori decoding exists for a1 (CQ) and a2 (my call) - see
   the FT8 notes; a3 and up need the QSO in progress, which nothing here
   knows yet.

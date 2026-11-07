@@ -154,22 +154,26 @@ let conf = {};
 let revNow = false;       // whether RTTY is being read reversed, as reported
 let seq = 0;              // the next character we have not seen
 let fading = [];          // spans recently added, to un-highlight
-let dseq = 0;             // FT8/FT4: the last decode we have shown
-let lastSlot = null;      // FT8/FT4: the slot the last row was from
-const SLOT_MODES = ['ft8', 'ft4'];
+let dseq = 0;             // slot modes: the last decode we have shown
+let lastSlot = null;      // slot modes: the slot the last row was from
+const SLOT_MODES = ['ft8', 'ft4', 'wspr'];
 const slotMode = () => SLOT_MODES.includes(conf.mode);
+const SLOT_LEN = { ft8: '15 s', ft4: '7.5 s', wspr: '2 minute' };
 
-// ---- quick tune, FT8/FT4 -------------------------------------------------
+// ---- quick tune, FT8/FT4/WSPR --------------------------------------------
 // The usual dial frequencies (USB, in hertz) - the defaults WSJT-X ships,
 // so a click lands where everybody else is. JSON on purpose: the test
-// reads this table to check it.
+// reads this table to check it, WSPR's against wspr.DIALS.
 const DIALS = {
   "ft8": {"160": 1840000, "80": 3573000, "60": 5357000, "40": 7074000,
           "30": 10136000, "20": 14074000, "17": 18100000, "15": 21074000,
           "12": 24915000, "10": 28074000, "6": 50313000},
   "ft4": {"80": 3575000, "40": 7047500, "30": 10140000, "20": 14080000,
           "17": 18104000, "15": 21140000, "12": 24919000, "10": 28180000,
-          "6": 50318000}
+          "6": 50318000},
+  "wspr": {"2200": 136000, "630": 474200, "160": 1836600, "80": 3568600,
+           "40": 7038600, "30": 10138700, "20": 14095600, "17": 18104600,
+           "15": 21094600, "12": 24924600, "10": 28124600, "6": 50293000}
 };
 let radioNow = null;      // the last radio.state, for lighting the band
 let tuneFor = null;       // which mode's buttons are drawn
@@ -347,6 +351,14 @@ function appendRows(rows) {
     const sign = (v) => (v >= 0 ? '+' : '') + v;
     const txt = cell('t', r.text);
     if (r.osd) txt.title = 'Found by the slower, less certain decoder (OSD)';
+    if (r.mode === 'WSPR') {
+      // A beacon's message is its call, grid and power, so the two
+      // numbers worth having that are not in it go on the hover.
+      const w = 1e-3 * 10 ** (r.dbm / 10);
+      txt.title = `${r.dbm} dBm (${w >= 1 ? w.toFixed(w >= 10 ? 0 : 1) + ' W'
+                  : Math.round(w * 1000) + ' mW'}), drifting `
+                + `${sign(Number(r.drift).toFixed(1))} Hz over the transmission`;
+    }
     if (r.ap) {
       txt.title = r.ap === 'a2'
         ? 'a2: decoded expecting a message to your callsign'
@@ -515,7 +527,7 @@ document.addEventListener('hamdash:units', () => {
 
 async function tick() {
   if (!running) return;
-  // FT8 and FT4 go on decoding out of sight; the other modes do not. See
+  // The slot modes go on decoding out of sight; the other modes do not. See
   // the visibility handler below for why.
   if (slotMode()) return tickSlots();
   if (HD.hidden) return;
@@ -573,7 +585,7 @@ function applyWrap() {
   $('#cols').hidden = !slotMode();
   paintTune();
   $('#out').dataset.empty = !running ? 'Stopped'
-    : slotMode() ? `Listening - decodes appear as each ${conf.mode === 'ft4' ? '7.5' : '15'} s slot ends`
+    : slotMode() ? `Listening - decodes appear as each ${SLOT_LEN[conf.mode]} slot ends`
     : 'Listening…';
 }
 
@@ -584,8 +596,9 @@ $('#run').onclick = () => setRunning(!running);
 // back resumes rather than needing a press. Their output is text somebody
 // reads, so out of sight they have no job, and holding the radio's audio
 // against WSJT-X for that would be the wrong trade.
-// FT8 and FT4 do not stop. Their decodes have readers that are not this
-// page - the PSK Reporter card's map and the uploader - and on a phone, where
+// FT8, FT4 and WSPR - the slot modes - do not stop. Their decodes have
+// readers that are not this page - the PSK Reporter card's map and the
+// uploaders - and on a phone, where
 // only one card is on screen, looking at that map is exactly when this tile
 // is hidden. Stop is still the way to let the input go.
 HD.onVisible((on) => {

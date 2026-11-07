@@ -33,6 +33,7 @@ from .services import bands as bandsvc
 from .services import rigs as rigsvc
 from .services.space import Aurora, Drap, Ionosondes, Solar
 from .services import pskreporter as pskrsvc
+from .services import wsprnet as wsprnetsvc
 from .services import updates as updatesvc
 from .services import wsjtx as wsjtxsvc
 from .services import diagnostics
@@ -286,6 +287,18 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         pskr.set_enabled(on)
 
     _apply_pskr()
+
+    wsprnet = wsprnetsvc.Uploader(lambda: cfg.data.get("station") or {},
+                                  __version__).start()
+    BUS.listen("decoder.decoded", wsprnet.offer)
+
+    def _apply_wsprnet():
+        on = bool((cfg.data.get("wsprnet") or {}).get("enabled"))
+        if on != wsprnet.enabled:
+            LOG.info("wsprnet: %s", "on" if on else "off")
+        wsprnet.set_enabled(on)
+
+    _apply_wsprnet()
 
     # ---------------- permissions --------------------------------------
     # A card declares what it needs in card.json ("permissions": ["radio"]).
@@ -736,7 +749,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
                 for sec, k in SECRETS}
         for key in ("station", "theme", "radio", "grid_cols", "row_px",
                     "callsign_lookup", "logbook_sync", "wsjtx", "units",
-                    "debug", "pskreporter", "updates"):
+                    "debug", "pskreporter", "wsprnet", "updates"):
             if key in body:
                 if isinstance(cfg.data.get(key), dict):
                     cfg.data[key].update(body[key])
@@ -771,6 +784,8 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
             _apply_wsjtx()
         if "pskreporter" in body:
             _apply_pskr()
+        if "wsprnet" in body:
+            _apply_wsprnet()
         if (body.get("updates") or {}).get("check"):
             updates.again()
         if "debug" in body:
@@ -809,6 +824,11 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
     def pskreporter_status():
         """When it last sent, how many, and if it cannot, why not."""
         return jsonify(pskr.status())
+
+    @app.get("/api/wsprnet")
+    def wsprnet_status():
+        """How many WSPR spots have gone to WSPRnet, and if not, why not."""
+        return jsonify(wsprnet.status())
 
     @app.get("/api/themes")
     def themes():
@@ -1722,6 +1742,7 @@ def create_app(cfg: Config, host: str = "127.0.0.1", port: int = 8765,
         rig.stop()
         wsjtx.stop()
         pskr.stop()
+        wsprnet.stop()
 
     return app, shutdown
 

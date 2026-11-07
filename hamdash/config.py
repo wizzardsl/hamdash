@@ -67,6 +67,9 @@ DEFAULTS = {
     # callsign, locator and what they heard to a third party, so it is
     # ticked on deliberately. See services/pskreporter.py.
     "pskreporter": {"enabled": False},
+    # WSPR spots heard to wsprnet.org, as WSJT-X's "Upload spots" does.
+    # Off for the same reason as PSK Reporter. See services/wsprnet.py.
+    "wsprnet": {"enabled": False},
     "units": "km",   # km | mi | nmi
     # Once a day, ask GitHub whether a newer hamdash has been released and
     # say so in Settings -> Help. One public request, nothing from the

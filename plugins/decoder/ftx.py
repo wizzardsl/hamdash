@@ -1727,11 +1727,7 @@ class SlotDecoder:
         import time as _time
         t0 = _time.monotonic()
         try:
-            me = self.mycall() if callable(self.mycall) else self.mycall
-            found = decode(audio, self.mode, self.rate, hashes=self.hashes,
-                           deadline=t0 + self.mode.slot * 0.7,
-                           ap=self.ap, mycall=me or "",
-                           known_call=self.known_call)
+            found = self._run(audio, t0 + self.mode.slot * 0.7)
         except Exception as exc:                        # noqa: BLE001
             found = []
             print(f"{self.mode.name} decode failed: {exc!r}")
@@ -1742,10 +1738,10 @@ class SlotDecoder:
         for d in found:
             self.seq += 1
             row = {"seq": self.seq, "slot": slot_start, **d.as_dict()}
-            if d.osd:
+            if getattr(d, "osd", 0):
                 row["osd"] = d.osd
             rows.append(row)
-            lines.append(format_line(slot_start, d) + "\n")
+            lines.append(self._line(slot_start, d) + "\n")
         with self._lock:
             self.decodes.extend(rows)
             del self.decodes[:-self.KEEP_DECODES]
@@ -1769,6 +1765,16 @@ class SlotDecoder:
     def since(self, seq: int) -> list:
         with self._lock:
             return [r for r in self.decodes if r["seq"] > seq]
+
+    # -- what a slot mode does with a slot: the two things WSPR replaces --
+    def _run(self, audio: np.ndarray, deadline: float) -> list:
+        me = self.mycall() if callable(self.mycall) else self.mycall
+        return decode(audio, self.mode, self.rate, hashes=self.hashes,
+                      deadline=deadline, ap=self.ap, mycall=me or "",
+                      known_call=self.known_call)
+
+    def _line(self, slot_start: float, d) -> str:
+        return format_line(slot_start, d)
 
 
 def mock_slot_audio(slot_index: int, mode: Mode = FT8, rate: int = RATE
